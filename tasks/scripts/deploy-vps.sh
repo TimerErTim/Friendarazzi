@@ -15,9 +15,9 @@ host="${usage_host:?set --host or VPS_HOST}"
 user="${usage_user:?set --user or VPS_USER}"
 api_domain="${usage_api_domain:?set --api-domain or API_DOMAIN}"
 # `~` is expanded by the remote shell, not here: the runner's home is not the VPS's.
-# The VPS layout keeps the checkout at `/opt/logandaim/repo` with `data/` and `secrets/`
+# The VPS layout keeps the checkout at `/opt/friendarazzi/repo` with `data/` and `secrets/`
 # beside it, so the checkout and the host root are two different directories.
-deploy_dir="${usage_dir:-/opt/logandaim/repo}"
+deploy_dir="${usage_dir:-/opt/friendarazzi/repo}"
 identity="${usage_identity:-$HOME/.ssh/id_ed25519}"
 
 fail() {
@@ -28,8 +28,8 @@ fail() {
 # One reference format, everywhere: the commit tag. `:main` is pushed for humans
 # browsing the registry and is never a valid deployment input, and a digest would
 # name an image whose revision the VPS cannot check out.
-[[ "$image" =~ ^ghcr\.io/[a-z0-9._-]+/logandaim-server:sha-[0-9a-f]{40}$ ]] ||
-  fail "'$image' is not ghcr.io/<owner>/logandaim-server:sha-<commit>"
+[[ "$image" =~ ^ghcr\.io/[a-z0-9._-]+/friendarazzi-server:sha-[0-9a-f]{40}$ ]] ||
+  fail "'$image' is not ghcr.io/<owner>/friendarazzi-server:sha-<commit>"
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || fail "'$revision' is not a full commit sha"
 
 # The tag and the revision must describe the same build: checking out one revision

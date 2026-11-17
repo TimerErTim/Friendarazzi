@@ -2,11 +2,11 @@
 
 import { type ReactNode, useEffect } from "react";
 
-import { useLogandaimApi } from "./provider";
+import { useFriendarazziApi } from "./provider";
 import { useAuthPhase } from "./session-store";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { authSession } = useLogandaimApi();
+  const { authSession } = useFriendarazziApi();
   const phase = useAuthPhase(authSession.subscribe, authSession.getSnapshot);
 
   useEffect(() => {
@@ -20,6 +20,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
-  const { authSession } = useLogandaimApi();
+  const { authSession } = useFriendarazziApi();
   return useAuthPhase(authSession.subscribe, authSession.getSnapshot);
 }

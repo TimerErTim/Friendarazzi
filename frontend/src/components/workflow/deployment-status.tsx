@@ -1,7 +1,7 @@
 "use client";
 
 import { useHealthQuery } from "@/api/hooks";
-import { useLogandaimApi } from "@/api/provider";
+import { useFriendarazziApi } from "@/api/provider";
 import {
   Card,
   CardContent,
@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 
 export function DeploymentStatus() {
-  const { apiBaseUrl } = useLogandaimApi();
+  const { apiBaseUrl } = useFriendarazziApi();
   const health = useHealthQuery();
 
   return (

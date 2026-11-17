@@ -1,6 +1,6 @@
 # Contributing and project management
 
-logandaim.at is built mostly by AI agents under a human Product Owner (PO). This file defines
+Friendarazzi is built mostly by AI agents under a human Product Owner (PO). This file defines
 how work flows. GitHub is the hub: issues, project board, milestones, pull requests.
 
 ## Records
@@ -8,9 +8,9 @@ how work flows. GitHub is the hub: issues, project board, milestones, pull reque
 | Record | Where | Purpose |
 |--------|-------|---------|
 | Product intent | [`specs/`](../specs/README.md) | What and why. PO-owned. |
-| Work items | [Issues](https://github.com/TimerErTim/logandaim.at/issues) | One bounded, reviewable unit each. |
-| Roadmap and status | GitHub Project "logandaim.at" | Priority order and workflow state. |
-| Milestone gates | [Milestones](https://github.com/TimerErTim/logandaim.at/milestones) | `M0 Rebrand`, `M1 MVP`, `M2 Offline`. No dates unless committed. |
+| Work items | [Issues](https://github.com/TimerErTim/Friendarazzi/issues) | One bounded, reviewable unit each. |
+| Roadmap and status | GitHub Project "Friendarazzi" | Priority order and workflow state. |
+| Milestone gates | [Milestones](https://github.com/TimerErTim/Friendarazzi/milestones) | `M0 Rebrand`, `M1 MVP`, `M2 Offline`. No dates unless committed. |
 | Delivery | Pull requests | Code, tests, evidence. |
 | User-visible changes | [`CHANGELOG.md`](../CHANGELOG.md) | Keep a Changelog format. End-user facing only. |
 
@@ -45,8 +45,8 @@ Entries are phrased from the user's perspective — describe the effect, not the
 
 ### Before the first release
 
-logandaim.at is a new project being built on top of the architecture of a previous one (see the
-rebrand and domain-removal work in `M0 Rebrand`). Until the first release ships, there is no
+Friendarazzi is a multiplayer social photo-hunting Bingo web app built on top of the inherited
+hexagonal Rust + Next.js architecture. Until the first release ships, there is no
 released product and therefore no user who could notice a difference: everything in the tree is
 either inherited base architecture, a placeholder, or work in progress. `Unreleased` may be empty
 during that phase, and an empty `Unreleased` is not a missing entry.
@@ -54,7 +54,7 @@ during that phase, and an empty `Unreleased` is not a missing entry.
 Consequences:
 
 - A change that only removes or reshapes inherited base material is **not** an end-user change.
-  Example: dropping the Tauri desktop shell. No user ever ran logandaim.at as a desktop app, so it
+  Example: dropping the inherited archery domain. No user ever ran Friendarazzi as an archery logbook, so it
   is not a removal they can notice — it is a fact about how the project was seeded, and it belongs
   in the issue/PR/spec history instead.
 - The same holds for anything a user cannot run yet: scaffolding, ports adapted from the base
@@ -78,7 +78,7 @@ Markers: `needs-PO` (blocked on a PO decision), `ready` (meets the Ready gate), 
 
 ## GitHub Project
 
-Project: [logandaim.at](https://github.com/users/TimerErTim/projects/3), linked to this repository.
+Project: [friendarazzi.app](https://github.com/users/TimerErTim/projects/3), linked to this repository.
 
 - Status: `Inbox`, `Ready`, `In progress`, `In review`, `Done`.
 - `Priority` single-select `P0`–`P3`, mirrors the label.
@@ -171,11 +171,11 @@ token, so that step is `continue-on-error`: the gate alone decides the run.
 Tasks are defined in `tasks/*.toml`; the release and version checks delegate their logic to
 `tasks/scripts/`. The services are split so each piece works on its own: `run:*` starts a service
 (`tasks/run.toml`), `smoke:*` only health-checks one that already runs (point it at a deployment
-with `LOGANDAIM_SERVER_ORIGIN` / `LOGANDAIM_FRONTEND_URL`), and `verify:*` connects the two under a
+with `FRIENDARAZZI_SERVER_ORIGIN` / `FRIENDARAZZI_FRONTEND_URL`), and `verify:*` connects the two under a
 daemon.
 
-The Pages deployment reuses the export `pr/base` built, with `NEXT_PUBLIC_LOGANDAIM_API_URL` (repo
-variable `LOGANDAIM_API_URL`) and a base path taken from `actions/configure-pages` in that same job.
+The Pages deployment reuses the export `pr/base` built, with `NEXT_PUBLIC_FRIENDARAZZI_API_URL` (repo
+variable `FRIENDARAZZI_API_URL`) and a base path taken from `actions/configure-pages` in that same job.
 The backend deployment reuses the binary from the same gate: `deploy/image` wraps it in the runtime
 image and pushes it to GHCR, and `deploy/backend` deploys that image by `sha-<commit>` tag with
 `mise run deploy:vps`. Both artefacts are uploaded on a `main` push only, so a pull request that is
@@ -188,7 +188,7 @@ Useful tasks:
 | `mise run ci` | Full gate. |
 | `mise run verify:frontend`, `mise run verify:server` | Start one service as a daemon and smoke-test it. |
 | `mise run run:frontend`, `mise run run:server` | Start one service in the foreground, without the gate. |
-| `LOGANDAIM_SERVER_ORIGIN=… mise run smoke:server` | Health-check any deployment (origin without `/api`). |
+| `FRIENDARAZZI_SERVER_ORIGIN=… mise run smoke:server` | Health-check any deployment (origin without `/api`). |
 | `mise run check:release` | Validate a release pull request. |
 | `mise run release:version <kind>` | Bump the workspace and frontend versions. |
 | `mise run release:notes <version> --pr <n>` | Preview the release body. |

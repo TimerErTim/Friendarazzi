@@ -1,218 +1,46 @@
 ---
 id: SPEC-charter
-title: logandaim.at product charter
+title: Friendarazzi product charter
 status: PO-approved
 owner: TimerErTim
-issues: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+issues: []
 superseded_by: null
 ---
 
-# logandaim.at — Product Charter
+# Friendarazzi — Product Charter
 
 ## Vision
 
-logandaim.at is an Austria-wide online logbook for 3D archery, optimized for 3D targets and
-parkour. Archers log rounds target by target, including the exact shooting distance between
-stakes, and see how their accuracy develops over time. Parkour operators get a standard way to
-describe their courses.
+**Friendarazzi** is a multiplayer social photo-hunting Bingo web application where groups of friends
+turn hangouts, trips, parties, or everyday weeks into a candid photo-hunting game.
 
-Source input: [`../3d_archery_tracking_austria_product_requirements_document.md`](../3d_archery_tracking_austria_product_requirements_document.md).
+## Core Gameplay Loop
 
-## Problem
+1. **Lobby & Invitation:** Host creates a game lobby with grid size (`3×3`, `4×4`, `5×5`, optional
+   center Free Space) and proof visibility mode (`Undercover`, `LiveFeed`, `BlurredTeaser`) and
+   shares an invite link (`/join/[invite_code]`).
+2. **Drafting Phase:** Participants submit custom prompts evenly distributed across the other players
+   in the lobby, or pick and customize prompts from curated Quick-Start decks (*Night Out*, *Urlaub &
+   Festival*, *WG & Zuhause*, *Büro & Uni*).
+3. **Balanced Board Generation:** On locking prompts, each participant receives an individualized
+   Bingo card built with balanced matching that strictly excludes self-authored and self-targeted
+   tiles.
+4. **Active Hunt & Photo Proof:** Players upload photo proofs for targets in the mobile browser.
+   Photos are resized/compressed and stored via `ObjectStore`, with thumbnails generated for
+   `BlurredTeaser` mode.
+5. **Victory, Superlatives & Memories:** Completing a row, column, or diagonal ends the round, crowns
+   the winner with a Gold Medal, unlocks all boards and hidden photos, computes post-game
+   superlatives (*Most Wanted*, *Ghost*, *Quickest Draw*, *Sniper*), and renders a 1:1 proportional
+   match timeline alongside game-grouped *Caught* / *Captured* user galleries.
 
-Existing tools are score cards or tournament software. They do not track accuracy per parkour
-and per target over time, and they do not record distances between the fixed stake positions.
-
-## Roles
-
-Two kinds of role exist, and only the first is a property of the `Benutzer`.
-
-**Account roles** (`Benutzer.Rolle`, exactly one per `Benutzer`):
-
-| Account role | MVP | Description |
-|--------------|-----|-------------|
-| `Benutzer` | Yes | Every registered person: casual and power archers, and the `Administratoren` and `Mitarbeiter` of any `Anlage`. Owns personal data, logs Runden, reviews own history. |
-| `Systemadministrator` | Yes | Superuser. Creates and manages every `Anlage`, every `Benutzer`, and every setup in the product. |
-
-**Roles inside an `Anlage`** (`AnlageVerwaltung`, zero or more per `Benutzer`, one per `Anlage`):
-
-| Role | MVP | Description |
-|------|-----|-------------|
-| `Administrator` | Yes | Manages that `Anlage`'s `AnlageVerwaltungen` and everything a `Mitarbeiter` may do. |
-| `Mitarbeiter` | Yes | Manages Parkour, Ziele, and Pflöcke of that `Anlage`, and reads its statistics. |
-
-A `Benutzer` may hold an `AnlageVerwaltung` in several `Anlagen` or in none. It is granted inside an
-`Anlage`, never across the product. The role names stay bare (`Administrator`, `Mitarbeiter`) because
-`AnlageVerwaltung` already names the scope. The former `Anlagenbetreiber` role is replaced by these
-two.
-
-| Not an account role | MVP | Description |
-|---------------------|-----|-------------|
-| Turnierleiter (tournament lead) | No | Events, group scoring, leaderboards. Future. |
-| Gast (guest) | No | Logging without account. Not planned before accounts are stable. |
-
-Authorisation is not a permission grid. The product has two account roles and the two `Anlage` roles
-above; every use case decides for itself whether the caller may perform it, from the aggregates it
-loads. There is no generic role middleware and no permission table. See
-[`konto.md#ubiquitous-language`](konto.md#ubiquitous-language) for why a person is a `Benutzer` and
-their login is a `Konto`.
-
-## Domain terms
+## Domain Terms
 
 | Term | Meaning |
 |------|---------|
-| `Benutzer` | The logical identity of one person in the product: owns personal data, `Runden`, and `AnlageVerwaltungen`. |
-| `Konto` | One way to authenticate a `Benutzer`. In MVP an email address plus a password, one per `Benutzer`. |
-| `Anlage` | Physical site of a club or commercial operator. |
-| `AnlageVerwaltung` | A `Benutzer`'s role inside one `Anlage`: `Administrator` or `Mitarbeiter`. Not club membership. |
-| `Parkour` | Predefined ordered sequence of Ziele at an Anlage (for example "Große Runde, 32 Ziele"). The PRD calls this Route / Parkour-Layout. |
-| `Ziel` | One 3D animal target with master data: animal, target group 1–4, Pflock configuration. |
-| `Pflock` | Colored stake marking a shooting position (for example Weiß, Blau, Rot, Gelb), ordered near to far per Ziel. |
-| `Runde` | One logged pass of an archer through one Parkour on one date. The PRD calls this Session. |
-| `Schuss` | One registered arrow at one Ziel: arrow number, Wertungszone, shooting position. |
-| `Wertungszone` | `Spot`, `Kill`, `Body`, or `Miss`. |
-
-## MVP scope
-
-Decisions by PO on 2026-10-21:
-
-1. **Master data by superuser and `Anlage` roles.** The `Systemadministrator` creates the 2–3
-   pilot Anlagen and seeds their Parkour, Ziele, and Pflöcke. Inside an `Anlage`, its
-   `Administratoren` and `Mitarbeiter` maintain that Anlage's master data. A `Benutzer` without a
-   `AnlageVerwaltung` in an `Anlage` never creates or edits its master data.
-2. **Accounts, online-first.** Archers need a `Benutzer`. The app works online. Offline capture and
-   background sync (PWA, IndexedDB) are the next milestone after MVP.
-3. **Scoring: classic 3-arrow only**, shown as two Wertungen (Erster Treffer and Mehrschuss) from
-   the same logged Schüsse. See [`wertung.md`](wertung.md). WA 2-arrow and IFAA modes come later.
-4. **Web only.** The inherited Tauri desktop shell is removed. A native or desktop shell may return
-   later, so architecture must keep the core and API independent of the delivery shell
-   (see [`../decisions/0001-baseline-architecture.md`](../decisions/0001-baseline-architecture.md)).
-5. **Distance.** A slider between the Pflöcke of a Ziel records how far the shot was taken from,
-   as a distance in meters or as the `Pflock` itself. When the `Pflöcke` have configured distances
-   (optional, set by the `Anlage`'s `Administratoren` and `Mitarbeiter` and by the
-   `Systemadministrator`), the slider runs on a meter scale and records an interpolated distance;
-   when they have none, it clings to the nearest `Pflock` and records that stake.
-
-MVP capabilities:
-
-| Capability | Spec |
-|------------|------|
-| Classic 3-arrow scoring (Erster Treffer, Mehrschuss) | [`wertung.md`](wertung.md) |
-| Account registration and login | [`konto.md`](konto.md) |
-| Data protection, consent, and legal obligations | [`datenschutz.md`](datenschutz.md) |
-| Operations, security, and launch readiness | [`betrieb.md`](betrieb.md) |
-| Master data and Anlage membership: Anlage, Parkour, Ziel, Pflock | [`stammdaten.md`](stammdaten.md) |
-| Requesting a new Anlage | [`anlage-anfrage.md`](anlage-anfrage.md) |
-| Log a Runde target by target, with distance slider between Pflöcke | [`runde.md`](runde.md) |
-| Personal history: scores and first-arrow hit rate per Parkour over time | to be written |
-| Remove legacy branding and domain | [GitHub milestone "M0 Rebrand"](https://github.com/TimerErTim/logandaim.at/milestones) |
-
-## Non-goals for MVP
-
-- Operator self-service: a `Benutzer` requests an `Anlage`, a `Systemadministrator` decides. No
-  self-service creation, tournaments, leaderboards.
-- Global benchmarks across users (needs privacy and consent design first).
-- Equipment tracking, photo log, weather and terrain data, GPS target detection.
-- Damage reports, lost-arrow board, traffic heatmaps, announcements.
-- WA and IFAA scoring modes.
-- Offline-first capture (next milestone).
-
-## Quality bars
-
-**Draft — pending PO approval.** These are cross-cutting acceptance conditions for every
-user-visible capability, not a separate feature. They are written here because the charter is the
-only spec that covers more than one capability.
-
-- [ ] Q-5: Is the accessibility bar a launch gate for the M1 milestone, or may it ship shortly
-  after launch?
-
-### Accessibility
-
-Issues: #48.
-
-The app is used outdoors, one-handed, often with gloves. The core journeys (registration, login,
-logging a `Runde`, viewing history) meet WCAG 2.2 AA:
-
-1. Interactive targets are at least 44 by 44 pixels on the logging screen.
-2. Core journeys are completable by keyboard alone with a visible focus indicator.
-3. Form fields have programmatic labels; validation errors are announced to assistive technology.
-4. Text and essential controls meet AA contrast and stay legible on a phone in daylight.
-5. `Wertungszone` state is never encoded by colour alone.
-6. An automated accessibility check runs in CI and fails on new serious violations; a manual pass
-   covers the four core journeys.
-
-### Language and copy
-
-Issues: #49.
-
-1. No user-facing string is hardcoded in a component; all text comes from one locale source.
-2. Dates, numbers, and distances render in `de-AT` format.
-3. Domain terms match the glossary of this charter; a lint or test rejects legacy names, veterinary
-   terms, and stray English UI text.
-4. Validation and error messages come from one source and use the same wording for the same
-   condition everywhere.
-5. The locale setup can add a second locale later without moving strings again.
-
-## Import
-
-**Draft — pending PO approval.** See issue #52.
-
-An archer may bring existing paper or spreadsheet history in, so the first session is not an empty
-profile.
-
-1. A documented CSV schema defines the columns for `Runde`, date, `Parkour`, `Ziel`, `Pfeil`
-   position, and `Wertungszone`.
-2. Validation reports every failing row with a row number and a reason; nothing is written on
-   failure.
-3. A dry-run preview shows what would be imported, including computed `Wertungen`, before
-   committing.
-4. Imported `Runden` are marked as imported and are distinguishable in history.
-5. The import references existing master data only; an unknown `Parkour` or `Ziel` fails with a
-   clear message.
-6. Re-importing the same file does not duplicate `Runden`.
-
-Open questions:
-
-- [ ] Q-6: Does import belong to MVP onboarding or a later milestone?
-
-## Milestones
-
-| Milestone | Goal |
-|-----------|------|
-| M0 Rebrand | No legacy name, logo, domain, or Tauri shell remains. Build, check, and test pass. |
-| M1 MVP | Archer registers, picks a pilot Parkour, logs a Runde, sees personal history. |
-| M2 Offline | Full Runde capture without network, background sync. |
-| Later | Power-user features, operators, benchmarks, tournaments. |
-
-## Open questions (not blocking M0)
-
-- [ ] Q-1: Which 2–3 pilot Anlagen (for example Oberösterreich, Steiermark)? Needed before M1 seeding.
-- [x] Q-2: Distance input. Answered 2026-10-21, see MVP scope item 5.
-- [ ] Q-3: Privacy: which data is visible to other users in MVP? Default assumption: none.
-- [ ] Q-4: Bow class (Blankbogen, Recurve, Langbogen, Compound) per Runde in MVP?
-
-## Decision log
-
-| Date | Decision | By |
-|------|----------|----|
-| 2026-10-21 | MVP master data seeded by admin; archers only log rounds. | TimerErTim |
-| 2026-10-21 | Accounts required; online-first; offline sync is next milestone. | TimerErTim |
-| 2026-10-21 | MVP scoring: classic 3-arrow only. | TimerErTim |
-| 2026-10-21 | Remove Tauri for now; keep shell-agnostic architecture so it can return. | TimerErTim |
-| 2026-10-21 | Distance: slider between Pflöcke; meter estimate when Pflöcke have an optional configured distance. Refined 2026-11-06: the slider records a distance or a `Pflock`, and meter values only exist where `Distanzen` are configured. | TimerErTim |
-| 2026-10-21 | Two Wertungen (Erster Treffer, Mehrschuss) from unlimited logged Schüsse. | TimerErTim |
-| 2026-10-21 | Code prefix `logandaim`: `logandaim-*` crates, `LOGANDAIM_*` env vars, `Logandaim*` type names. | TimerErTim |
-| 2026-10-26 | Account roles are `Benutzer` and `Systemadministrator` only. Authority inside an `Anlage` is an `AnlageVerwaltung` (`Administrator`, `Mitarbeiter`) stored in the `Anlage`; the `Anlagenbetreiber` role is dropped. | TimerErTim (PO) |
-| 2026-10-26 | A `Benutzer` never creates an `Anlage`; they request one and a `Systemadministrator` decides. Authorisation lives in use cases, not in a permission table. | TimerErTim (PO) |
-
-## Revision history
-
-| Date | Change | By |
-|------|--------|----|
-| 2026-10-21 | Initial charter from PRD and PO decisions. | Agent (Claude) |
-| 2026-10-21 | Approved. | TimerErTim |
-| 2026-10-23 | Linked the konto.md draft for the accounts capability. | Agent (MiMo) |
-| 2026-10-23 | Added Draft "Quality bars" (accessibility, language) and "Import" sections, and linked the `datenschutz.md` and `betrieb.md` drafts. Approved MVP scope text unchanged; the new sections are pending PO approval. | Agent (Cursor) |
-| 2026-10-26 | Split roles into account roles (`Benutzer`, `Systemadministrator`) and per-`Anlage` `AnlageVerwaltungen` (`Administrator`, `Mitarbeiter`); master data is no longer superuser-only and the "Master data by admin" decision was rewritten. Linked `stammdaten.md` and `anlage-anfrage.md`. | Agent (Cursor) |
-| 2026-10-26 | Distinguished `Benutzer` (logical identity) from `Konto` (one way to authenticate it); renamed the per-`Anlage` relationship from `Mitgliedschaft` to `AnlageVerwaltung` and dropped the `Anlagen-` role prefix. | Agent (Cursor) |
-| 2026-11-06 | MVP scope decision 5 (distance) now states what the slider records — a distance in meters or the `Pflock` — and that meter values exist only where the `Pflöcke` configure them. Linked `runde.md` in the capability table. | Agent (Cursor) |
+| `Benutzer` / `Konto` | Authenticated person and credentials (`konto` supporting subdomain). |
+| `UserProfile` | Public identity, avatar, `gold_medal_count`, unlocked rank title (`RANK_TIERS`). |
+| `Game` | Bingo match with `InviteCode`, `GridSize`, `VisibilityMode`, and lifecycle state (`Lobby` → `Drafting` → `Active` → `Completed`). |
+| `PromptSubmission` | Custom or starter-deck action written by `author_user_id` about `target_user_id`. |
+| `Board` / `BoardTile` | Player's individualized grid and tile assignments (`author != owner && target != owner`). |
+| `Capture` | Uploaded photo proof (`image_storage_key`, `thumbnail_storage_key`, timestamp). |
+| `StarterDeck` | Curated Quick-Start deck templates seeded in SQLite migrations. |

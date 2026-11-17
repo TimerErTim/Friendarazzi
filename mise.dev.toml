@@ -4,5 +4,5 @@
 "gh" = "latest"
 
 [env]
-LOGANDAIM_LOG_LEVEL = "trace"
-LOGANDAIM_DEV = "1"
+FRIENDARAZZI_LOG_LEVEL = "trace"
+FRIENDARAZZI_DEV = "1"

@@ -1247,7 +1247,7 @@ export interface paths {
                 };
                 path?: never;
                 cookie?: {
-                    "__Host-logandaim_refresh"?: string | null;
+                    "__Host-friendarazzi_refresh"?: string | null;
                 };
             };
             requestBody?: never;

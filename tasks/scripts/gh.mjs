@@ -1,12 +1,12 @@
 // `gh` invocation shared by the release tasks.
 //
 // `gh` is a task tool, so mise puts it on PATH; a missing binary is a broken
-// setup, not a condition to tolerate. `LOGANDAIM_GH` only exists so the tasks can
+// setup, not a condition to tolerate. `FRIENDARAZZI_GH` only exists so the tasks can
 // be exercised against a stub.
 
 import { execFileSync } from "node:child_process";
 
-export const GH = process.env.LOGANDAIM_GH || "gh";
+export const GH = process.env.FRIENDARAZZI_GH || "gh";
 
 /**
  * Run `gh` and return stdout (trailing whitespace trimmed). Throws the underlying

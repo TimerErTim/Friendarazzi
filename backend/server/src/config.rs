@@ -4,7 +4,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-const DEFAULT_CONFIG_FILE: &str = "logandaim-server.json";
+const DEFAULT_CONFIG_FILE: &str = "friendarazzi-server.json";
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -49,12 +49,12 @@ impl Default for ServerConfig {
         Self {
             bind_address: "127.0.0.1".into(),
             bind_port: 3000,
-            database_url: "logandaim.db".into(),
+            database_url: "friendarazzi.db".into(),
             object_store_dir: PathBuf::from("storage/"),
             log_dir: None,
             signing_key_path: None,
-            token_issuer: "logandaim.at".into(),
-            token_audience: "logandaim-api".into(),
+            token_issuer: "friendarazzi.app".into(),
+            token_audience: "friendarazzi-api".into(),
             frontend_basis_url: "http://localhost:3001".into(),
             public_url: None,
             smtp_host: None,
@@ -62,7 +62,7 @@ impl Default for ServerConfig {
             smtp_verschlüsselung: SmtpVerschlüsselung::Klar,
             smtp_benutzername: None,
             smtp_passwort: None,
-            smtp_absender: "noreply@logandaim.at".into(),
+            smtp_absender: "noreply@friendarazzi.app".into(),
         }
     }
 }
@@ -84,15 +84,15 @@ pub enum SmtpVerschlüsselung {
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// Path to the config file (`.json` or `.toml`)
-    #[arg(long = "config-path", env = "LOGANDAIM_CONFIG_PATH")]
+    #[arg(long = "config-path", env = "FRIENDARAZZI_CONFIG_PATH")]
     pub config_path: Option<PathBuf>,
 
     /// IP address to bind to
-    #[arg(long, env = "LOGANDAIM_BIND_ADDRESS")]
+    #[arg(long, env = "FRIENDARAZZI_BIND_ADDRESS")]
     pub bind_address: Option<String>,
 
     /// Port to bind to
-    #[arg(long, env = "LOGANDAIM_BIND_PORT")]
+    #[arg(long, env = "FRIENDARAZZI_BIND_PORT")]
     pub bind_port: Option<u16>,
 
     /// Subpath this service is hosted on
@@ -100,59 +100,59 @@ pub struct Cli {
     pub subpath: Option<String>,
 
     /// Database URL
-    #[arg(long, env = "LOGANDAIM_DATABASE_URL")]
+    #[arg(long, env = "FRIENDARAZZI_DATABASE_URL")]
     pub database_url: Option<String>,
 
     /// Directory for object store
-    #[arg(long, env = "LOGANDAIM_OBJECT_STORE_DIR")]
+    #[arg(long, env = "FRIENDARAZZI_OBJECT_STORE_DIR")]
     pub object_store_dir: Option<PathBuf>,
 
     /// Directory for rotated JSON log files (omit to disable logging)
-    #[arg(long, env = "LOGANDAIM_LOG_DIR")]
+    #[arg(long, env = "FRIENDARAZZI_LOG_DIR")]
     pub log_dir: Option<PathBuf>,
 
     /// PKCS#8 PEM private key that signs access tokens; omit to generate one per process
-    #[arg(long, env = "LOGANDAIM_SIGNING_KEY_PATH")]
+    #[arg(long, env = "FRIENDARAZZI_SIGNING_KEY_PATH")]
     pub signing_key_path: Option<PathBuf>,
 
     /// Issuer claim of every access token
-    #[arg(long, env = "LOGANDAIM_TOKEN_ISSUER")]
+    #[arg(long, env = "FRIENDARAZZI_TOKEN_ISSUER")]
     pub token_issuer: Option<String>,
 
     /// Audience claim of every access token
-    #[arg(long, env = "LOGANDAIM_TOKEN_AUDIENCE")]
+    #[arg(long, env = "FRIENDARAZZI_TOKEN_AUDIENCE")]
     pub token_audience: Option<String>,
 
     /// Frontend origin the mailed links point at
-    #[arg(long, env = "LOGANDAIM_FRONTEND_BASIS_URL")]
+    #[arg(long, env = "FRIENDARAZZI_FRONTEND_BASIS_URL")]
     pub frontend_basis_url: Option<String>,
 
     /// Public URL of the server
-    #[arg(long, env = "LOGANDAIM_PUBLIC_URL")]
+    #[arg(long, env = "FRIENDARAZZI_PUBLIC_URL")]
     pub public_url: Option<String>,
 
     /// SMTP relay host; omit to run without mail delivery
-    #[arg(long, env = "LOGANDAIM_SMTP_HOST")]
+    #[arg(long, env = "FRIENDARAZZI_SMTP_HOST")]
     pub smtp_host: Option<String>,
 
     /// SMTP relay port
-    #[arg(long, env = "LOGANDAIM_SMTP_PORT")]
+    #[arg(long, env = "FRIENDARAZZI_SMTP_PORT")]
     pub smtp_port: Option<u16>,
 
     /// SMTP transport: klar, start-tls, or implizit
-    #[arg(long, env = "LOGANDAIM_SMTP_VERSCHLUESSELUNG")]
+    #[arg(long, env = "FRIENDARAZZI_SMTP_VERSCHLUESSELUNG")]
     pub smtp_verschlüsselung: Option<SmtpVerschlüsselung>,
 
     /// SMTP username
-    #[arg(long, env = "LOGANDAIM_SMTP_BENUTZERNAME")]
+    #[arg(long, env = "FRIENDARAZZI_SMTP_BENUTZERNAME")]
     pub smtp_benutzername: Option<String>,
 
     /// SMTP password
-    #[arg(long, env = "LOGANDAIM_SMTP_PASSWORT")]
+    #[arg(long, env = "FRIENDARAZZI_SMTP_PASSWORT")]
     pub smtp_passwort: Option<String>,
 
     /// Envelope sender of transactional mail
-    #[arg(long, env = "LOGANDAIM_SMTP_ABSENDER")]
+    #[arg(long, env = "FRIENDARAZZI_SMTP_ABSENDER")]
     pub smtp_absender: Option<String>,
 }
 
@@ -323,11 +323,11 @@ mod tests {
     /// value must be `klar`, not the serialised `camelCase` name.
     #[test_log::test]
     fn smtp_verschlüsselung_wird_in_kebab_schreibweise_gelesen() {
-        let klar = Cli::try_parse_from(["logandaim-server"]).unwrap();
+        let klar = Cli::try_parse_from(["friendarazzi-server"]).unwrap();
         assert_eq!(klar.smtp_verschlüsselung, None);
 
         let start =
-            Cli::try_parse_from(["logandaim-server", "--smtp-verschlüsselung", "start-tls"])
+            Cli::try_parse_from(["friendarazzi-server", "--smtp-verschlüsselung", "start-tls"])
                 .expect("start-tls ist der von Compose erwartete Wert");
         assert_eq!(
             start.smtp_verschlüsselung,
@@ -337,7 +337,7 @@ mod tests {
         // The serialised spelling is not an accepted CLI value, which is why compose must
         // never carry it. Guarding it here keeps the two spellings from drifting back.
         assert!(
-            Cli::try_parse_from(["logandaim-server", "--smtp-verschlüsselung", "startTls"])
+            Cli::try_parse_from(["friendarazzi-server", "--smtp-verschlüsselung", "startTls"])
                 .is_err()
         );
     }
@@ -345,20 +345,20 @@ mod tests {
     #[test_log::test]
     fn overlays_log_dir() {
         let cli = Cli {
-            log_dir: Some(PathBuf::from("/var/log/logandaim.at")),
+            log_dir: Some(PathBuf::from("/var/log/friendarazzi")),
             ..Cli::default()
         };
         let resolved = cli_overlay(cli);
         assert_eq!(
             resolved.log_dir,
-            Some(PathBuf::from("/var/log/logandaim.at"))
+            Some(PathBuf::from("/var/log/friendarazzi"))
         );
     }
 
     #[test_log::test]
     fn loads_log_dir_from_json_file() {
         let dir = std::env::temp_dir().join(format!(
-            "logandaim-server-config-log-{}",
+            "friendarazzi-server-config-log-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -383,7 +383,7 @@ mod tests {
     #[test_log::test]
     fn loads_log_dir_from_toml_file() {
         let dir = std::env::temp_dir().join(format!(
-            "logandaim-server-config-log-{}",
+            "friendarazzi-server-config-log-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -407,14 +407,14 @@ logDir = "server-logs/"
 
     #[test_log::test]
     fn missing_default_file_uses_defaults() {
-        let path = PathBuf::from("definitely-missing-logandaim-server.json");
+        let path = PathBuf::from("definitely-missing-friendarazzi-server.json");
         let loaded = load_file(&path, false).unwrap();
         assert_eq!(loaded, ServerConfig::default());
     }
 
     #[test_log::test]
     fn missing_explicit_file_errors() {
-        let path = PathBuf::from("definitely-missing-logandaim-server.json");
+        let path = PathBuf::from("definitely-missing-friendarazzi-server.json");
         let err = load_file(&path, true).unwrap_err();
         assert!(matches!(err, ConfigError::NotFound { .. }));
     }
@@ -422,7 +422,7 @@ logDir = "server-logs/"
     #[test_log::test]
     fn loads_json_file() {
         let dir = std::env::temp_dir().join(format!(
-            "logandaim-server-config-{}",
+            "friendarazzi-server-config-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -437,7 +437,7 @@ logDir = "server-logs/"
                 "objectStoreDir": "objects/",
                 "bindAddress": "10.0.0.1",
                 "bindPort": 1234,
-                "publicUrl": "http://test.logandaim.at/"
+                "publicUrl": "http://test.friendarazzi.app/"
             }"#,
         )
         .unwrap();
@@ -447,7 +447,10 @@ logDir = "server-logs/"
         assert_eq!(loaded.object_store_dir, PathBuf::from("objects/"));
         assert_eq!(loaded.bind_address, "10.0.0.1");
         assert_eq!(loaded.bind_port, 1234);
-        assert_eq!(loaded.public_url, Some("http://test.logandaim.at/".into()));
+        assert_eq!(
+            loaded.public_url,
+            Some("http://test.friendarazzi.app/".into())
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -455,7 +458,7 @@ logDir = "server-logs/"
     #[test_log::test]
     fn malformed_explicit_file_errors() {
         let dir = std::env::temp_dir().join(format!(
-            "logandaim-server-config-bad-{}",
+            "friendarazzi-server-config-bad-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -474,7 +477,7 @@ logDir = "server-logs/"
     #[test_log::test]
     fn clap_cli_wins_over_env_for_config_path() {
         let cli =
-            Cli::try_parse_from(["logandaim-server", "--config-path", "/tmp/cli.json"]).unwrap();
+            Cli::try_parse_from(["friendarazzi-server", "--config-path", "/tmp/cli.json"]).unwrap();
         assert_eq!(cli.config_path, Some(PathBuf::from("/tmp/cli.json")));
     }
 }

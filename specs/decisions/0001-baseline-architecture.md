@@ -10,7 +10,7 @@ deciders: TimerErTim
 
 ## Context
 
-logandaim.at starts from the YAMS proof of concept: a Rust workspace (hexagonal core, API layer,
+friendarazzi.app starts from the YAMS proof of concept: a Rust workspace (hexagonal core, API layer,
 SQLite adapter, Poem HTTP server, scheduler) and a Next.js App Router frontend built as static
 export, embedded in a Tauri desktop shell.
 
@@ -66,7 +66,7 @@ Three things stay ASCII, because something outside the compiler consumes them:
 1. **Module names.** `mod x;` resolves to a file path, and Rust refuses a non-ASCII one. So
    `mod bestaetigung;` in `domain/konto/mod.rs` is correct, and the file keeps that name.
 2. **Environment variables.** An operator types them, and a shell cannot be relied on to carry
-   an umlaut through every hop. `LOGANDAIM_SMTP_VERSCHLUESSELUNG` stays as it is.
+   an umlaut through every hop. `FRIENDARAZZI_SMTP_VERSCHLUESSELUNG` stays as it is.
 3. **Words borrowed from English** (`Request`, `Issuer`, `Value`) are not transliterations, and
    the check ignores them.
 

@@ -17,9 +17,9 @@ now the session mechanism, so the earlier cross-site cookie reasoning no longer 
 ADR-0001 places the static Next.js export on GitHub Pages and the Rust API (Poem server, SQLite) on
 a private VPS over HTTPS. Frontend and backend are different origins:
 
-- Frontend: `https://logandaim.at` (custom domain on GitHub Pages), plus `https://<user>.github.io`
+- Frontend: `https://friendarazzi.app` (custom domain on GitHub Pages), plus `https://<user>.github.io`
   for pull-request previews.
-- Backend: `https://api.logandaim.at` (VPS).
+- Backend: `https://api.friendarazzi.app` (VPS).
 
 ADR-0002 rejected bearer tokens because logout, password recovery, and account deletion all need
 immediate revocation, and a stateless JWT cannot be revoked. That objection is correct and this ADR
@@ -75,7 +75,7 @@ on reuse.
    the API origin with `HttpOnly`, `Secure`, and `SameSite=Lax`, so JavaScript cannot read it and a
    page reload can still renew. Each rotation re-sets the cookie.
 7. **CORS with credentials for the same-site frontend.** Explicit origin allowlist
-   (`https://logandaim.at`, plus the dev server's documented ports `3000` and `4173` on
+   (`https://friendarazzi.app`, plus the dev server's documented ports `3000` and `4173` on
    `localhost`/`127.0.0.1`) emitting `Access-Control-Allow-Headers: Authorization, Content-Type`,
    `Access-Control-Allow-Credentials: true` for those origins, and `Access-Control-Allow-Origin`
    never `*` and never an unvalidated reflection. The credential is the refresh cookie, sent only by
@@ -143,7 +143,7 @@ and is not part of the contract; the contract lives in SPEC-konto's rules and ac
 | `email_bestätigungen` | `id`, `email` (normalized, **not** a `konto_id` — the `Konto` does not exist yet), `token_hash`, `expires_at`, `spent_at` |
 | `passwort_wiederherstellungen` | `id`, `konto_id`, `token_hash`, `expires_at`, `spent_at` |
 
-Implemented in `crates/logandaim-sqlite/src/migrations/v0002_konto.rs`; the HTTP edge is in `crates/logandaim-api/src/http/` (`mod.rs`, `jwt.rs`, `auth.rs`, `cookie.rs`, `extractors.rs`, `responses/`), the typed facade in `crates/logandaim-api/src/api/mod.rs`, and account request DTOs in `crates/logandaim-api/src/api/requests/konto.rs`. The table and column names
+Implemented in `crates/friendarazzi-sqlite/src/migrations/v0002_konto.rs`; the HTTP edge is in `crates/friendarazzi-api/src/http/` (`mod.rs`, `jwt.rs`, `auth.rs`, `cookie.rs`, `extractors.rs`, `responses/`), the typed facade in `crates/friendarazzi-api/src/api/mod.rs`, and account request DTOs in `crates/friendarazzi-api/src/api/requests/konto.rs`. The table and column names
 are English because they name the technical objects above (`Session`, `SigningKey`), not product
 nouns; `benutzer`, `konten` and `passwort_wiederherstellungen` keep their German names because those
 *are* product nouns. Every row carries `_version` for optimistic concurrency, as the other tables do.

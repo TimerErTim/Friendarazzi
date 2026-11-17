@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-import type { AuthPhase } from "./logandaim-api";
+import type { AuthPhase } from "./friendarazzi-api";
 
 const checking: AuthPhase = Object.freeze({ status: "checking" });
 

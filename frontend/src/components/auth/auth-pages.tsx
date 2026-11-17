@@ -180,7 +180,7 @@ export function LoginPage() {
   return (
     <AuthPage
       title="Anmelden"
-      description="Öffnen Sie Ihr Logbuch mit E-Mail-Adresse und Passwort."
+      description="Melden Sie sich mit E-Mail-Adresse und Passwort bei Friendarazzi an."
       footer={
         <>
           <p>

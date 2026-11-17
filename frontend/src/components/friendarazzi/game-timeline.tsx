@@ -3,7 +3,7 @@
 import { Camera, Clock } from "lucide-react";
 import { useState } from "react";
 
-import type { CaptureFeedItem } from "@/api/logandaim-api";
+import type { CaptureFeedItem } from "@/api/friendarazzi-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarginNote } from "@/components/ui/paper-rule";
 import { cn } from "@/lib/cn";

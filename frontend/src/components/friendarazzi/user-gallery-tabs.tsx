@@ -4,7 +4,7 @@ import { Award, Camera, Trophy } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import type { CaptureFeedItem, GalleryGameGroup } from "@/api/logandaim-api";
+import type { CaptureFeedItem, GalleryGameGroup } from "@/api/friendarazzi-api";
 import { Badge } from "@/components/ui/badge";
 import { MarginNote } from "@/components/ui/paper-rule";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

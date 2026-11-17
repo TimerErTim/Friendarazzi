@@ -1,8 +1,9 @@
-# logandaim.at — Repository Context
+# Friendarazzi — Repository Context
 
-logandaim.at is an Austria-wide online logbook for 3D archery: a Rust backend (edition **2024**,
-**async** throughout) and a Next.js App Router frontend that is exported statically. The backend
-follows **Domain-Driven Design** and **hexagonal architecture**. Crates are prefixed `logandaim-`.
+Friendarazzi is a multiplayer social photo-hunting Bingo web application: a Rust backend
+(edition **2024**, **async** throughout) and a Next.js App Router frontend that is exported
+statically. The backend follows **Domain-Driven Design** and **hexagonal architecture**.
+Crates are prefixed `friendarazzi-`.
 
 ## Where the truth lives
 
@@ -13,7 +14,7 @@ Read the one that owns the question; do not restate it here.
 | How work flows (issues, PRs, labels, CI, commits) | [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md) |
 | What the product should do | [`specs/`](../specs/README.md) — `PO-approved` specs only |
 | In which order to build one feature slice | [`docs/vertical-slice.md`](../docs/vertical-slice.md) |
-| How to model domain types | [`crates/logandaim-core/src/domain/README.md`](../crates/logandaim-core/src/domain/README.md) — module docs |
+| How to model domain types | [`crates/friendarazzi-core/src/domain/README.md`](../crates/friendarazzi-core/src/domain/README.md) — module docs |
 | How the UI looks and behaves | [`.cursor/rules/design-system.mdc`](rules/design-system.mdc) |
 | Server configuration and environment variables | [`backend/README.md`](../backend/README.md) |
 | The code map (symbols, dependencies) | `graphify` (see [`graphify.mdc`](rules/graphify.mdc)) |
@@ -22,13 +23,13 @@ Read the one that owns the question; do not restate it here.
 
 ```
 crates/
-├── logandaim-core/         # Domain, use cases, port definitions
-├── logandaim-api/          # Public API surface: DTOs, LogandaimAppApi, OpenAPI
-├── logandaim-sqlite/       # SQLite/libsql repository adapter
-├── logandaim-fakes/        # In-memory adapters, FixedClock
-├── logandaim-filesystemstore/  # Object-store adapter
+├── friendarazzi-core/         # Domain, use cases, port definitions
+├── friendarazzi-api/          # Public API surface: DTOs, FriendarazziAppApi, OpenAPI
+├── friendarazzi-sqlite/       # SQLite/libsql repository adapter
+├── friendarazzi-fakes/        # In-memory adapters, FixedClock
+├── friendarazzi-filesystemstore/  # Object-store adapter
 └── molting/                # Generic async migration framework
-backend/server/             # Standalone HTTP server (logandaim-server)
+backend/server/             # Standalone HTTP server (friendarazzi-server)
 frontend/src/               # Next.js UI (App Router, TanStack Query)
 tasks/                      # mise task definitions
 specs/                      # Product intent (PO-owned)
@@ -40,11 +41,11 @@ mise.toml                   # Tool, env, and task orchestration
 ```
 backend/server (Poem OpenAPI)          driving adapter
         ↓
-logandaim-api — LogandaimAppApi, schema DTOs, HTTP status mapping
+friendarazzi-api — FriendarazziAppApi, schema DTOs, HTTP status mapping
         ↓
-logandaim-core — App, use cases, domain, ports
+friendarazzi-core — App, use cases, domain, ports
         ↓
-logandaim-sqlite — SQLite UoW, repositories, migrations
+friendarazzi-sqlite — SQLite UoW, repositories, migrations
 ```
 
 Dependency rule: **inward only**. Core knows nothing about HTTP or SQLite.
@@ -91,7 +92,7 @@ Use **proper UTF-8** in identifiers and persisted names. Never transliterate uml
 
 - **`UseCase`** — one struct per write operation; `async fn perform(self, ctx)` returns
   `ResultReport<Output, Context>`. Use cases enter and finish the UoW themselves. Reads are not
-  use cases: they run inline as `execute_fn` closures in `LogandaimAppApi`.
+  use cases: they run inline as `execute_fn` closures in `FriendarazziAppApi`.
 - **UoW** — `ctx.enter()` for an owned UoW, `ctx.sub(&uow)` for nested work (nested `enter` joins
   the outer TX; nested `commit`/`rollback` are no-ops). Collect work without `?` across the UoW,
   then `uow.finish(result, ctx)`. Dropping a UoW that neither committed nor rolled back panics.
@@ -145,17 +146,17 @@ adapters emit `debug!`/`trace!` events only, never duplicate spans.
    [`docs/vertical-slice.md`](../docs/vertical-slice.md) explains the pointer wiring.
 4. New non-repository port: add an `Instrumented*` wrapper and wire it in `ExecutionContext`.
 
-`backend/server/src/tracing_setup.rs` reads `LOGANDAIM_LOG_LEVEL` (default `info`).
+`backend/server/src/tracing_setup.rs` reads `FRIENDARAZZI_LOG_LEVEL` (default `info`).
 
 ## API layer
 
-`LogandaimAppApi` is a thin translation: request → use case → schema DTO. Writes go through
+`FriendarazziAppApi` is a thin translation: request → use case → schema DTO. Writes go through
 `App::execute`; reads run inline as one-off `execute_fn` closures and keep their refusal enum in
 `api/errors.rs`. No business rules, no `poem` or OpenAPI types leaking into core, and none in the
 facade either: the library compiles with `--no-default-features`. Schema DTOs are separate from
 domain types; request DTOs are `…Request` and convert with `From`/`TryFrom`.
 
-`LogandaimApiSpec` in `crates/logandaim-api/src/http/mod.rs` is the HTTP edge: `#[OpenApi]` handlers
+`FriendarazziApiSpec` in `crates/friendarazzi-api/src/http/mod.rs` is the HTTP edge: `#[OpenApi]` handlers
 and native `poem_openapi` extractors. Its supporting HTTP code is split into `http/auth.rs`,
 `http/jwt.rs`, `http/cookie.rs`, `http/extractors.rs`, and `http/responses/`. The typed facade is
 `api/mod.rs`; request DTOs are grouped by domain under `api/requests/`. HTTP status mapping lives in
@@ -170,16 +171,16 @@ After any schema or route change, run `mise run sync:openapi`; `mise run check` 
 | Layer | Where | What |
 |-------|-------|------|
 | Domain unit | `#[cfg(test)]` in the domain source file | Isolated value-object and aggregate rules |
-| Business conformance | `crates/logandaim-core/tests/cases/` | Full use-case flows against `logandaim-fakes` |
-| Adapter conformance | `crates/logandaim-sqlite/tests/` | The same cases against real SQLite |
-| E2E / API | `crates/logandaim-api/tests/e2e/` | `LogandaimApiTestClient` over Poem `TestClient` |
+| Business conformance | `crates/friendarazzi-core/tests/cases/` | Full use-case flows against `friendarazzi-fakes` |
+| Adapter conformance | `crates/friendarazzi-sqlite/tests/` | The same cases against real SQLite |
+| E2E / API | `crates/friendarazzi-api/tests/e2e/` | `FriendarazziApiTestClient` over Poem `TestClient` |
 
-Cases live once in `logandaim-core/tests/cases/` and are shared into the SQLite harness with
+Cases live once in `friendarazzi-core/tests/cases/` and are shared into the SQLite harness with
 `#[path]`; each harness supplies its own `base_app_builder()`. Tests that need a fixed date use
-`logandaim_fakes::FixedClock`. Never copy a case to run it twice.
+`friendarazzi_fakes::FixedClock`. Never copy a case to run it twice.
 
 `cases/` proves UoW parity across adapters. A test that validates one adapter, or one use case
-against one adapter, is a normal integration test beside it (`crates/logandaim-core/tests/*.rs`),
+against one adapter, is a normal integration test beside it (`crates/friendarazzi-core/tests/*.rs`),
 not a shared case.
 
 `mise run test` wraps two nextest profiles (`.config/nextest.toml`): `test:unit` runs everything that
@@ -187,14 +188,14 @@ needs no external service, `test:e2e` runs the `e2e` binary with the Mailpit dae
 
 ## Frontend
 
-`LogandaimApi` (`frontend/src/api/logandaim-api.ts`) is a transport-agnostic interface;
-`HttpLogandaimApi` implements it and `createLogandaimApi()` in `frontend/src/api/index.ts` is the
+`FriendarazziApi` (`frontend/src/api/friendarazzi-api.ts`) is a transport-agnostic interface;
+`HttpFriendarazziApi` implements it and `createFriendarazziApi()` in `frontend/src/api/index.ts` is the
 only place that picks one. Components never see HTTP and never call the API directly: all server
 state goes through the TanStack Query hooks in `frontend/src/api/hooks/`, with keys in
 `query-keys.ts`. Never mirror server state in `useState`; use `queryClient.setQueryData` for
 optimistic updates.
 
-Configuration is static and baked in at build time (`NEXT_PUBLIC_LOGANDAIM_*`); there is no runtime
+Configuration is static and baked in at build time (`NEXT_PUBLIC_FRIENDARAZZI_*`); there is no runtime
 config file and no async bootstrap. Keep the access token in frontend memory only; never persist it
 to `localStorage` or a cookie. The refresh token is held in the API's `HttpOnly` cookie. See
 [`docs/vertical-slice.md`](../docs/vertical-slice.md) for the seam and the state rules.

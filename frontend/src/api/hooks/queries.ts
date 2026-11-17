@@ -2,22 +2,22 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { useAuth } from "../auth-provider";
-import { useLogandaimApi } from "../provider";
-import { logandaimKeys } from "../query-keys";
+import { useFriendarazziApi } from "../provider";
+import { friendarazziKeys } from "../query-keys";
 
 export function useHealthQuery() {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   return useQuery({
-    queryKey: logandaimKeys.health(),
+    queryKey: friendarazziKeys.health(),
     queryFn: () => api.health(),
   });
 }
 
 export function useBenutzerQuery() {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.benutzer(),
+    queryKey: friendarazziKeys.benutzer(),
     queryFn: () => api.benutzerAbrufen(),
     enabled: phase.status === "authenticated",
     retry: false,
@@ -25,10 +25,10 @@ export function useBenutzerQuery() {
 }
 
 export function useDecksQuery() {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.decks(),
+    queryKey: friendarazziKeys.decks(),
     queryFn: () => api.decksList(),
     enabled: phase.status === "authenticated",
     staleTime: 10 * 60_000,
@@ -36,10 +36,10 @@ export function useDecksQuery() {
 }
 
 export function useGamesQuery() {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.games.all(),
+    queryKey: friendarazziKeys.games.all(),
     queryFn: () => api.gamesList(),
     enabled: phase.status === "authenticated",
     refetchInterval: 5000,
@@ -48,10 +48,10 @@ export function useGamesQuery() {
 }
 
 export function useGameByCodeQuery(code: string | null) {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.games.byCode(code ?? ""),
+    queryKey: friendarazziKeys.games.byCode(code ?? ""),
     queryFn: () => api.gameByInviteCode(code ?? ""),
     enabled: phase.status === "authenticated" && Boolean(code?.trim()),
     retry: false,
@@ -59,10 +59,10 @@ export function useGameByCodeQuery(code: string | null) {
 }
 
 export function useGameDetailQuery(gameId: string | null) {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.games.detail(gameId ?? ""),
+    queryKey: friendarazziKeys.games.detail(gameId ?? ""),
     queryFn: () => api.gameDetail(gameId ?? ""),
     enabled: phase.status === "authenticated" && Boolean(gameId),
     refetchInterval: (query) =>
@@ -72,10 +72,10 @@ export function useGameDetailQuery(gameId: string | null) {
 }
 
 export function useUserProfileQuery(userId: string | null) {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.profiles.detail(userId ?? ""),
+    queryKey: friendarazziKeys.profiles.detail(userId ?? ""),
     queryFn: () => api.profileGet(userId ?? ""),
     enabled: phase.status === "authenticated" && Boolean(userId),
     retry: false,
@@ -83,10 +83,10 @@ export function useUserProfileQuery(userId: string | null) {
 }
 
 export function useUserGalleryQuery(userId: string | null) {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.profiles.gallery(userId ?? ""),
+    queryKey: friendarazziKeys.profiles.gallery(userId ?? ""),
     queryFn: () => api.userGallery(userId ?? ""),
     enabled: phase.status === "authenticated" && Boolean(userId),
     retry: false,
@@ -95,10 +95,10 @@ export function useUserGalleryQuery(userId: string | null) {
 
 /** Fetch an authenticated media blob and return a managed object URL. */
 export function useMediaObjectUrl(storageKey: string | null | undefined) {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const phase = useAuth();
   const query = useQuery({
-    queryKey: logandaimKeys.media(storageKey ?? ""),
+    queryKey: friendarazziKeys.media(storageKey ?? ""),
     queryFn: () => api.fetchMediaBlob(storageKey ?? ""),
     enabled: phase.status === "authenticated" && Boolean(storageKey),
     staleTime: 10 * 60_000,

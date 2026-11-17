@@ -1,20 +1,20 @@
 /** Hierarchical keys for TanStack Query — invalidate at the right granularity. */
-export const logandaimKeys = {
+export const friendarazziKeys = {
   root: ["friendarazzi"] as const,
-  health: () => [...logandaimKeys.root, "health"] as const,
-  benutzer: () => [...logandaimKeys.root, "benutzer"] as const,
-  decks: () => [...logandaimKeys.root, "decks"] as const,
+  health: () => [...friendarazziKeys.root, "health"] as const,
+  benutzer: () => [...friendarazziKeys.root, "benutzer"] as const,
+  decks: () => [...friendarazziKeys.root, "decks"] as const,
   games: {
-    all: () => [...logandaimKeys.root, "games"] as const,
-    detail: (id: string) => [...logandaimKeys.games.all(), id] as const,
+    all: () => [...friendarazziKeys.root, "games"] as const,
+    detail: (id: string) => [...friendarazziKeys.games.all(), id] as const,
     byCode: (code: string) =>
-      [...logandaimKeys.games.all(), "by-code", code] as const,
+      [...friendarazziKeys.games.all(), "by-code", code] as const,
   },
   profiles: {
-    all: () => [...logandaimKeys.root, "profiles"] as const,
-    detail: (id: string) => [...logandaimKeys.profiles.all(), id] as const,
+    all: () => [...friendarazziKeys.root, "profiles"] as const,
+    detail: (id: string) => [...friendarazziKeys.profiles.all(), id] as const,
     gallery: (id: string) =>
-      [...logandaimKeys.profiles.all(), id, "gallery"] as const,
+      [...friendarazziKeys.profiles.all(), id, "gallery"] as const,
   },
-  media: (key: string) => [...logandaimKeys.root, "media", key] as const,
+  media: (key: string) => [...friendarazziKeys.root, "media", key] as const,
 };

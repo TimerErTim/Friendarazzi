@@ -7,12 +7,12 @@ import { useState } from "react";
 
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
-import { useFriendarazziMutations, useGamesQuery } from "@/api/hooks";
 import {
   GameStatus,
   type GameSummary,
   VisibilityMode,
-} from "@/api/logandaim-api";
+} from "@/api/friendarazzi-api";
+import { useFriendarazziMutations, useGamesQuery } from "@/api/hooks";
 import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";

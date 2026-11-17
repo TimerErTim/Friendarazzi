@@ -1,14 +1,14 @@
 #:schema https://mise.jdx.dev/schema/mise-task.json
 
-# CI sets `LOGANDAIM_BUILD_RELEASE=true`; a local run stays on the debug profile for
+# CI sets `FRIENDARAZZI_BUILD_RELEASE=true`; a local run stays on the debug profile for
 # an incremental rebuild.
 
 ["build:server"]
 description = "Build the standalone backend server binary"
 usage = """
-flag "--release" env="LOGANDAIM_BUILD_RELEASE" help="Compile with the release profile"
+flag "--release" env="FRIENDARAZZI_BUILD_RELEASE" help="Compile with the release profile"
 """
-run = "cargo build -p logandaim-server{% if usage.release %} --release{% endif %}"
+run = "cargo build -p friendarazzi-server{% if usage.release %} --release{% endif %}"
 
 ["build:frontend"]
 description = "Build the static Next.js frontend export"

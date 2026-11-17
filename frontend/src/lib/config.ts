@@ -16,11 +16,11 @@ export const config = {
   // A missing value therefore degrades to a same-origin base URL, which is wrong
   // but never ships: the Pages workflow fails the build without the variable, and
   // `dev:frontend` supplies the local default.
-  apiBaseUrl: (process.env.NEXT_PUBLIC_LOGANDAIM_API_URL || "").replace(
+  apiBaseUrl: (process.env.NEXT_PUBLIC_FRIENDARAZZI_API_URL || "").replace(
     /\/+$/,
     "",
   ),
-  dev: process.env.NEXT_PUBLIC_LOGANDAIM_DEV
-    ? process.env.NEXT_PUBLIC_LOGANDAIM_DEV === "true"
+  dev: process.env.NEXT_PUBLIC_FRIENDARAZZI_DEV
+    ? process.env.NEXT_PUBLIC_FRIENDARAZZI_DEV === "true"
     : process.env.NODE_ENV === "development",
 } as const;

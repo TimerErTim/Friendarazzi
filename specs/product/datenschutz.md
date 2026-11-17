@@ -11,7 +11,7 @@ superseded_by: null
 
 ## Problem
 
-logandaim.at processes personal data of Austrian archers: an `E-Mail-Adresse`, a `Passwort` hash,
+friendarazzi.app processes personal data of Austrian archers: an `E-Mail-Adresse`, a `Passwort` hash,
 login metadata, and a sporting history of `Runden` and `Schüsse`. Austria is an EU member state, so
 GDPR applies in full. The accounts spec ([`konto.md`](konto.md)) covers only self-service deletion;
 the remaining obligations — information, consent, export, retention, processors, and breach
@@ -64,7 +64,7 @@ members. Statistics read inside an `Anlage` are aggregates across its `Runden`.
 
 | Term | Meaning |
 |------|---------|
-| `Verantwortlicher` | Controller: the operator of logandaim.at. |
+| `Verantwortlicher` | Controller: the operator of friendarazzi.app. |
 | `Auftragsverarbeiter` | Processor acting on documented instructions (hosting, mail, backups). |
 | `Einwilligung` | Consent: a recorded, specific, revocable permission. |
 | `Betroffenenanfrage` | Data-subject request: access, rectification, erasure, restriction, objection, portability. |

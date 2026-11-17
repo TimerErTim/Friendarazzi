@@ -1,5 +1,5 @@
 ---
-description: Agentic project management workflow for logandaim.at (specs, GitHub issues, changelog)
+description: Agentic project management workflow for Friendarazzi (specs, GitHub issues, changelog)
 alwaysApply: true
 ---
 
@@ -7,7 +7,7 @@ alwaysApply: true
 
 Follow [.github/CONTRIBUTING.md](../../.github/CONTRIBUTING.md) and [specs/README.md](../../specs/README.md).
 
-- GitHub `TimerErTim/logandaim.at` is the hub: issues are work items, PRs are delivery. No local backlog files.
+- GitHub `TimerErTim/Friendarazzi` is the hub: issues are work items, PRs are delivery. No local backlog files.
 - Product intent lives in `specs/product/`. Only implement against `PO-approved` specs and `ready` issues.
 - Specs and ADRs you write are `Draft` / `Proposed`. Never set `PO-approved`, `Accepted`, or `Superseded`.
 - If a spec does not define the behavior you need: stop, comment on the issue, and label it `needs-PO`. Do not guess.

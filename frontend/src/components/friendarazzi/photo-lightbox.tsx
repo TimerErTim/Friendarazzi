@@ -2,7 +2,7 @@
 
 import { ArrowRight, Clock } from "lucide-react";
 
-import type { CaptureFeedItem } from "@/api/logandaim-api";
+import type { CaptureFeedItem } from "@/api/friendarazzi-api";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,

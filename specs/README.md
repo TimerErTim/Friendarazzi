@@ -1,8 +1,8 @@
 # Specifications
 
-`specs/` is the version-controlled source of **product intent** for logandaim.at.
+`specs/` is the version-controlled source of **product intent** for Friendarazzi.
 It is not a backlog. Work items, priorities, and progress live in
-[GitHub Issues](https://github.com/TimerErTim/logandaim.at/issues) and the GitHub Project
+[GitHub Issues](https://github.com/TimerErTim/Friendarazzi/issues) and the GitHub Project
 (see [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md)).
 
 | Record | Lives in | Owner |
@@ -24,17 +24,15 @@ specs/
 │   └── <feature>.md             # One feature spec per product capability
 ├── decisions/
 │   └── NNNN-<title>.md          # Architecture decision records (ADR)
-├── 3d_archery_tracking_austria_product_requirements_document.md  # Original PRD (input)
 └── legacy/                      # Superseded proof-of-concept specs
 ```
 
-The original PRD is **input**, not approved scope. Approved scope lives in
-[`product/charter.md`](product/charter.md) and the feature specs.
+Approved scope lives in [`product/charter.md`](product/charter.md) and the feature specs.
 
 ## Language
 
-Specs are written in English. Domain terms use the German ubiquitous language
-(`Anlage`, `Parkour`, `Ziel`, `Pflock`, `Runde`, `Schuss`, `Wertung`), matching code, API, and UI.
+Specs are written in English. Domain terms match code, API, and UI (`Game`, `Board`, `Capture`,
+`StarterDeck`, `UserProfile`, plus the `Konto` / `Benutzer` auth model).
 
 ## Lifecycle
 
@@ -85,6 +83,6 @@ Rules:
 ## Legacy
 
 [`legacy/`](legacy/) holds the superseded proof-of-concept specs (billing, seminars, backend and
-frontend architecture notes) that logandaim.at started from. They are `Superseded` as product
+frontend architecture notes) that friendarazzi.app started from. They are `Superseded` as product
 specs. The architecture notes stay useful as reference for the inherited Rust and Next.js structure
 until replaced by ADRs.

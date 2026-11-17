@@ -42,7 +42,7 @@ These five terms are not interchangeable. Code, API, UI, and specs use each in e
 | Term | Definition | Owns |
 |------|------------|------|
 | `Person` | The human being in the real world. Never stored; exists only in prose. | — |
-| `Benutzer` | The logical identity the product knows: one person's account in logandaim.at, owning personal data, `Runden`, and `AnlageVerwaltungen`. Exactly one per person. | Personal data, `Runden`, `AnlageVerwaltungen` |
+| `Benutzer` | The logical identity the product knows: one person's account in friendarazzi.app, owning personal data, `Runden`, and `AnlageVerwaltungen`. Exactly one per person. | Personal data, `Runden`, `AnlageVerwaltungen` |
 | `Konto` | One way to authenticate a `Benutzer`: an email address plus a `Passwort`, or later a provider identity or passkey. A `Benutzer` has at least one, and several once provider or passkey login ships. | `E-Mail-Adresse`, `Passwort`, credentials |
 | `AnlageVerwaltung` | A `Benutzer`'s role inside one `Anlage`: `Administrator` or `Mitarbeiter`. Belongs to the `Anlage`, never to the `Benutzer`. | — |
 | `Anmelde-Sitzung` | One logged-in state of a `Benutzer` on one device, made of an access and a refresh token. Revocable at any time. | Token pair lifetime |
@@ -213,8 +213,8 @@ Rules:
     `Anmelde-Sitzung` whose refresh token expired cannot be renewed; the `Benutzer` is logged out and
     logs in again. Every revocation in rule 6 takes effect on the next request, including while an
     access token is still inside its 24 hours (rule 15).
-12a. The refresh cookie is scoped to `api.logandaim.at` and carries `SameSite=Lax`, so it is sent to
-    the same-site production frontend `logandaim.at` but not to any other site. Cross-site hosting,
+12a. The refresh cookie is scoped to `api.friendarazzi.app` and carries `SameSite=Lax`, so it is sent to
+    the same-site production frontend `friendarazzi.app` but not to any other site. Cross-site hosting,
     including `*.github.io` previews, receives no refresh capability: previews work with an access
     token only and log the user out on reload. A cross-origin renewal sets the cookie again on every
     rotation, and the API answers renewal with credentials allowed for configured origins only.

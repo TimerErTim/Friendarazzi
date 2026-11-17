@@ -3,7 +3,7 @@
 # Smoke tests.
 #
 #   smoke:*   checks an already running service; point it anywhere with
-#             LOGANDAIM_FRONTEND_URL / LOGANDAIM_SERVER_ORIGIN
+#             FRIENDARAZZI_FRONTEND_URL / FRIENDARAZZI_SERVER_ORIGIN
 #   verify:*  starts the service as a daemon, then runs its smoke test
 #
 # `depends` is required: `run = [{ task = "..." }]` starts no daemons. Daemons
@@ -14,7 +14,7 @@ description = "Health-check an already running frontend"
 run = """
 #!/usr/bin/env bash
 set -eu
-BASE_URL="${LOGANDAIM_FRONTEND_URL:-http://127.0.0.1:{{ vars.FRONTEND_PORT }}}"
+BASE_URL="${FRIENDARAZZI_FRONTEND_URL:-http://127.0.0.1:{{ vars.FRONTEND_PORT }}}"
 
 fail() {
   echo "smoke:frontend: $1" >&2
@@ -40,14 +40,14 @@ depends = ["smoke:frontend"]
 
 ["smoke:server"]
 description = "Health-check an already running backend"
-# `LOGANDAIM_SERVER_ORIGIN`, not `LOGANDAIM_API_URL`: that name already means the API
+# `FRIENDARAZZI_SERVER_ORIGIN`, not `FRIENDARAZZI_API_URL`: that name already means the API
 # base URL *including* the `/api` prefix (the repo variable the frontend is built
 # with), and reusing it here would request `/api/api/health`. This is the origin that
 # serves the API, and the spec and swagger routes sit next to the prefix, not under it.
 run = """
 #!/usr/bin/env bash
 set -eu
-ORIGIN="${LOGANDAIM_SERVER_ORIGIN:-http://127.0.0.1:{{ vars.API_PORT }}}"
+ORIGIN="${FRIENDARAZZI_SERVER_ORIGIN:-http://127.0.0.1:{{ vars.API_PORT }}}"
 
 fail() {
   echo "smoke:server: $1" >&2

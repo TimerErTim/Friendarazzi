@@ -5,22 +5,22 @@ import type {
   DraftPromptRequestItem,
   UpdateGameSettingsInput,
   UpdateProfileInput,
-} from "../logandaim-api";
-import { useLogandaimApi } from "../provider";
-import { logandaimKeys } from "../query-keys";
+} from "../friendarazzi-api";
+import { useFriendarazziApi } from "../provider";
+import { friendarazziKeys } from "../query-keys";
 
 const SITE_HANDLED = { meta: { handlesError: true } } as const;
 
 export function useFriendarazziMutations() {
-  const { api } = useLogandaimApi();
+  const { api } = useFriendarazziApi();
   const queryClient = useQueryClient();
 
   const invalidateGame = (gameId: string) => {
     void queryClient.invalidateQueries({
-      queryKey: logandaimKeys.games.detail(gameId),
+      queryKey: friendarazziKeys.games.detail(gameId),
     });
     void queryClient.invalidateQueries({
-      queryKey: logandaimKeys.games.all(),
+      queryKey: friendarazziKeys.games.all(),
     });
   };
 
@@ -67,10 +67,10 @@ export function useFriendarazziMutations() {
         invalidateGame(vars.gameId);
         if (outcome.gameCompleted) {
           void queryClient.invalidateQueries({
-            queryKey: logandaimKeys.benutzer(),
+            queryKey: friendarazziKeys.benutzer(),
           });
           void queryClient.invalidateQueries({
-            queryKey: logandaimKeys.profiles.all(),
+            queryKey: friendarazziKeys.profiles.all(),
           });
         }
       },
@@ -80,13 +80,13 @@ export function useFriendarazziMutations() {
       ...SITE_HANDLED,
       onSuccess: (profile) => {
         void queryClient.invalidateQueries({
-          queryKey: logandaimKeys.benutzer(),
+          queryKey: friendarazziKeys.benutzer(),
         });
         void queryClient.invalidateQueries({
-          queryKey: logandaimKeys.profiles.detail(profile.id),
+          queryKey: friendarazziKeys.profiles.detail(profile.id),
         });
         void queryClient.invalidateQueries({
-          queryKey: logandaimKeys.profiles.gallery(profile.id),
+          queryKey: friendarazziKeys.profiles.gallery(profile.id),
         });
       },
     }),
@@ -95,13 +95,13 @@ export function useFriendarazziMutations() {
       ...SITE_HANDLED,
       onSuccess: (profile) => {
         void queryClient.invalidateQueries({
-          queryKey: logandaimKeys.benutzer(),
+          queryKey: friendarazziKeys.benutzer(),
         });
         void queryClient.invalidateQueries({
-          queryKey: logandaimKeys.profiles.detail(profile.id),
+          queryKey: friendarazziKeys.profiles.detail(profile.id),
         });
         void queryClient.invalidateQueries({
-          queryKey: logandaimKeys.profiles.gallery(profile.id),
+          queryKey: friendarazziKeys.profiles.gallery(profile.id),
         });
       },
     }),
@@ -109,14 +109,14 @@ export function useFriendarazziMutations() {
 }
 
 export function useAuthMutations() {
-  const { api, authSession } = useLogandaimApi();
+  const { api, authSession } = useFriendarazziApi();
   const queryClient = useQueryClient();
   const loggedIn = () =>
-    queryClient.invalidateQueries({ queryKey: logandaimKeys.benutzer() });
+    queryClient.invalidateQueries({ queryKey: friendarazziKeys.benutzer() });
   const clear = () => {
-    queryClient.removeQueries({ queryKey: logandaimKeys.benutzer() });
-    queryClient.removeQueries({ queryKey: logandaimKeys.games.all() });
-    queryClient.removeQueries({ queryKey: logandaimKeys.profiles.all() });
+    queryClient.removeQueries({ queryKey: friendarazziKeys.benutzer() });
+    queryClient.removeQueries({ queryKey: friendarazziKeys.games.all() });
+    queryClient.removeQueries({ queryKey: friendarazziKeys.profiles.all() });
   };
 
   return {

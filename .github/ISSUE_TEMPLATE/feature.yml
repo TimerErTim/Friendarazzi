@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         One issue = one reviewable PR. The spec must be `PO-approved` before this issue is `ready`.
-        See [.github/CONTRIBUTING.md](https://github.com/TimerErTim/logandaim.at/blob/main/.github/CONTRIBUTING.md).
+        See [.github/CONTRIBUTING.md](https://github.com/TimerErTim/Friendarazzi/blob/main/.github/CONTRIBUTING.md).
   - type: input
     id: spec
     attributes:

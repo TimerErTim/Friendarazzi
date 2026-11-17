@@ -8,15 +8,15 @@ import type {
   CaptureOutcome,
   CreateGameInput,
   DraftPromptRequestItem,
+  FriendarazziApi,
   GameDetail,
   GameSummary,
-  LogandaimApi,
   StarterDeck,
   UpdateGameSettingsInput,
   UpdateProfileInput,
   UserGallery,
   UserProfile,
-} from "./logandaim-api";
+} from "./friendarazzi-api";
 import type { paths } from "./schema";
 
 type JsonClient = ReturnType<typeof createClient<paths>>;
@@ -33,7 +33,7 @@ async function unwrap<T>(result: {
 }
 
 /** HTTP implementation of the transport-neutral API. */
-export class HttpLogandaimApi implements LogandaimApi, AuthSession {
+export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
   private readonly client: JsonClient;
   private renewal: Promise<void> | null = null;
   private readonly baseUrl: string;

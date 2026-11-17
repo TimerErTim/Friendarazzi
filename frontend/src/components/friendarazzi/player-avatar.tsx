@@ -2,9 +2,8 @@
 
 import { Award, Crown } from "lucide-react";
 import Link from "next/link";
-
+import type { PlayerBadge } from "@/api/friendarazzi-api";
 import { useBenutzerQuery } from "@/api/hooks";
-import type { PlayerBadge } from "@/api/logandaim-api";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { paths, userProfileHref } from "@/lib/navigation";

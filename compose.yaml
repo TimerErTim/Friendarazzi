@@ -1,4 +1,4 @@
-name: logandaim
+name: friendarazzi
 
 services:
   backend:
@@ -7,37 +7,37 @@ services:
     # silently run whatever a moving tag pointed at. For a local build, add
     # `compose.build.yaml`:
     #   docker compose -f compose.yaml -f compose.build.yaml up --build
-    image: ${LOGANDAIM_IMAGE:?Set LOGANDAIM_IMAGE to ghcr.io/<owner>/logandaim-server:sha-<commit>, or use compose.build.yaml}
+    image: ${FRIENDARAZZI_IMAGE:?Set FRIENDARAZZI_IMAGE to ghcr.io/<owner>/friendarazzi-server:sha-<commit>, or use compose.build.yaml}
     restart: unless-stopped
-    # State and secrets live beside the checkout (`/opt/logandaim`), not inside it, so a
+    # State and secrets live beside the checkout (`/opt/friendarazzi`), not inside it, so a
     # deploy can check out another revision without touching them. No default: falling
     # back to the checkout would start on an empty database and without SMTP credentials.
     env_file:
-      - ${LOGANDAIM_HOST_ROOT:?Set LOGANDAIM_HOST_ROOT in .env}/secrets/mail.env
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/secrets/mail.env
     environment:
-      LOGANDAIM_BIND_ADDRESS: 0.0.0.0
-      LOGANDAIM_BIND_PORT: "3000"
-      LOGANDAIM_DATABASE_URL: /data/sqlite/friendarazzi.db
-      LOGANDAIM_OBJECT_STORE_DIR: /data/media
+      FRIENDARAZZI_BIND_ADDRESS: 0.0.0.0
+      FRIENDARAZZI_BIND_PORT: "3000"
+      FRIENDARAZZI_DATABASE_URL: /data/sqlite/friendarazzi.db
+      FRIENDARAZZI_OBJECT_STORE_DIR: /data/media
       # No signing key file: the server generates an Ed25519 key per process. Session rows
       # carry the public half each token was signed with, and a request is checked against
       # its own row, so a restart does not invalidate outstanding tokens. A mounted key
       # would be one more operator-owned secret without changing that.
-      LOGANDAIM_TOKEN_ISSUER: ${API_DOMAIN:?Set API_DOMAIN in .env}
-      LOGANDAIM_TOKEN_AUDIENCE: logandaim-api
-      LOGANDAIM_FRONTEND_BASIS_URL: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN in .env}
-      LOGANDAIM_PUBLIC_URL: ${API_DOMAIN:?Set API_DOMAIN in .env}
-      LOGANDAIM_CORS_ORIGIN: ${API_DOMAIN:?Set API_DOMAIN in .env}
-      LOGANDAIM_SUPERUSER_EMAIL: ${SUPERUSER_EMAIL:-}
+      FRIENDARAZZI_TOKEN_ISSUER: ${API_DOMAIN:?Set API_DOMAIN in .env}
+      FRIENDARAZZI_TOKEN_AUDIENCE: friendarazzi-api
+      FRIENDARAZZI_FRONTEND_BASIS_URL: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN in .env}
+      FRIENDARAZZI_PUBLIC_URL: ${API_DOMAIN:?Set API_DOMAIN in .env}
+      FRIENDARAZZI_CORS_ORIGIN: ${API_DOMAIN:?Set API_DOMAIN in .env}
+      FRIENDARAZZI_SUPERUSER_EMAIL: ${SUPERUSER_EMAIL:-}
       # STARTTLS to the public FQDN, the only name on the certificate. A network alias keeps
       # the hop inside the bridge.
-      LOGANDAIM_SMTP_HOST: ${API_DOMAIN:?Set API_DOMAIN in .env}
-      LOGANDAIM_SMTP_PORT: "587"
-      LOGANDAIM_SMTP_VERSCHLUESSELUNG: start-tls
-      LOGANDAIM_SMTP_ABSENDER: ${MAIL_ABSENDER:?Set MAIL_ABSENDER in .env}
+      FRIENDARAZZI_SMTP_HOST: ${API_DOMAIN:?Set API_DOMAIN in .env}
+      FRIENDARAZZI_SMTP_PORT: "587"
+      FRIENDARAZZI_SMTP_VERSCHLUESSELUNG: start-tls
+      FRIENDARAZZI_SMTP_ABSENDER: ${MAIL_ABSENDER:?Set MAIL_ABSENDER in .env}
     volumes:
-      - ${LOGANDAIM_HOST_ROOT:-.}/data/sqlite:/data/sqlite
-      - ${LOGANDAIM_HOST_ROOT:-.}/data/media:/data/media
+      - ${FRIENDARAZZI_HOST_ROOT:-.}/data/sqlite:/data/sqlite
+      - ${FRIENDARAZZI_HOST_ROOT:-.}/data/media:/data/media
     expose:
       - "3000"
     healthcheck:
@@ -151,9 +151,9 @@ services:
     volumes:
       # Mail state lives beside the checkout so provider snapshots cover it, the same way
       # the SQLite database and object store do.
-      - ${LOGANDAIM_HOST_ROOT:?Set LOGANDAIM_HOST_ROOT in .env}/data/mail/mail-data:/var/mail
-      - ${LOGANDAIM_HOST_ROOT:?Set LOGANDAIM_HOST_ROOT in .env}/data/mail/mail-state:/var/mail-state
-      - ${LOGANDAIM_HOST_ROOT:?Set LOGANDAIM_HOST_ROOT in .env}/data/mail/mail-config:/tmp/docker-mailserver
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/data/mail/mail-data:/var/mail
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/data/mail/mail-state:/var/mail-state
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/data/mail/mail-config:/tmp/docker-mailserver
       # The certificate pair `certsync` publishes above.
       - mail_certs:/certs:ro
     cap_add:

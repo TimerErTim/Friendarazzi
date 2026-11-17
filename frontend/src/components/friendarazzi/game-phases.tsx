@@ -24,12 +24,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiErrorMessage } from "@/api/errors";
 import {
-  useBenutzerQuery,
-  useDecksQuery,
-  useErfolgsmeldung,
-  useFriendarazziMutations,
-} from "@/api/hooks";
-import {
   type BoardTileView,
   type CaptureFeedItem,
   type DraftPromptRequestItem,
@@ -37,7 +31,13 @@ import {
   PromptSource,
   SuperlativeKind,
   VisibilityMode,
-} from "@/api/logandaim-api";
+} from "@/api/friendarazzi-api";
+import {
+  useBenutzerQuery,
+  useDecksQuery,
+  useErfolgsmeldung,
+  useFriendarazziMutations,
+} from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

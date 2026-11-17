@@ -6,8 +6,8 @@ import { useEffect } from "react";
 
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
+import { GameStatus } from "@/api/friendarazzi-api";
 import { useGameDetailQuery, useGamesQuery } from "@/api/hooks";
-import { GameStatus } from "@/api/logandaim-api";
 import {
   ActivePlayPhase,
   CompletedPhase,

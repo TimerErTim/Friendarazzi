@@ -8,6 +8,7 @@ env.FRIENDARAZZI_LOG_DIR = "{{ vars.REPO_ROOT }}/data.local/logs/"
 env.FRIENDARAZZI_DATABASE_URL = "{{ vars.REPO_ROOT }}/data.local/friendarazzi.db"
 env.FRIENDARAZZI_OBJECT_STORE_DIR = "{{ vars.REPO_ROOT }}/data.local/storage/"
 env.FRIENDARAZZI_SMTP_HOST = "127.0.0.1"
+env.FRIENDARAZZI_SMTP_PORT = 1026
 daemons = ["mailpit"]
 run = "cargo run -p friendarazzi-server --"
 

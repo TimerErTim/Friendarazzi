@@ -1,7 +1,7 @@
 ---
 id: SPEC-charter
 title: Friendarazzi product charter
-status: PO-approved
+status: Active
 owner: TimerErTim
 issues: []
 superseded_by: null

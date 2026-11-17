@@ -42,7 +42,7 @@ ubiquitous-language term of the slice); never invent vocabulary that the specs d
 | Frontend nav | `frontend/src/lib/navigation.ts` | Path, sidebar item, breadcrumb label. |
 
 Module boundaries follow the **domain concept**, not the increment that introduced it.
-`schuss.rs` keeps growing as long as new code is about Schüsse, no matter which slice it
+`game.rs` keeps growing as long as new code is about Games, no matter which slice it
 ships in. Migrations are the exception: they are append-only and ordered by version.
 
 ## Order to work in

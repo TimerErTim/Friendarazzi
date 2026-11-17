@@ -1,5 +1,5 @@
-name: Bug
-description: Behavior differs from a spec or from obvious intent
+name: Bug report
+description: Report broken behavior in Friendarazzi
 labels: ["type: bug"]
 body:
   - type: textarea
@@ -11,8 +11,7 @@ body:
   - type: textarea
     id: expected
     attributes:
-      label: What should happen
-      description: Link the spec section or AC if one exists.
+      label: Expected behavior
     validations:
       required: true
   - type: textarea
@@ -24,12 +23,3 @@ body:
         2. …
     validations:
       required: true
-  - type: input
-    id: version
-    attributes:
-      label: Version or commit
-  - type: dropdown
-    id: priority
-    attributes:
-      label: Priority
-      options: ["P0", "P1", "P2", "P3"]

@@ -1,17 +1,16 @@
 # Domain model
 
 This is the single source of truth for **how** domain types are modeled. **What** they model comes
-from the `PO-approved` specs in `specs/product/`.
+from the specs in `specs/product/`.
 
-Keep these domain-agnostic rules when replacing domain types. Examples use placeholder names
-(`Aggregat`, `Wert`, …); real types use the German ubiquitous language of the specs.
+Keep these domain rules consistent when adding aggregates or value objects.
 
 ## Layout
 
-- One file per aggregate or value-object family, named after the German domain term
-  (`schuss.rs`, `runde.rs`), never after a technical role (`model.rs`, `types.rs`).
+- One file per aggregate or value-object family, named after its domain concept
+  (`game.rs`, `board.rs`, `capture.rs`), never after a technical role (`model.rs`, `types.rs`).
 - `mod.rs` declares the modules and re-exports the public types (for example,
-  `pub use anlage::AnlageZiel;`), so callers write `crate::domain::AnlageZiel`.
+  `pub use game::Game;`), so callers write `crate::domain::Game`.
 - The domain depends on nothing outside `crate` except value libraries (`uuid`, `chrono`,
   `rust_decimal`, `thiserror`, `error_stack`). No serde, OpenAPI, SQL, or HTTP types.
 - Domain types and services may use ports from `application::ports` (for example `Clock`)

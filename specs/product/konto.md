@@ -1,7 +1,7 @@
 ---
 id: SPEC-konto
 title: Benutzer and Konto (registration, login, recovery, deletion, roles)
-status: PO-approved
+status: Active
 owner: TimerErTim
 issues: [9, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 50, 68, 69]
 superseded_by: null
@@ -111,12 +111,8 @@ further down and a delivery issue; nothing here is implementable until that sect
 - 2FA / TOTP ([later](#mfa), #31) and passkeys ([later](#passkeys), #33).
 - Authentication audit log and new-device notices ([later](#auth-audit), #35).
 - Notification preferences ([later](#notifications), #50).
-- GDPR data export (PO decision 2026-10-23; see `datenschutz.md`, #36).
+- GDPR data export (see `datenschutz.md`).
 - Password strength meter UI and "remember me" options.
-- `AnlageVerwaltung` management inside an `Anlage` (master-data spec, issue #10); this spec only defines
-  the account-level authority those roles attach to.
-- A `Benutzer` requesting a new `Anlage`; the request flow is its own spec
-  ([`anlage-anfrage.md`](anlage-anfrage.md), #68).
 
 ## User journeys
 

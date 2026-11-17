@@ -11,8 +11,8 @@ Read the one that owns the question; do not restate it here.
 
 | Question | Document |
 |----------|----------|
-| How work flows (issues, PRs, labels, CI, commits) | [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md) |
-| What the product should do | [`specs/`](../specs/README.md) — `PO-approved` specs only |
+| How work flows and how to contribute | [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md) |
+| Product charter and decisions | [`specs/`](../specs/README.md) |
 | In which order to build one feature slice | [`docs/vertical-slice.md`](../docs/vertical-slice.md) |
 | How to model domain types | [`crates/friendarazzi-core/src/domain/README.md`](../crates/friendarazzi-core/src/domain/README.md) — module docs |
 | How the UI looks and behaves | [`.cursor/rules/design-system.mdc`](rules/design-system.mdc) |
@@ -32,7 +32,7 @@ crates/
 backend/server/             # Standalone HTTP server (friendarazzi-server)
 frontend/src/               # Next.js UI (App Router, TanStack Query)
 tasks/                      # mise task definitions
-specs/                      # Product intent (PO-owned)
+specs/                      # Product charter & ADRs
 mise.toml                   # Tool, env, and task orchestration
 ```
 
@@ -52,41 +52,12 @@ Dependency rule: **inward only**. Core knows nothing about HTTP or SQLite.
 
 ## Language & naming
 
-Docs, comments, commit messages, and all non-domain source are **English**. German is reserved for
-the ubiquitous language: domain types and fields (`Anlage`, `Parcours`, `Ziel`, `Pflock`, `Runde`,
-`Schuss`, `Wertung`, `Wertungszone`, `Benutzer`, `Konto`, `PasswortWiederherstellung`), SQLite
-tables and columns, HTTP paths, JSON keys, and spec prose.
-
-Naming ladder: `NeuerSchuss` (domain) → `SchussRegistrieren` (use case) → request DTO. A use-case
-type keeps its German domain noun; the module it lives in does not.
-
-**The domain concept stays German; the technical makeup around it is English.** A port keeps its
-German noun (`BenutzerRepository`, `PasswortWiederherstellung`) because that noun *is* the
-ubiquitous language. Technical port names stay English (`Throttle` in
-`application/ports/throttle.rs`). Everything that dresses a domain noun is English: methods (`find_by_id`, `find_all`,
-`create`, `update`, `delete`, `delete_by_benutzer`, `check_and_count`, `is_authenticated`), modules
-(`repos.rs`, `throttle.rs`, `login.rs`, `password.rs`, `api/requests/konto.rs`), DTO suffixes
-(`…Request`), and error plumbing. `KundenRepository::find_by_id`, never
-`KundenSpeicher::bekomme_durch_identität`.
-
-So: German nouns, English verbs and structure. A German *verb* in the application layer
-(`prüfe_und_zähle`, `speichere`, `setze_rolle`) is a mistake — it is not domain vocabulary, it is
-plumbing that happens to be spelled in German. A German noun with an English verb is correct:
-`BenutzerRepository::delete_by_benutzer`.
-
-**Auth-technical nouns are the one exception, and their English spelling is fixed.** German
-engineering usage names these in English, so the code says `Session`, `AccessToken`,
-`RefreshToken`, `SecretToken`, `SecretTokenHash`, `SigningKey`, and `PasswordHash` — see the
-vocabulary table in [`specs/product/konto.md`](../specs/product/konto.md). The product term
-`Anmelde-Sitzung` maps to the code term `Session`, one-to-one, and it applies to **every**
-identifier built on the noun, not only the aggregate: `SessionAusgestellt`, `SessionPrüfen`,
-`SessionAntwort`, `SessionLaden`. Never mix the two (`SitzungPrüfen` next to `SessionId`): one
-concept, one spelling. German stays in the error text a user reads (`"die Sitzung ist nicht mehr
-gültig"`) and in the product term in prose.
-
-Use **proper UTF-8** in identifiers and persisted names. Never transliterate umlauts to
-`ae`/`oe`/`ue` (`BenutzerLöschenFehler`, not `BenutzerLoeschenFehler`; `Bestätigung`, not
-`Bestaetigung`); never paper over it with `serde(rename)`. This is enforced by review, not by a task.
+Docs, comments, commit messages, and Friendarazzi game/board/capture/profile types are **English**
+(`Game`, `Board`, `BoardTile`, `Capture`, `StarterDeck`, `UserProfile`). The inherited auth
+subdomain (`konto`) keeps its established German domain nouns (`Benutzer`, `Konto`,
+`PasswortWiederherstellung`, `Bestätigung`) paired with English `Session` / token nouns and English
+repository methods (`find_by_id`, `find_all`, `create`, `update`, `delete`). Use UTF-8 consistently
+for existing umlaut identifiers in `konto`.
 
 ## Patterns an agent can silently break
 
@@ -227,9 +198,6 @@ because newer nightlies break poem-openapi's lifetime capture across `.await`.
 
 Walk [`docs/vertical-slice.md`](../docs/vertical-slice.md) in order — domain → port → use case →
 UoW wiring → fakes → migration → SQLite repository → API → tests → frontend — and copy its shape,
-not its concrete names. Domain changes stay in core. Tests at every affected layer reference their
-acceptance criterion (`ac_3_…`).
+not its concrete names. Domain changes stay in core.
 
-The changelog is end-user facing: log the change a user experiences, never the work behind it. The
-rule, including why `Unreleased` may stay empty before the first release, is in
-[`CONTRIBUTING.md`](../.github/CONTRIBUTING.md#changelog-scope).
+The changelog is end-user facing: log changes a player or host experiences, never internal refactoring.

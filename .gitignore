@@ -1,0 +1,20 @@
+.idea/
+node_modules
+history.txt
+
+# Compose deployment configuration and persistent application state
+.env
+.env.*
+!.env.example
+/data/
+secrets/
+.deploy/
+*.local/
+*.local.*
+
+target/
+
+.miserc.toml
+
+graphify-out/
+*Zone.Identifier

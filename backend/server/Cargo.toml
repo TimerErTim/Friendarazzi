@@ -1,0 +1,39 @@
+[package]
+name = "logandaim-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[dependencies]
+logandaim-core = { path = "../../crates/logandaim-core" }
+logandaim-sqlite = { path = "../../crates/logandaim-sqlite" }
+logandaim-api = { path = "../../crates/logandaim-api" }
+logandaim-filesystemstore = { path = "../../crates/logandaim-filesystemstore" }
+logandaim-smtp = { path = "../../crates/logandaim-smtp" }
+
+thiserror = { workspace = true }
+error-stack = { workspace = true }
+
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+uuid = { workspace = true, features = ["v4", "serde"] }
+
+poem = { workspace = true, features = ["compression", "requestid"] }
+poem-openapi = { workspace = true }
+tokio = { version = "1.0", features = ["full"] }
+clap = { workspace = true, features = ["derive", "env"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+
+[dev-dependencies]
+test-log = { workspace = true }
+tempdir = "0.3.7"
+
+[lints]
+workspace = true

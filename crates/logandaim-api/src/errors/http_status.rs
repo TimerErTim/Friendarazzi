@@ -1,0 +1,500 @@
+use error_stack::Report;
+use http::StatusCode;
+use logandaim_core::ThreadSafeError;
+use logandaim_core::domain::schuss::SchussFehler;
+use logandaim_core::domain::zeitraum::ZeitraumFehler;
+use logandaim_core::ports::{ObjectStoreError, RepositoryError};
+use logandaim_core::service::{
+    AbmeldungFehler, AnmeldungFehler, BenutzerLöschenFehler, ErneuerungFehler,
+    PasswortVergessenFehler, PasswortWiederherstellenFehler, RegistrierungAbschliessenFehler,
+    RegistrierungStartenFehler, RundeAbschliessenFehler, RundeLöschenFehler, RundeStartenFehler,
+    RundeZielEntfernenFehler, RundeZielHinzufügenFehler, RundeZielNotizSetzenFehler,
+    RundeZielUmbenennenFehler, SchussLöschenFehler, SchussRegistrierenFehler, SchussÄndernFehler,
+    SessionPrüfenFehler, StammdatenFehler, SystemadministratorBefördernFehler,
+};
+
+use crate::api::errors::{RundeAnzeigenFehler, RundenAnzeigenFehler};
+
+use super::ValidationError;
+
+/// Maps a typed error context to an HTTP status.
+///
+/// `None` means "not this layer" — [`status_from_report`] then walks nested
+/// contexts (domain, repository) before defaulting to 500.
+pub trait HttpStatusMapping {
+    fn http_status(&self) -> Option<StatusCode> {
+        None
+    }
+}
+
+pub fn status_from_report<C: ThreadSafeError + HttpStatusMapping>(error: &Report<C>) -> StatusCode {
+    error
+        .request_value::<StatusCode>()
+        .next()
+        .or_else(|| error.downcast_ref::<StatusCode>().copied())
+        .or_else(|| error.current_context().http_status())
+        .or_else(|| nested_http_status(error))
+        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn mapped<C: ThreadSafeError, T: ThreadSafeError + HttpStatusMapping>(
+    error: &Report<C>,
+) -> Option<StatusCode> {
+    error
+        .downcast_ref::<T>()
+        .and_then(HttpStatusMapping::http_status)
+}
+
+fn nested_http_status<C: ThreadSafeError>(error: &Report<C>) -> Option<StatusCode> {
+    mapped::<C, SchussFehler>(error)
+        .or_else(|| mapped::<C, StammdatenFehler>(error))
+        .or_else(|| mapped::<C, SchussRegistrierenFehler>(error))
+        .or_else(|| mapped::<C, SchussÄndernFehler>(error))
+        .or_else(|| mapped::<C, SchussLöschenFehler>(error))
+        .or_else(|| mapped::<C, RundeStartenFehler>(error))
+        .or_else(|| mapped::<C, RundeAnzeigenFehler>(error))
+        .or_else(|| mapped::<C, RundeAbschliessenFehler>(error))
+        .or_else(|| mapped::<C, RundeLöschenFehler>(error))
+        .or_else(|| mapped::<C, RundenAnzeigenFehler>(error))
+        .or_else(|| mapped::<C, ZeitraumFehler>(error))
+        .or_else(|| mapped::<C, AnmeldungFehler>(error))
+        .or_else(|| mapped::<C, ErneuerungFehler>(error))
+        .or_else(|| mapped::<C, AbmeldungFehler>(error))
+        .or_else(|| mapped::<C, SessionPrüfenFehler>(error))
+        .or_else(|| mapped::<C, RegistrierungStartenFehler>(error))
+        .or_else(|| mapped::<C, RegistrierungAbschliessenFehler>(error))
+        .or_else(|| mapped::<C, PasswortVergessenFehler>(error))
+        .or_else(|| mapped::<C, PasswortWiederherstellenFehler>(error))
+        .or_else(|| mapped::<C, BenutzerLöschenFehler>(error))
+        .or_else(|| mapped::<C, SystemadministratorBefördernFehler>(error))
+        .or_else(|| mapped::<C, RepositoryError>(error))
+        .or_else(|| mapped::<C, ObjectStoreError>(error))
+        .or_else(|| mapped::<C, ValidationError>(error))
+}
+
+macro_rules! http_status {
+    ($fehler:ident { $($variante:ident => $status:expr),+ $(,)? }) => {
+        impl HttpStatusMapping for $fehler {
+            fn http_status(&self) -> Option<StatusCode> {
+                Some(match self {
+                    $(Self::$variante => $status),+
+                })
+            }
+        }
+    };
+}
+
+impl HttpStatusMapping for ValidationError {
+    fn http_status(&self) -> Option<StatusCode> {
+        Some(StatusCode::BAD_REQUEST)
+    }
+}
+
+impl HttpStatusMapping for RepositoryError {
+    fn http_status(&self) -> Option<StatusCode> {
+        Some(match self {
+            RepositoryError::NotFound => StatusCode::NOT_FOUND,
+            RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict => {
+                StatusCode::CONFLICT
+            }
+            RepositoryError::Permission => StatusCode::FORBIDDEN,
+            RepositoryError::Connection => StatusCode::SERVICE_UNAVAILABLE,
+            RepositoryError::OperationFailed
+            | RepositoryError::Storage
+            | RepositoryError::Data
+            | RepositoryError::Unknown => StatusCode::INTERNAL_SERVER_ERROR,
+        })
+    }
+}
+
+impl HttpStatusMapping for ObjectStoreError {
+    fn http_status(&self) -> Option<StatusCode> {
+        match self {
+            ObjectStoreError::Operation => Some(StatusCode::INTERNAL_SERVER_ERROR),
+            ObjectStoreError::AlreadyDeleted => Some(StatusCode::NOT_FOUND),
+        }
+    }
+}
+
+impl HttpStatusMapping for ZeitraumFehler {
+    fn http_status(&self) -> Option<StatusCode> {
+        Some(StatusCode::BAD_REQUEST)
+    }
+}
+
+impl HttpStatusMapping for SchussFehler {
+    fn http_status(&self) -> Option<StatusCode> {
+        Some(StatusCode::BAD_REQUEST)
+    }
+}
+
+http_status!(SchussÄndernFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    RundeNichtInBearbeitung => StatusCode::CONFLICT,
+    PflockNichtImAufbau => StatusCode::CONFLICT,
+    Laden => StatusCode::INTERNAL_SERVER_ERROR,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(SchussLöschenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    RundeNichtInBearbeitung => StatusCode::CONFLICT,
+    Laden => StatusCode::INTERNAL_SERVER_ERROR,
+    Löschen => StatusCode::INTERNAL_SERVER_ERROR,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(SchussRegistrierenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    RundeNichtInBearbeitung => StatusCode::CONFLICT,
+    ZielNichtImAufbau => StatusCode::CONFLICT,
+    PflockNichtImAufbau => StatusCode::CONFLICT,
+    PfeilKonflikt => StatusCode::CONFLICT,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+    RundeLaden => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+// Master data: every refusal has exactly one meaning, so an endpoint never guesses.
+http_status!(StammdatenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    Archiviert => StatusCode::CONFLICT,
+    BenutzerNichtGefunden => StatusCode::BAD_REQUEST,
+    AnlageLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    AnlageSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+    AnlageAnlegen => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeStartenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    NichtAktiv => StatusCode::CONFLICT,
+    RundeLaeuft => StatusCode::CONFLICT,
+    AnlageLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    Starten => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeZielHinzufügenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    RundeIstKeineFreieRunde => StatusCode::CONFLICT,
+    RundeNichtInBearbeitung => StatusCode::CONFLICT,
+    RundeLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeZielNotizSetzenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    ZielNichtGefunden => StatusCode::NOT_FOUND,
+    RundeNichtInBearbeitung => StatusCode::CONFLICT,
+    RundeLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeZielUmbenennenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    ZielNichtGefunden => StatusCode::NOT_FOUND,
+    RundeIstKeineFreieRunde => StatusCode::CONFLICT,
+    RundeNichtInBearbeitung => StatusCode::CONFLICT,
+    RundeLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeZielEntfernenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    // A Ziel that is not in this round is as absent as a round that does not exist.
+    ZielNichtGefunden => StatusCode::NOT_FOUND,
+    RundeIstKeineFreieRunde => StatusCode::CONFLICT,
+    RundeNichtInBearbeitung => StatusCode::CONFLICT,
+    RundeLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    Entfernen => StatusCode::INTERNAL_SERVER_ERROR,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeAnzeigenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    RundeLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    SchüsseLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeLöschenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    Laden => StatusCode::INTERNAL_SERVER_ERROR,
+    Löschen => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundeAbschliessenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    NichtErlaubt => StatusCode::FORBIDDEN,
+    NichtGefunden => StatusCode::NOT_FOUND,
+    BereitsAbgeschlossen => StatusCode::CONFLICT,
+    RundeLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    Speichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RundenAnzeigenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    Laden => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(AnmeldungFehler {
+    ZugangsdatenFalsch => StatusCode::UNAUTHORIZED,
+    Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
+    KontoLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    PasswortPrüfen => StatusCode::INTERNAL_SERVER_ERROR,
+    TokenErzeugen => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(ErneuerungFehler {
+    SessionUngültig => StatusCode::UNAUTHORIZED,
+    Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
+    SessionLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+    TokenErzeugen => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(AbmeldungFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    SessionLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(SessionPrüfenFehler {
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    SessionLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RegistrierungStartenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
+    KontoPrüfen => StatusCode::INTERNAL_SERVER_ERROR,
+    TokenErzeugen => StatusCode::INTERNAL_SERVER_ERROR,
+    BestätigungSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(RegistrierungAbschliessenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
+    BestätigungLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    BestätigungSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+    PasswortSetzen => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerAnlegen => StatusCode::INTERNAL_SERVER_ERROR,
+    KontoAnlegen => StatusCode::INTERNAL_SERVER_ERROR,
+    TokenErzeugen => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(PasswortVergessenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
+    TokenErzeugen => StatusCode::INTERNAL_SERVER_ERROR,
+    KontoLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    WiederherstellungSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(PasswortWiederherstellenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    PasswortSetzen => StatusCode::INTERNAL_SERVER_ERROR,
+    WiederherstellungLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    WiederherstellungSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+    KontoSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(BenutzerLöschenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    PasswortFalsch => StatusCode::UNAUTHORIZED,
+    PasswortPrüfen => StatusCode::INTERNAL_SERVER_ERROR,
+    KontoLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    WiederherstellungLöschen => StatusCode::INTERNAL_SERVER_ERROR,
+    BestätigungLöschen => StatusCode::INTERNAL_SERVER_ERROR,
+    KontoLöschen => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionLöschen => StatusCode::INTERNAL_SERVER_ERROR,
+    RundeAnonymisieren => StatusCode::INTERNAL_SERVER_ERROR,
+    SchussAnonymisieren => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLöschen => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+// Reached only from the startup bootstrap; a failure is a deployment fault.
+http_status!(SystemadministratorBefördernFehler {
+    KontoLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    BenutzerSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status<C: ThreadSafeError + HttpStatusMapping>(ctx: C) -> StatusCode {
+        status_from_report(&Report::new(ctx))
+    }
+
+    #[test_log::test]
+    fn attached_status_wins() {
+        let error = Report::new(RepositoryError::NotFound).attach_opaque(StatusCode::BAD_REQUEST);
+        assert_eq!(status_from_report(&error), StatusCode::BAD_REQUEST);
+    }
+
+    #[test_log::test]
+    fn validation_is_bad_request() {
+        assert_eq!(status(ValidationError), StatusCode::BAD_REQUEST);
+    }
+
+    #[test_log::test]
+    fn repository_variants() {
+        assert_eq!(status(RepositoryError::NotFound), StatusCode::NOT_FOUND);
+        assert_eq!(
+            status(RepositoryError::VersionMismatch {
+                expected: 1,
+                actual: Some(2)
+            }),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(status(RepositoryError::Conflict), StatusCode::CONFLICT);
+        assert_eq!(status(RepositoryError::Permission), StatusCode::FORBIDDEN);
+        assert_eq!(
+            status(RepositoryError::Connection),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            status(RepositoryError::OperationFailed),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test_log::test]
+    fn object_store_variants() {
+        assert_eq!(
+            status(ObjectStoreError::AlreadyDeleted),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            status(ObjectStoreError::Operation),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test_log::test]
+    fn domain_construction_is_bad_request() {
+        assert_eq!(
+            status(ZeitraumFehler::EndeNichtNachBeginn),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test_log::test]
+    fn konto_variants_have_one_meaning_each() {
+        assert_eq!(
+            status(AnmeldungFehler::ZugangsdatenFalsch),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            status(AnmeldungFehler::Gedrosselt),
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            status(RegistrierungStartenFehler::UngültigeAnfrage),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status(ErneuerungFehler::SessionUngültig),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            status(BenutzerLöschenFehler::PasswortFalsch),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            status(AbmeldungFehler::NichtAngemeldet),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[test_log::test]
+    fn a_nested_repository_cause_is_used_when_no_use_case_context_maps() {
+        // The fallback exists for a context this layer does not know: the repository error
+        // in the chain still decides the status.
+        let error = Report::new(ValidationError).change_context(RepositoryError::OperationFailed);
+        assert_eq!(
+            status_from_report(&error),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test_log::test]
+    fn master_data_variants_have_one_meaning_each() {
+        assert_eq!(
+            status(StammdatenFehler::NichtAngemeldet),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            status(StammdatenFehler::NichtErlaubt),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status(StammdatenFehler::UngültigeAnfrage),
+            StatusCode::BAD_REQUEST
+        );
+        assert_eq!(
+            status(StammdatenFehler::NichtGefunden),
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(status(StammdatenFehler::Archiviert), StatusCode::CONFLICT);
+    }
+
+    #[test_log::test]
+    fn runde_variants_have_one_meaning_each() {
+        assert_eq!(status(RundeStartenFehler::NichtAktiv), StatusCode::CONFLICT);
+        assert_eq!(
+            status(RundeAnzeigenFehler::NichtErlaubt),
+            StatusCode::FORBIDDEN
+        );
+        assert_eq!(
+            status(RundeAbschliessenFehler::BereitsAbgeschlossen),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            status(SchussRegistrierenFehler::ZielNichtImAufbau),
+            StatusCode::CONFLICT
+        );
+        assert_eq!(
+            status(SchussRegistrierenFehler::NichtErlaubt),
+            StatusCode::FORBIDDEN
+        );
+    }
+}

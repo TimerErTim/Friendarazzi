@@ -1,0 +1,24 @@
+["lint:crates"]
+description = "Check all rust crates"
+usage = """
+flag "--fix" env="LOGANDAIM_LINT_FIX" help="Apply all lint suggestions"
+flag "--allow-dirty" env="LOGANDAIM_LINT_FIX_DIRTY" help="Allow dirty working directory"
+"""
+run = 'cargo clippy --release --all-features --workspace{% if usage.fix %} --fix{% endif %}{% if usage.fix and usage.allow_dirty %} --allow-dirty{% endif %}'
+
+["lint:check:ts"]
+description = "Check the frontend types"
+dir = "{{ vars.REPO_ROOT }}/frontend"
+depends = [
+  "sync:openapi --release"
+]
+run = "npm run check:ts"
+
+["lint:frontend"]
+description = "Lint frontend"
+dir = "{{ vars.REPO_ROOT }}/frontend"
+usage = """
+flag "--fix" env="LOGANDAIM_LINT_FIX" help="Apply all lint suggestions"
+flag "--allow-unsafe" env="LOGANDAIM_LINT_FIX_UNSAFE" help="Allow unsafe lint suggestions"
+"""
+run = 'npm run {% if usage.fix %}fix:lint{% if usage.allow_unsafe %} -- --unsafe{% endif %}{% else %}check:lint{% endif %}'

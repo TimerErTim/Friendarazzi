@@ -1,0 +1,50 @@
+"use client";
+
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
+
+import { config } from "@/lib/config";
+import { createLogandaimApi } from "./index";
+import type { AuthSession, LogandaimApi } from "./logandaim-api";
+
+type LogandaimApiContextValue = {
+  api: LogandaimApi;
+  authSession: AuthSession;
+  apiBaseUrl: string;
+  dev: boolean;
+};
+
+const LogandaimApiContext = createContext<LogandaimApiContextValue | null>(
+  null,
+);
+
+/**
+ * Creates the API instance once per client and exposes it. Configuration is static;
+ * authentication bootstrap is managed by `AuthProvider` above the app shell.
+ */
+export function LogandaimApiProvider({ children }: { children: ReactNode }) {
+  // One transport instance per client; `config` never changes at runtime.
+  const value = useMemo<LogandaimApiContextValue>(
+    () => ({
+      ...createLogandaimApi(),
+      apiBaseUrl: config.apiBaseUrl,
+      dev: config.dev,
+    }),
+    [],
+  );
+
+  return (
+    <LogandaimApiContext.Provider value={value}>
+      {children}
+      {value.dev ? <ReactQueryDevtools initialIsOpen={false} /> : null}
+    </LogandaimApiContext.Provider>
+  );
+}
+
+export function useLogandaimApi(): LogandaimApiContextValue {
+  const context = useContext(LogandaimApiContext);
+  if (!context) {
+    throw new Error("useLogandaimApi must be used within LogandaimApiProvider");
+  }
+  return context;
+}

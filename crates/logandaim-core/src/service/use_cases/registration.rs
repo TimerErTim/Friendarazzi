@@ -9,7 +9,7 @@ use tracing::instrument;
 use crate::{
     application::ExecutionContext,
     domain::{
-        EmailAdresse,
+        EmailAdresse, NewUserProfile, NonEmptyString,
         konto::{
             KlartextPasswort, NeueBestätigung, NeuerBenutzer, NeuesKonto, RefreshToken,
             SecretToken, hash_password,
@@ -272,6 +272,24 @@ impl UseCase<SessionAusgestellt> for RegistrierungAbschließen {
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(RegistrierungAbschliessenFehler::KontoAnlegen)?;
+
+            let mut profile_input = NewUserProfile::from_email(benutzer.id(), &email, jetzt);
+            if uow
+                .profiles()
+                .find_by_username(profile_input.username.as_str())
+                .await
+                .is_ok()
+            {
+                let suffix = &benutzer.id().0.simple().to_string()[..4];
+                let unique = format!("{}_{}", profile_input.username.as_str(), suffix);
+                profile_input.username =
+                    NonEmptyString::neu(unique).expect("non-empty suffixed username");
+            }
+            uow.profiles()
+                .create(profile_input)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(RegistrierungAbschliessenFehler::BenutzerAnlegen)?;
 
             uow.bestätigungen()
                 .delete_by_email(&email)

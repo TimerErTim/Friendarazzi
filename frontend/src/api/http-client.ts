@@ -2,25 +2,20 @@ import createClient from "openapi-fetch";
 
 import { ApiError } from "./errors";
 import type {
-  Anlage,
-  AnlageErstellungInput,
-  AnlageVerwaltungRolle,
-  AnlageZugriff,
-  AnlageÖffentlich,
   AuthenticatedBenutzer,
   AuthPhase,
   AuthSession,
-  Benutzer,
+  CaptureOutcome,
+  CreateGameInput,
+  DraftPromptRequestItem,
+  GameDetail,
+  GameSummary,
   LogandaimApi,
-  ParkourInput,
-  ParkourSetupInput,
-  ParkourÖffentlich,
-  Runde,
-  RundeBasic,
-  Schuss,
-  SchussAenderungInput,
-  SchussErstellungInput,
-  ZielInput,
+  StarterDeck,
+  UpdateGameSettingsInput,
+  UpdateProfileInput,
+  UserGallery,
+  UserProfile,
 } from "./logandaim-api";
 import type { paths } from "./schema";
 
@@ -148,7 +143,7 @@ export class HttpLogandaimApi implements LogandaimApi, AuthSession {
       try {
         error = await renewed.json();
       } catch {
-        // Keep a useful status-bearing message for non-JSON responses.
+        // Keep status-bearing message
       }
       throw ApiError.fromUnknown(error, renewed.status);
     }
@@ -169,369 +164,205 @@ export class HttpLogandaimApi implements LogandaimApi, AuthSession {
     };
   }
 
-  // ---------------------------------------------------------------- master data
-
-  async anlagenAnzeigen(): Promise<AnlageZugriff[]> {
-    return this.authenticated(async () => {
-      const result = await this.client.GET("/anlagen", {
-        headers: this.authorizationHeaders(),
-      });
-      if (result.data) {
-        result.data = result.data.map((entry) => ({
-          ...entry,
-          anlage: entry.anlage,
-        }));
+  private async postMultipart<T>(path: string, file: File): Promise<T> {
+    return this.authenticated<T>(async () => {
+      const form = new FormData();
+      form.append("file", file);
+      const headers: Record<string, string> = {};
+      if (this.accessToken) {
+        headers.Authorization = `Bearer ${this.accessToken}`;
       }
-      return result;
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: form,
+      });
+      if (!response.ok) {
+        let error: unknown = `Upload failed (${response.status})`;
+        try {
+          error = await response.json();
+        } catch {
+          // Ignore non-JSON body
+        }
+        return { error, response };
+      }
+      const data = (await response.json()) as T;
+      return { data, response };
     });
   }
 
-  async anlageAnzeigen(id: string): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.GET("/anlagen/{anlage_id}", {
-        params: { path: { anlage_id: id } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
+  // ---------------------------------------------------------------- Decks
 
-  async anlageErstellen(anlage: AnlageErstellungInput): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.POST("/anlagen", {
-        body: anlage,
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async anlageAendern(
-    id: string,
-    anlage: AnlageErstellungInput,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.PUT("/anlagen/{anlage_id}", {
-        params: { path: { anlage_id: id } },
-        body: anlage,
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async anlageDeaktivieren(id: string): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.POST("/anlagen/{anlage_id}/deaktivierung", {
-        params: { path: { anlage_id: id } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async benutzerNachEmailSuchen(
-    anlageId: string,
-    eMailAdresse: string,
-  ): Promise<Benutzer[]> {
+  async decksList(): Promise<StarterDeck[]> {
     return this.authenticated(() =>
-      this.client.GET("/anlagen/{anlage_id}/benutzer-suche", {
-        params: {
-          path: { anlage_id: anlageId },
-          query: { e_mail_adresse: eMailAdresse },
+      this.client.GET("/decks", { headers: this.authorizationHeaders() }),
+    );
+  }
+
+  // ---------------------------------------------------------------- Games
+
+  async gamesList(): Promise<GameSummary[]> {
+    return this.authenticated(() =>
+      this.client.GET("/games", { headers: this.authorizationHeaders() }),
+    );
+  }
+
+  async gameByInviteCode(inviteCode: string): Promise<GameSummary> {
+    return this.authenticated(() =>
+      this.client.GET("/games/by-code/{invite_code}", {
+        params: { path: { invite_code: inviteCode } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameCreate(input: CreateGameInput): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games", {
+        body: input,
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameJoin(inviteCode: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games/join", {
+        body: { inviteCode },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameDetail(gameId: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.GET("/games/{game_id}", {
+        params: { path: { game_id: gameId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameUpdateSettings(
+    gameId: string,
+    input: UpdateGameSettingsInput,
+  ): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.PUT("/games/{game_id}/settings", {
+        params: { path: { game_id: gameId } },
+        body: input,
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameStartDrafting(gameId: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games/{game_id}/start-drafting", {
+        params: { path: { game_id: gameId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameSavePrompts(
+    gameId: string,
+    prompts: DraftPromptRequestItem[],
+  ): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.PUT("/games/{game_id}/prompts", {
+        params: { path: { game_id: gameId } },
+        body: { prompts },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameLockPrompts(gameId: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games/{game_id}/prompts/lock", {
+        params: { path: { game_id: gameId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  // ---------------------------------------------------------------- Captures & Media
+
+  async captureSubmit(
+    gameId: string,
+    tileId: string,
+    file: File,
+  ): Promise<CaptureOutcome> {
+    return this.postMultipart<CaptureOutcome>(
+      `/games/${encodeURIComponent(gameId)}/tiles/${encodeURIComponent(tileId)}/capture`,
+      file,
+    );
+  }
+
+  async fetchMediaBlob(storageKey: string): Promise<Blob> {
+    return this.authenticated<Blob>(async () => {
+      const headers: Record<string, string> = {};
+      if (this.accessToken) {
+        headers.Authorization = `Bearer ${this.accessToken}`;
+      }
+      const response = await fetch(
+        `${this.baseUrl}/media/${encodeURIComponent(storageKey)}`,
+        {
+          method: "GET",
+          credentials: "include",
+          headers,
         },
-        headers: this.authorizationHeaders(),
-      }),
-    );
+      );
+      if (!response.ok) {
+        let error: unknown = `Media fetch failed (${response.status})`;
+        try {
+          error = await response.json();
+        } catch {
+          // Ignore non-JSON body
+        }
+        return { error, response };
+      }
+      const data = await response.blob();
+      return { data, response };
+    });
   }
 
-  async verwaltungGewaehren(
-    anlageId: string,
-    benutzerId: string,
-    rolle: AnlageVerwaltungRolle,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.POST("/anlagen/{anlage_id}/verwaltungen", {
-        params: { path: { anlage_id: anlageId } },
-        body: { benutzerId, rolle },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
+  // ---------------------------------------------------------------- Profiles & Galleries
 
-  async verwaltungAendern(
-    anlageId: string,
-    benutzerId: string,
-    rolle: AnlageVerwaltungRolle,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.PUT("/anlagen/{anlage_id}/verwaltungen/{benutzer_id}", {
-        params: { path: { anlage_id: anlageId, benutzer_id: benutzerId } },
-        body: { benutzerId, rolle },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async verwaltungEntziehen(
-    anlageId: string,
-    benutzerId: string,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.DELETE("/anlagen/{anlage_id}/verwaltungen/{benutzer_id}", {
-        params: { path: { anlage_id: anlageId, benutzer_id: benutzerId } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async zielHinzufuegen(anlageId: string, ziel: ZielInput): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.POST("/anlagen/{anlage_id}/ziele", {
-        params: { path: { anlage_id: anlageId } },
-        body: ziel,
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async zielAendern(
-    anlageId: string,
-    zielId: string,
-    ziel: ZielInput,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.PUT("/anlagen/{anlage_id}/ziele/{ziel_id}", {
-        params: { path: { anlage_id: anlageId, ziel_id: zielId } },
-        body: ziel,
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async zielErsetzen(
-    anlageId: string,
-    zielId: string,
-    ziel: ZielInput,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.POST("/anlagen/{anlage_id}/ziele/{ziel_id}/ersatz", {
-        params: { path: { anlage_id: anlageId, ziel_id: zielId } },
-        body: ziel,
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async zielEntfernen(anlageId: string, zielId: string): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.DELETE("/anlagen/{anlage_id}/ziele/{ziel_id}", {
-        params: { path: { anlage_id: anlageId, ziel_id: zielId } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async parkourHinzufuegen(
-    anlageId: string,
-    parkour: ParkourInput,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.POST("/anlagen/{anlage_id}/parkour", {
-        params: { path: { anlage_id: anlageId } },
-        body: parkour as never,
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async parkourSetupAendern(
-    anlageId: string,
-    parkourId: string,
-    setup: ParkourSetupInput,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.PUT("/anlagen/{anlage_id}/parkour/{parkour_id}/setup", {
-        params: { path: { anlage_id: anlageId, parkour_id: parkourId } },
-        body: setup as never,
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async parkourUmbenennen(
-    anlageId: string,
-    parkourId: string,
-    name: string,
-  ): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.PUT("/anlagen/{anlage_id}/parkour/{parkour_id}", {
-        params: { path: { anlage_id: anlageId, parkour_id: parkourId } },
-        body: { name },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async parkourEntfernen(anlageId: string, parkourId: string): Promise<Anlage> {
-    return this.authenticated<Anlage>(() =>
-      this.client.DELETE("/anlagen/{anlage_id}/parkour/{parkour_id}", {
-        params: { path: { anlage_id: anlageId, parkour_id: parkourId } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async parkourAnzeigen(): Promise<ParkourÖffentlich[]> {
-    // Public by design (AC-13): never renew a session for it, and send no header at all.
-    return unwrap(await this.client.GET("/parkour"));
-  }
-
-  async anlagenVerzeichnis(): Promise<AnlageÖffentlich[]> {
-    // Public by design (Anlagen-Verzeichnis): a stale token is answered as anonymous, so
-    // this read neither sends a header nor renews a session.
-    return unwrap(await this.client.GET("/anlagen/oeffentlich"));
-  }
-
-  // ---------------------------------------------------------------- Runden
-
-  async rundenAnzeigen(): Promise<RundeBasic[]> {
-    const runden = await this.authenticated(() =>
-      this.client.GET("/runden", { headers: this.authorizationHeaders() }),
-    );
-    return runden;
-  }
-
-  async rundeStarten(parkourId: string): Promise<Runde> {
-    const runde = await this.authenticated(() =>
-      this.client.POST("/runden/mit-parkour", {
-        body: { parkourId },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-    return runde;
-  }
-
-  async freieRundeStarten(name: string): Promise<Runde> {
-    const runde = await this.authenticated(() =>
-      this.client.POST("/runden/frei", {
-        body: { name },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-    return runde;
-  }
-
-  async freiesZielHinzufuegen(rundeId: string, name?: string): Promise<Runde> {
-    const runde = await this.authenticated(() =>
-      this.client.POST("/runden/{runde_id}/ziele", {
-        params: { path: { runde_id: rundeId } },
-        body: name === undefined ? {} : { name },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-    return runde;
-  }
-
-  async freiesZielUmbenennen(
-    rundeId: string,
-    zielId: string,
-    name: string,
-  ): Promise<Runde> {
-    const runde = await this.authenticated(() =>
-      this.client.PUT("/runden/{runde_id}/ziele/{ziel_id}/name", {
-        params: { path: { runde_id: rundeId, ziel_id: zielId } },
-        body: { name },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-    return runde;
-  }
-
-  async freiesZielEntfernen(rundeId: string, zielId: string): Promise<Runde> {
-    const runde = await this.authenticated(() =>
-      this.client.DELETE("/runden/{runde_id}/ziele/{ziel_id}", {
-        params: { path: { runde_id: rundeId, ziel_id: zielId } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-    return runde;
-  }
-
-  async zielNotizSpeichern(
-    rundeId: string,
-    zielId: string,
-    notiz: string,
-  ): Promise<Runde> {
+  async profileGet(userId: string): Promise<UserProfile> {
     return this.authenticated(() =>
-      this.client.PUT("/runden/{runde_id}/ziele/{ziel_id}/notiz", {
-        params: { path: { runde_id: rundeId, ziel_id: zielId } },
-        body: { notiz },
+      this.client.GET("/users/{user_id}", {
+        params: { path: { user_id: userId } },
         headers: this.authorizationHeaders(),
       }),
     );
   }
 
-  async rundeLoeschen(id: string): Promise<void> {
-    await this.authenticated(() =>
-      this.client.DELETE("/runden/{runde_id}", {
-        params: { path: { runde_id: id } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-  }
-
-  async rundeAnzeigen(id: string): Promise<Runde> {
-    const runde = await this.authenticated(() =>
-      this.client.GET("/runden/{runde_id}", {
-        params: { path: { runde_id: id } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-    return runde;
-  }
-
-  async rundeAbschliessen(id: string): Promise<Runde> {
-    const runde = await this.authenticated(() =>
-      this.client.POST("/runden/{runde_id}/abschluss", {
-        params: { path: { runde_id: id } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
-    return runde;
-  }
-
-  async schussRegistrieren(
-    rundeId: string,
-    schuss: SchussErstellungInput,
-  ): Promise<Schuss> {
+  async userGallery(userId: string): Promise<UserGallery> {
     return this.authenticated(() =>
-      this.client.POST("/runden/{runde_id}/schuesse", {
-        params: { path: { runde_id: rundeId } },
-        body: { ...schuss, position: schuss.position ?? undefined },
+      this.client.GET("/users/{user_id}/gallery", {
+        params: { path: { user_id: userId } },
         headers: this.authorizationHeaders(),
       }),
     );
   }
 
-  async schussAendern(
-    rundeId: string,
-    schussId: string,
-    schuss: SchussAenderungInput,
-  ): Promise<Schuss> {
+  async profileUpdate(input: UpdateProfileInput): Promise<UserProfile> {
     return this.authenticated(() =>
-      this.client.PUT("/runden/{runde_id}/schuesse/{schuss_id}", {
-        params: { path: { runde_id: rundeId, schuss_id: schussId } },
-        body: { ...schuss, position: schuss.position ?? undefined },
+      this.client.PUT("/profil", {
+        body: { ...input, equippedTitle: input.equippedTitle ?? undefined },
         headers: this.authorizationHeaders(),
       }),
     );
   }
 
-  async schussLoeschen(rundeId: string, schussId: string): Promise<void> {
-    await this.authenticated(() =>
-      this.client.DELETE("/runden/{runde_id}/schuesse/{schuss_id}", {
-        params: { path: { runde_id: rundeId, schuss_id: schussId } },
-        headers: this.authorizationHeaders(),
-      }),
-    );
+  async profileUploadAvatar(file: File): Promise<UserProfile> {
+    return this.postMultipart<UserProfile>("/profil/avatar", file);
   }
+
+  // ---------------------------------------------------------------- Konto
 
   async registrierungStarten(eMailAdresse: string): Promise<void> {
     await unwrap(
@@ -591,7 +422,7 @@ export class HttpLogandaimApi implements LogandaimApi, AuthSession {
   async benutzerLoeschen(passwort: string, bestaetigt: boolean): Promise<void> {
     await this.authenticated(() =>
       this.client.POST("/benutzer/loeschung", {
-        body: { passwort, bestaetigt: bestaetigt },
+        body: { passwort, bestaetigt },
         headers: this.authorizationHeaders(),
       }),
     );

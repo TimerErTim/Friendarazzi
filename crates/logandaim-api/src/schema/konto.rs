@@ -1,21 +1,13 @@
 //! Outbound schemas of the `konto` subdomain.
-//!
-//! API mirrors of domain values, kept separate so the domain never learns about OpenAPI or
-//! serde. The access token lives here and only here: it travels in the response body,
-//! never in a cookie, so no cross-site request can read it (SPEC-konto AC-7a).
 
 use uuid::Uuid;
 
 use logandaim_core::domain;
-
 use logandaim_core::domain::konto::Rolle as DomainBenutzerRolle;
 
 use crate::schema::EmailAdresse;
 
 /// `Benutzer` or `Systemadministrator`: the role a Benutzer holds on the whole instance.
-///
-/// A Systemadministrator may create and administer any Anlage, independently of its
-/// per-Anlage roles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Enum))]
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -46,18 +38,28 @@ pub struct AuthenticatedBenutzer {
     pub e_mail_adresse: EmailAdresse,
     /// Its role on the whole instance.
     pub rolle: BenutzerRolle,
+    /// Public handle of the player.
+    pub username: String,
+    /// Display name shown in lobbies and boards.
+    pub display_name: String,
+    /// Storage key of the player's avatar, if uploaded.
+    pub avatar_storage_key: Option<String>,
+    /// Lifetime Gold Medals earned.
+    pub gold_medal_count: u32,
+    /// Effective rank title displayed on badges.
+    pub effective_title: String,
 }
 
-/// A known Benutzer: the account an exact e-mail lookup found.
+/// A known Benutzer.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
 #[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Benutzer {
-    /// Identity of the matching Benutzer.
+    /// Identity of the Benutzer.
     pub id: Uuid,
-    /// The address that matched.
+    /// E-mail address.
     pub e_mail_adresse: EmailAdresse,
 }
 
@@ -70,20 +72,34 @@ impl From<(domain::konto::Benutzer, domain::EmailAdresse)> for Benutzer {
     }
 }
 
-impl From<(domain::konto::Benutzer, domain::EmailAdresse)> for AuthenticatedBenutzer {
-    fn from((benutzer, email): (domain::konto::Benutzer, domain::EmailAdresse)) -> Self {
+impl
+    From<(
+        domain::konto::Benutzer,
+        domain::EmailAdresse,
+        domain::UserProfile,
+    )> for AuthenticatedBenutzer
+{
+    fn from(
+        (benutzer, email, profile): (
+            domain::konto::Benutzer,
+            domain::EmailAdresse,
+            domain::UserProfile,
+        ),
+    ) -> Self {
         Self {
             id: benutzer.id().0,
             e_mail_adresse: email.into(),
             rolle: benutzer.rolle().into(),
+            username: profile.username().as_str().to_owned(),
+            display_name: profile.display_name().as_str().to_owned(),
+            avatar_storage_key: profile.avatar_storage_key().map(str::to_owned),
+            gold_medal_count: profile.gold_medal_count(),
+            effective_title: profile.effective_title().to_owned(),
         }
     }
 }
 
 /// What registration step 2, sign-in, and session renewal hand back.
-///
-/// The access token is in the body. The refresh token is not: it leaves as the `__Host-`
-/// cookie, so a script that can read a JSON response still cannot read it.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
 #[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]

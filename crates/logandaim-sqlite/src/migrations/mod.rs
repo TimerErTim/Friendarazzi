@@ -7,24 +7,16 @@ use molting::{AppliableMigration, MigrationRegistry, MigrationTarget, UpMigratio
 
 use crate::SQLiteConnection;
 
-mod v0001_schuss;
 mod v0002_konto;
-mod v0003_stammdaten;
-mod v0004_erfassung;
-mod v0005_ziel_pfloecke;
-mod v0006_freie_runde;
+mod v0003_friendarazzi;
 
 type Registry = MigrationRegistry<dyn UpMigration<libsql::Transaction, libsql::Error>>;
 
 /// Baseline plus one migration per schema change, registered in ascending version order.
 pub static MIGRATIONS: LazyLock<Registry> = LazyLock::new(|| {
     let mut registry: Registry = MigrationRegistry::new();
-    registry.add(v0001_schuss::Migration);
     registry.add(v0002_konto::Migration);
-    registry.add(v0003_stammdaten::Migration);
-    registry.add(v0004_erfassung::Migration);
-    registry.add(v0005_ziel_pfloecke::Migration);
-    registry.add(v0006_freie_runde::Migration);
+    registry.add(v0003_friendarazzi::Migration);
     registry
 });
 
@@ -37,7 +29,6 @@ impl MigrationTarget<libsql::Transaction, libsql::Error> for SQLiteConnection {
             let tx = self
                 .transaction_with_behavior(libsql::TransactionBehavior::Exclusive)
                 .await?;
-            // Create migrations table if it doesn't exist
             tx.execute(
                 "CREATE TABLE IF NOT EXISTS _migration_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +39,6 @@ impl MigrationTarget<libsql::Transaction, libsql::Error> for SQLiteConnection {
             )
             .await?;
 
-            // Get the latest version based on the most recent application time
             let mut rows = tx
                 .query(
                     "SELECT version FROM _migration_history ORDER BY applied_at DESC, version DESC LIMIT 1",

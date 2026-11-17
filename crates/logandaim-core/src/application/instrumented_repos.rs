@@ -1,7 +1,4 @@
 //! Repository tracing wrappers.
-//!
-//! Each wrapper holds a pointer to the parent [`UnitOfWorkImpl`] and delegates through the
-//! matching accessor on every call.
 
 use std::pin::Pin;
 
@@ -16,13 +13,15 @@ use crate::domain::konto::{
     PasswortWiederherstellung, PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Anlage, AnlageId, AnlageZielId, EmailAdresse, NeueAnlage, NeueRunde, NeuerSchuss, ParkourId,
-    Runde, RundeId, Schuss, SchussId, ZielId,
+    Board, BoardId, BoardTile, BoardTileId, Capture, CaptureId, EmailAdresse, Game, GameId,
+    GamePlayer, InviteCode, NewCapture, NewGame, NewUserProfile, PromptSubmission, StarterDeck,
+    UserProfile,
 };
 use crate::ports::{
-    AnlageRepository, BenutzerRepository, EmailBestätigungRepository, KontoRepository,
-    PasswortWiederherstellungRepository, RepositoryResult, RundeRepository, SchussRepository,
-    SessionRepository,
+    BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
+    EmailBestätigungRepository, GameRepository, KontoRepository,
+    PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
+    UserProfileRepository,
 };
 
 macro_rules! impl_instrumented_repo {
@@ -55,8 +54,6 @@ macro_rules! impl_instrumented_repo {
             }
         }
 
-        // SAFETY: `uow` points into a pinned `RepoStorage`; the address is stable until
-        // the storage is consumed on commit/rollback.
         unsafe impl Send for $wrapper {}
         unsafe impl Sync for $wrapper {}
 
@@ -71,72 +68,106 @@ macro_rules! impl_instrumented_repo {
 }
 
 impl_instrumented_repo!(
-    InstrumentedAnlageRepository,
-    AnlageRepository,
-    anlagen,
+    InstrumentedUserProfileRepository,
+    UserProfileRepository,
+    profiles,
     methods: [
-        #[instrument(skip(self, anlage), level = "debug", err(Debug))]
-        fn create(&self, anlage: NeueAnlage) -> RepositoryResult<Versioned<Anlage>>;
+        #[instrument(skip(self, profile), level = "debug", err(Debug))]
+        fn create(&self, profile: NewUserProfile) -> RepositoryResult<Versioned<UserProfile>>;
+        #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "trace", err(Debug))]
+        fn find_by_user_id(&self, user_id: BenutzerId) -> RepositoryResult<Versioned<UserProfile>>;
+        #[instrument(skip(self, user_ids), level = "trace", err(Debug))]
+        fn find_by_user_ids(&self, user_ids: &[BenutzerId]) -> RepositoryResult<Vec<Versioned<UserProfile>>>;
+        #[instrument(skip(self, username), level = "trace", err(Debug))]
+        fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<UserProfile>>;
+        #[instrument(skip(self, profile), level = "debug", err(Debug))]
+        fn update(&self, profile: &mut Versioned<UserProfile>) -> RepositoryResult<()>;
+        #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "debug", err(Debug))]
+        fn delete_by_user_id(&self, user_id: BenutzerId) -> RepositoryResult<()>;
+    ]
+);
+
+impl_instrumented_repo!(
+    InstrumentedGameRepository,
+    GameRepository,
+    games,
+    methods: [
+        #[instrument(skip(self, game), level = "debug", err(Debug))]
+        fn create(&self, game: NewGame) -> RepositoryResult<Versioned<Game>>;
         #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
-        fn find_by_id(&self, id: AnlageId) -> RepositoryResult<Versioned<Anlage>>;
+        fn find_by_id(&self, id: GameId) -> RepositoryResult<Versioned<Game>>;
+        #[instrument(skip(self, code), level = "trace", err(Debug))]
+        fn find_by_invite_code(&self, code: &InviteCode) -> RepositoryResult<Versioned<Game>>;
+        #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "trace", err(Debug))]
+        fn find_for_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Game>>>;
+        #[instrument(skip(self, game), level = "debug", err(Debug))]
+        fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()>;
+        #[instrument(skip(self, player), level = "debug", err(Debug))]
+        fn add_player(&self, player: GamePlayer) -> RepositoryResult<()>;
+        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
+        fn find_players(&self, game_id: GameId) -> RepositoryResult<Vec<GamePlayer>>;
+        #[instrument(skip(self, game_id, user_id), level = "debug", err(Debug))]
+        fn set_player_draft_locked(&self, game_id: GameId, user_id: BenutzerId, locked: bool) -> RepositoryResult<()>;
+        #[instrument(skip(self, game_id, author_user_id, prompts), level = "debug", err(Debug))]
+        fn replace_author_prompts(&self, game_id: GameId, author_user_id: BenutzerId, prompts: Vec<PromptSubmission>) -> RepositoryResult<()>;
+        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
+        fn find_prompts_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<PromptSubmission>>;
+        #[instrument(skip(self, game_id, author_user_id), level = "trace", err(Debug))]
+        fn find_prompts_by_author(&self, game_id: GameId, author_user_id: BenutzerId) -> RepositoryResult<Vec<PromptSubmission>>;
+    ]
+);
+
+impl_instrumented_repo!(
+    InstrumentedBoardRepository,
+    BoardRepository,
+    boards,
+    methods: [
+        #[instrument(skip(self, board, tiles), level = "debug", err(Debug))]
+        fn create_board_with_tiles(&self, board: Board, tiles: Vec<BoardTile>) -> RepositoryResult<()>;
+        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
+        fn find_boards_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<Versioned<Board>>>;
+        #[instrument(skip(self, game_id, owner), level = "trace", err(Debug))]
+        fn find_board_by_game_and_owner(&self, game_id: GameId, owner: BenutzerId) -> RepositoryResult<Versioned<Board>>;
+        #[instrument(skip(self, board_id), fields(board_id = ?board_id), level = "trace", err(Debug))]
+        fn find_tiles_by_board(&self, board_id: BoardId) -> RepositoryResult<Vec<BoardTile>>;
+        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
+        fn find_tiles_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<BoardTile>>;
+        #[instrument(skip(self, tile_id), fields(tile_id = ?tile_id), level = "trace", err(Debug))]
+        fn find_tile_by_id(&self, tile_id: BoardTileId) -> RepositoryResult<BoardTile>;
+        #[instrument(skip(self, board), level = "debug", err(Debug))]
+        fn update_board(&self, board: &mut Versioned<Board>) -> RepositoryResult<()>;
+        #[instrument(skip(self, tile_id, capture_id), level = "debug", err(Debug))]
+        fn attach_tile_capture(&self, tile_id: BoardTileId, capture_id: CaptureId) -> RepositoryResult<()>;
+    ]
+);
+
+impl_instrumented_repo!(
+    InstrumentedCaptureRepository,
+    CaptureRepository,
+    captures,
+    methods: [
+        #[instrument(skip(self, capture), level = "debug", err(Debug))]
+        fn create(&self, capture: NewCapture) -> RepositoryResult<Versioned<Capture>>;
+        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
+        fn find_by_id(&self, id: CaptureId) -> RepositoryResult<Versioned<Capture>>;
+        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
+        fn find_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<Versioned<Capture>>>;
+        #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "trace", err(Debug))]
+        fn find_by_target_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Capture>>>;
+        #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "trace", err(Debug))]
+        fn find_by_catcher_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Capture>>>;
+        #[instrument(skip(self, key), level = "trace", err(Debug))]
+        fn find_by_storage_key(&self, key: &str) -> RepositoryResult<Versioned<Capture>>;
+    ]
+);
+
+impl_instrumented_repo!(
+    InstrumentedDeckRepository,
+    DeckRepository,
+    decks,
+    methods: [
         #[instrument(skip(self), level = "trace", err(Debug))]
-        fn find_aktiv(&self) -> RepositoryResult<Vec<Versioned<Anlage>>>;
-        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
-        fn find_by_parkour_id(&self, id: ParkourId) -> RepositoryResult<Versioned<Anlage>>;
-        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
-        fn find_by_verwaltung(&self, benutzer_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Anlage>>>;
-        #[instrument(skip(self, anlage), level = "debug", err(Debug))]
-        fn update(&self, anlage: &mut Versioned<Anlage>) -> RepositoryResult<()>;
-        #[instrument(skip(self, anlage), level = "debug", err(Debug))]
-        fn delete(&self, anlage: Versioned<Anlage>) -> RepositoryResult<()>;
-    ]
-);
-
-impl_instrumented_repo!(
-    InstrumentedRundeRepository,
-    RundeRepository,
-    runden,
-    methods: [
-        #[instrument(skip(self, runde), level = "debug", err(Debug))]
-        fn create(&self, runde: NeueRunde) -> RepositoryResult<Versioned<Runde>>;
-        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
-        fn find_by_id(&self, id: RundeId) -> RepositoryResult<Versioned<Runde>>;
-        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
-        fn find_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Runde>>>;
-        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
-        fn find_offen_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<Versioned<Runde>>;
-        #[instrument(skip(self, runde), level = "debug", err(Debug))]
-        fn update(&self, runde: &mut Versioned<Runde>) -> RepositoryResult<()>;
-        #[instrument(skip(self, runde), level = "debug", err(Debug))]
-        fn delete(&self, runde: Versioned<Runde>) -> RepositoryResult<()>;
-        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
-        fn exists_referencing_anlage(&self, id: AnlageId) -> RepositoryResult<bool>;
-        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
-        fn exists_referencing_parkour(&self, id: ParkourId) -> RepositoryResult<bool>;
-        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
-        fn exists_referencing_ziel(&self, id: AnlageZielId) -> RepositoryResult<bool>;
-    ]
-);
-
-impl_instrumented_repo!(
-    InstrumentedSchussRepository,
-    SchussRepository,
-    schüsse,
-    methods: [
-        #[instrument(skip(self, schuss), level = "debug", err(Debug))]
-        fn create(&self, schuss: NeuerSchuss) -> RepositoryResult<Versioned<Schuss>>;
-        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
-        fn find_by_id(&self, id: SchussId) -> RepositoryResult<Versioned<Schuss>>;
-        #[instrument(skip(self, runde_id), fields(runde_id = ?runde_id), level = "trace", err(Debug))]
-        fn find_by_runde(&self, runde_id: RundeId) -> RepositoryResult<Vec<Versioned<Schuss>>>;
-        #[instrument(skip(self, ziel_id), fields(ziel_id = ?ziel_id), level = "trace", err(Debug))]
-        fn find_by_ziel(&self, ziel_id: ZielId) -> RepositoryResult<Vec<Versioned<Schuss>>>;
-        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
-        fn find_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Schuss>>>;
-        #[instrument(skip(self, schuss), level = "debug", err(Debug))]
-        fn update(&self, schuss: &mut Versioned<Schuss>) -> RepositoryResult<()>;
-        #[instrument(skip(self, schuss), level = "debug", err(Debug))]
-        fn delete(&self, schuss: Versioned<Schuss>) -> RepositoryResult<()>;
+        fn list_all(&self) -> RepositoryResult<Vec<StarterDeck>>;
     ]
 );
 
@@ -244,9 +275,11 @@ impl_instrumented_repo!(
 
 /// Pinned bundle: instrumented repos hold pointers into `uow` (field order keeps drop safe).
 pub(crate) struct RepoStorage {
-    pub(crate) anlagen: InstrumentedAnlageRepository,
-    pub(crate) runden: InstrumentedRundeRepository,
-    pub(crate) schüsse: InstrumentedSchussRepository,
+    pub(crate) profiles: InstrumentedUserProfileRepository,
+    pub(crate) games: InstrumentedGameRepository,
+    pub(crate) boards: InstrumentedBoardRepository,
+    pub(crate) captures: InstrumentedCaptureRepository,
+    pub(crate) decks: InstrumentedDeckRepository,
     pub(crate) benutzer: InstrumentedBenutzerRepository,
     pub(crate) konten: InstrumentedKontoRepository,
     pub(crate) sessions: InstrumentedSessionRepository,
@@ -258,9 +291,11 @@ pub(crate) struct RepoStorage {
 impl RepoStorage {
     pub(crate) fn new(uow: Box<dyn UnitOfWorkImpl>) -> Pin<Box<Self>> {
         let mut pinned = Box::pin(RepoStorage {
-            anlagen: InstrumentedAnlageRepository::disabled(),
-            runden: InstrumentedRundeRepository::disabled(),
-            schüsse: InstrumentedSchussRepository::disabled(),
+            profiles: InstrumentedUserProfileRepository::disabled(),
+            games: InstrumentedGameRepository::disabled(),
+            boards: InstrumentedBoardRepository::disabled(),
+            captures: InstrumentedCaptureRepository::disabled(),
+            decks: InstrumentedDeckRepository::disabled(),
             benutzer: InstrumentedBenutzerRepository::disabled(),
             konten: InstrumentedKontoRepository::disabled(),
             sessions: InstrumentedSessionRepository::disabled(),
@@ -269,14 +304,14 @@ impl RepoStorage {
             uow,
         });
 
-        // SAFETY: `pinned` is boxed, so `uow`'s address is stable for the lifetime of the
-        // storage. The wrappers are never moved out; they are dropped in place with it.
         unsafe {
             let this = pinned.as_mut().get_unchecked_mut();
             let uow_ptr = std::ptr::from_ref(this.uow.as_ref());
-            this.anlagen = InstrumentedAnlageRepository::new(uow_ptr);
-            this.runden = InstrumentedRundeRepository::new(uow_ptr);
-            this.schüsse = InstrumentedSchussRepository::new(uow_ptr);
+            this.profiles = InstrumentedUserProfileRepository::new(uow_ptr);
+            this.games = InstrumentedGameRepository::new(uow_ptr);
+            this.boards = InstrumentedBoardRepository::new(uow_ptr);
+            this.captures = InstrumentedCaptureRepository::new(uow_ptr);
+            this.decks = InstrumentedDeckRepository::new(uow_ptr);
             this.benutzer = InstrumentedBenutzerRepository::new(uow_ptr);
             this.konten = InstrumentedKontoRepository::new(uow_ptr);
             this.sessions = InstrumentedSessionRepository::new(uow_ptr);

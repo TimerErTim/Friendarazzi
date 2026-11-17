@@ -1,18 +1,6 @@
 //! Typed facade between HTTP and use cases.
-//!
-//! Everything here is a thin translation: request → use case → schema. Reads are composed
-//! inline from the repositories they need, writes run as use cases. No business rules.
-//! Use-case errors pass through unchanged; a read's refusal enum lives in [`errors`];
-//! `errors/http_status.rs` maps both to status codes.
-//! Nothing here touches `poem`: the HTTP edge lives in `http/mod.rs` behind the `openapi`
-//! feature, so the library compiles without it. Requests are grouped in `api/requests/`; the
-//! HTTP edge owns JWT encoding and bearer verification (`http/jwt.rs`, `http/auth.rs`).
-//!
-//! Authorisation is never decided here either. A read that runs inline calls the same
-//! helpers in `logandaim_core::service` that the use cases do; a write hands the caller's
-//! [`AuthContext`] straight to the use case, which loads the aggregates and answers 401/403
-//! itself (SPEC-konto rule 17).
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use error_stack::{IntoReport, Report, ResultExt};
@@ -20,24 +8,19 @@ use logandaim_core::{
     App, ResultReport,
     application::AuthContext,
     domain::{
-        AnlageId, AnlageZielId, EmailAdresse, ParkourId, Runde as DomainRunde, RundeId, SchussId,
-        ZielId, konto::BenutzerId,
+        BoardTile, BoardTileId, Capture, Game, GameId, GamePlayer, GameStatus, InviteCode,
+        UserProfile as DomainUserProfile, compute_superlatives, konto::BenutzerId,
+        target_quotas_for_author,
     },
-    ports::{ClientKey, RepositoryError, ThrottleAction},
+    ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
     service::{
-        Abmeldung, AbmeldungFehler, AnlageBeschreibendeDatenÄndern, AnlageDeaktivieren,
-        AnlageVerwaltungEntziehen, AnlageVerwaltungGewähren, AnlageVerwaltungÄndern, Anmeldung,
-        AnmeldungFehler, BenutzerLöschen, BenutzerLöschenFehler, Erneuerung, ErneuerungFehler,
-        ParkourEntfernen, ParkourHinzufügen, ParkourSetupÄndern, ParkourUmbenennen,
-        PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
-        PasswortWiederherstellenFehler, RegistrierungAbschliessenFehler, RegistrierungAbschließen,
-        RegistrierungStarten, RegistrierungStartenFehler, RundeAbschliessen,
-        RundeAbschliessenFehler, RundeStarten, RundeStartenFehler, RundeZielEntfernenFehler,
-        RundeZielHinzufügenFehler, RundeZielNotizSetzenFehler, RundeZielUmbenennenFehler,
-        SchussLöschen, SchussLöschenFehler, SchussRegistrieren, SchussRegistrierenFehler,
-        SchussÄndernFehler, SessionAusgestellt, StammdatenFehler, ZielEntfernen, ZielErsetzen,
-        ZielHinzufügen, ZielÄndern, darf_anlage_lesen, darf_anlage_verwalten,
-        darf_masterdaten_pflegen,
+        Abmeldung, AbmeldungFehler, Anmeldung, AnmeldungFehler, BenutzerLöschen,
+        BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
+        LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
+        PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
+        RegistrierungAbschließen, RegistrierungStarten, RegistrierungStartenFehler,
+        SessionAusgestellt, StartDrafting, SubmitCapture, UploadAvatar, can_view_blurred_capture,
+        can_view_full_capture, is_player_in_game,
     },
 };
 use tracing::warn;
@@ -45,11 +28,11 @@ use tracing::warn;
 pub mod errors;
 pub mod requests;
 
-use self::errors::{RundeAnzeigenFehler, RundenAnzeigenFehler};
-
+use self::errors::{GameReadError, MediaReadError, ProfileReadError};
 use crate::schema::{
-    Anlage, AnlageOeffentlich, AnlageZugriff, Benutzer, ParkourKurz, ParkourOeffentlich, Runde,
-    RundeBasic, Schuss,
+    AuthenticatedBenutzer, BoardTileView, BoardView, CaptureFeedItem, CaptureOutcome,
+    DraftTargetQuota, GalleryGameGroup, GameDetail, GameSummary, GridCoordinate, PlayerBadge,
+    PromptSubmissionView, StarterDeck, SuperlativeView, UserGallery, UserProfile,
 };
 
 #[derive(Clone)]
@@ -62,8 +45,6 @@ impl LogandaimAppApi {
         Self::from_arc(Arc::new(app))
     }
 
-    /// An app the caller already holds behind an `Arc`, for a harness that must also reach
-    /// the use cases directly (the e2e suite's superuser bootstrap).
     pub fn from_arc(app: Arc<App>) -> Self {
         Self { app }
     }
@@ -72,703 +53,887 @@ impl LogandaimAppApi {
         self.app.clone()
     }
 
-    // ---------------------------------------------------------------- Anlage
+    // ---------------------------------------------------------------- Decks
 
-    /// Create an Anlage. Only a Systemadministrator may (AC-1).
-    pub async fn anlage_erstellen(
+    pub async fn decks_list(
         &self,
         auth: AuthContext,
-        anfrage: requests::AnlageErstellungRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case = anfrage.in_use_case()?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    /// The Anlagen the caller may administer.
-    ///
-    /// A `Systemadministrator` sees every active Anlage; everybody else sees the Anlagen their
-    /// `AnlageVerwaltung` names. Archived Anlagen are not listed: only a
-    /// `Systemadministrator` may still read one, through its detail route.
-    pub async fn anlagen_anzeigen(
-        &self,
-        auth: AuthContext,
-    ) -> ResultReport<Vec<AnlageZugriff>, StammdatenFehler> {
+    ) -> ResultReport<Vec<StarterDeck>, GameReadError> {
         self.app
             .execute_fn(auth, async |ctx| {
+                let _user_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
                 let uow = ctx
                     .enter()
                     .await
-                    .change_context(StammdatenFehler::AnlageLaden)?;
-
-                let ergebnis = async {
-                    let benutzer_id = ctx
-                        .auth()
-                        .require_benutzer_id()
-                        .change_context(StammdatenFehler::NichtAngemeldet)?;
-                    let benutzer = uow
-                        .benutzer()
-                        .find_by_id(benutzer_id)
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let decks = uow
+                        .decks()
+                        .list_all()
                         .await
                         .map_err(IntoReport::into_report)
-                        .change_context(StammdatenFehler::BenutzerLaden)?;
-                    let ist_systemadministrator = benutzer.ist_systemadministrator();
-
-                    let anlagen = if ist_systemadministrator {
-                        uow.anlagen()
-                            .find_aktiv()
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(StammdatenFehler::AnlageLaden)?
-                    } else {
-                        uow.anlagen()
-                            .find_by_verwaltung(benutzer_id)
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(StammdatenFehler::AnlageLaden)?
+                        .change_context(GameReadError::Persistence)?;
+                    Ok::<_, Report<GameReadError>>(
+                        decks
                             .into_iter()
-                            .filter(|anlage| darf_anlage_lesen(&benutzer, anlage))
-                            .collect()
-                    };
-
-                    Ok(anlagen
-                        .into_iter()
-                        .map(|anlage| AnlageZugriff {
-                            rolle: anlage.rolle_von(benutzer_id).map(Into::into),
-                            ist_systemadministrator,
-                            anlage: anlage.into_data().into(),
-                        })
-                        .collect())
-                }
-                .await;
-
-                uow.finish(ergebnis, StammdatenFehler::AnlageLaden).await
-            })
-            .await
-    }
-
-    /// One Anlage with its master data. An archived Anlage answers only to a
-    /// `Systemadministrator`; everyone else gets 403 (AC-11).
-    pub async fn anlage_anzeigen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        self.app
-            .execute_fn(auth, async |ctx| {
-                let uow = ctx
-                    .enter()
-                    .await
-                    .change_context(StammdatenFehler::AnlageLaden)?;
-
-                let ergebnis = async {
-                    let benutzer_id = ctx
-                        .auth()
-                        .require_benutzer_id()
-                        .change_context(StammdatenFehler::NichtAngemeldet)?;
-                    let benutzer = uow
-                        .benutzer()
-                        .find_by_id(benutzer_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(StammdatenFehler::BenutzerLaden)?;
-                    let anlage = match uow.anlagen().find_by_id(anlage_id).await {
-                        Ok(anlage) => anlage,
-                        Err(fehler) => {
-                            return Err(match fehler.current_context() {
-                                RepositoryError::NotFound => {
-                                    Report::new(StammdatenFehler::NichtGefunden)
-                                }
-                                _ => fehler.change_context(StammdatenFehler::AnlageLaden),
-                            });
-                        }
-                    };
-                    if !darf_masterdaten_pflegen(&benutzer, &anlage)
-                        || !darf_anlage_lesen(&benutzer, &anlage)
-                    {
-                        return Err(Report::new(StammdatenFehler::NichtErlaubt));
-                    }
-                    Ok::<_, Report<StammdatenFehler>>(Anlage::from(anlage.into_data()))
-                }
-                .await;
-
-                let ansicht = uow.finish(ergebnis, StammdatenFehler::AnlageLaden).await?;
-                Ok(ansicht)
-            })
-            .await
-    }
-
-    pub async fn anlage_ändern(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        anfrage: requests::AnlageAenderungRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: AnlageBeschreibendeDatenÄndern = anfrage.in_use_case(anlage_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    /// Irreversible: no reactivation exists (AC-10).
-    pub async fn anlage_deaktivieren(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let anlage = self
-            .app
-            .execute(auth, AnlageDeaktivieren { anlage_id })
-            .await?;
-        Ok(anlage.into())
-    }
-
-    // ---------------------------------------------------------------- AnlageVerwaltung
-
-    pub async fn verwaltung_gewähren(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        anfrage: requests::AnlageVerwaltungRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: AnlageVerwaltungGewähren = anfrage.als_gewähren(anlage_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    pub async fn verwaltung_ändern(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        benutzer_id: BenutzerId,
-        anfrage: requests::AnlageVerwaltungRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: AnlageVerwaltungÄndern = anfrage.als_ändern(anlage_id, benutzer_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    pub async fn verwaltung_entziehen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        benutzer_id: BenutzerId,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case = AnlageVerwaltungEntziehen {
-            anlage_id,
-            benutzer_id,
-        };
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    // ---------------------------------------------------------------- Ziel
-
-    pub async fn ziel_hinzufügen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        anfrage: requests::ZielRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: ZielHinzufügen = anfrage.als_hinzufügen(anlage_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    /// Edit details; the identity and its history stay (AC-5).
-    pub async fn ziel_ändern(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        ziel_id: AnlageZielId,
-        anfrage: requests::ZielRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: ZielÄndern = anfrage.als_ändern(anlage_id, ziel_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    /// Replace the physical target: a new identity, never the old history (AC-5).
-    pub async fn ziel_ersetzen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        ziel_id: AnlageZielId,
-        anfrage: requests::ZielRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: ZielErsetzen = anfrage.als_ersetzen(anlage_id, ziel_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    /// Archive when history references it, delete when nothing does (AC-11, AC-12).
-    pub async fn ziel_entfernen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        ziel_id: AnlageZielId,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case = ZielEntfernen { anlage_id, ziel_id };
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    // ---------------------------------------------------------------- Parkour
-
-    pub async fn parkour_hinzufügen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        anfrage: requests::ParkourErstellungRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: ParkourHinzufügen = anfrage.in_use_case(anlage_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    pub async fn parkour_setup_ändern(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        parkour_id: ParkourId,
-        anfrage: requests::ParkourSetupRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: ParkourSetupÄndern = anfrage.in_use_case(anlage_id, parkour_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    pub async fn parkour_umbenennen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        parkour_id: ParkourId,
-        anfrage: requests::ParkourUmbenennenRequest,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case: ParkourUmbenennen = anfrage.in_use_case(anlage_id, parkour_id)?;
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    /// Archive when a Runde captured it, delete when none did (AC-11, AC-12).
-    pub async fn parkour_entfernen(
-        &self,
-        auth: AuthContext,
-        anlage_id: AnlageId,
-        parkour_id: ParkourId,
-    ) -> ResultReport<Anlage, StammdatenFehler> {
-        let use_case = ParkourEntfernen {
-            anlage_id,
-            parkour_id,
-        };
-        let anlage = self.app.execute(auth, use_case).await?;
-        Ok(anlage.into())
-    }
-
-    /// Every active Parkour of every active Anlage. Needs no identity (AC-13).
-    pub async fn parkour_anzeigen(
-        &self,
-        auth: AuthContext,
-    ) -> ResultReport<Vec<ParkourOeffentlich>, StammdatenFehler> {
-        self.app
-            .execute_fn(auth, async |ctx| {
-                let uow = ctx
-                    .enter()
-                    .await
-                    .change_context(StammdatenFehler::AnlageLaden)?;
-
-                let ergebnis = async {
-                    let anlagen = uow
-                        .anlagen()
-                        .find_aktiv()
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(StammdatenFehler::AnlageLaden)?;
-
-                    let mut offen = Vec::new();
-                    for anlage in anlagen {
-                        for parkour in anlage.parkour() {
-                            if parkour.ist_archiviert() {
-                                continue;
-                            }
-                            offen.push(ParkourOeffentlich {
-                                anlage_id: anlage.id().0,
-                                anlage_name: anlage.name().to_string(),
-                                parkour: parkour.clone().into(),
-                            });
-                        }
-                    }
-                    Ok::<_, Report<StammdatenFehler>>(offen)
-                }
-                .await;
-
-                uow.finish(ergebnis, StammdatenFehler::AnlageLaden).await
-            })
-            .await
-    }
-
-    /// The public Anlagen directory: active Anlagen with a short Parkour list.
-    ///
-    /// Needs no identity, and carries no contact data (see [`AnlageOeffentlich`]).
-    pub async fn anlagen_verzeichnis(
-        &self,
-        auth: AuthContext,
-    ) -> ResultReport<Vec<AnlageOeffentlich>, StammdatenFehler> {
-        self.app
-            .execute_fn(auth, async |ctx| {
-                let uow = ctx
-                    .enter()
-                    .await
-                    .change_context(StammdatenFehler::AnlageLaden)?;
-
-                let ergebnis = async {
-                    let anlagen = uow
-                        .anlagen()
-                        .find_aktiv()
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(StammdatenFehler::AnlageLaden)?;
-
-                    Ok::<_, Report<StammdatenFehler>>(
-                        anlagen
-                            .into_iter()
-                            .map(|anlage| AnlageOeffentlich {
-                                anlage_id: anlage.id().0,
-                                name: anlage.name().to_string(),
-                                ort: anlage.adresse().ort().to_owned(),
-                                laendercode: anlage.adresse().ländercode().into(),
-                                parkour: anlage
-                                    .parkour()
-                                    .iter()
-                                    .filter(|parkour| !parkour.ist_archiviert())
-                                    .cloned()
-                                    .map(ParkourKurz::from)
-                                    .collect(),
+                            .map(|d| StarterDeck {
+                                id: d.id.0,
+                                slug: d.slug,
+                                name: d.name,
+                                description: d.description,
+                                prompts: d.prompts,
                             })
                             .collect(),
                     )
                 }
                 .await;
-
-                uow.finish(ergebnis, StammdatenFehler::AnlageLaden).await
+                uow.finish(res, GameReadError::Persistence).await
             })
             .await
     }
 
-    // ---------------------------------------------------------------- Runde
+    // ---------------------------------------------------------------- Games
 
-    /// Start a Runde; the snapshot is captured in the same transaction (AC-7).
-    pub async fn runde_mit_parkour_starten(
+    pub async fn games_list(
         &self,
         auth: AuthContext,
-        anfrage: requests::RundeMitParkourStartenRequest,
-    ) -> ResultReport<Runde, RundeStartenFehler> {
-        let runde = self.app.execute(auth, RundeStarten::from(anfrage)).await?;
-        Ok(runde.into())
-    }
-
-    /// Start a `Freie Runde` from its validated request.
-    pub async fn freie_runde_starten(
-        &self,
-        auth: AuthContext,
-        anfrage: requests::FreieRundeStartenRequest,
-    ) -> ResultReport<Runde, RundeStartenFehler> {
-        let use_case = RundeStarten::try_from(anfrage)
-            .map_err(|error| error.change_context(RundeStartenFehler::UngültigeAnfrage))?;
-        let runde = self.app.execute(auth, use_case).await?;
-        Ok(runde.into())
-    }
-
-    /// Append one `Freies Ziel` to a free Runde and answer the updated read model.
-    pub async fn runde_ziel_hinzufuegen(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-        anfrage: requests::ZielHinzufuegenRequest,
-    ) -> ResultReport<Runde, RundeZielHinzufügenFehler> {
-        let use_case = anfrage.in_use_case(runde_id)?;
-        let runde = self.app.execute(auth, use_case).await?;
-        self.runde_mit_schuessen(runde, runde_id, || RundeZielHinzufügenFehler::RundeLaden)
-            .await
-    }
-
-    /// Set or clear one `Zielnotiz` and answer the updated read model.
-    pub async fn runde_ziel_notiz_setzen(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-        ziel_id: ZielId,
-        anfrage: requests::ZielNotizSetzenRequest,
-    ) -> ResultReport<Runde, RundeZielNotizSetzenFehler> {
-        let use_case = anfrage.in_use_case(runde_id, ziel_id.0)?;
-        let runde = self.app.execute(auth, use_case).await?;
-        self.runde_mit_schuessen(runde, runde_id, || RundeZielNotizSetzenFehler::RundeLaden)
-            .await
-    }
-
-    /// Rename one `Freies Ziel` and answer the updated read model.
-    pub async fn runde_ziel_umbenennen(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-        ziel_id: ZielId,
-        anfrage: requests::ZielUmbenennenRequest,
-    ) -> ResultReport<Runde, RundeZielUmbenennenFehler> {
-        let use_case = anfrage
-            .in_use_case(runde_id, ziel_id.0)
-            .map_err(|error| error.change_context(RundeZielUmbenennenFehler::UngültigeAnfrage))?;
-        let runde = self.app.execute(auth, use_case).await?;
-        self.runde_mit_schuessen(runde, runde_id, || RundeZielUmbenennenFehler::RundeLaden)
-            .await
-    }
-
-    /// Remove one `Freies Ziel`, with its Schüsse, and answer the updated read model.
-    pub async fn runde_ziel_entfernen(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-        ziel_id: ZielId,
-    ) -> ResultReport<Runde, RundeZielEntfernenFehler> {
-        let use_case = requests::ziel_entfernen_in_use_case(runde_id, ziel_id);
-        let runde = self.app.execute(auth, use_case).await?;
-        self.runde_mit_schuessen(runde, runde_id, || RundeZielEntfernenFehler::RundeLaden)
-            .await
-    }
-
-    /// Render a Runde a write answered as the full read model, folding its Schüsse.
-    ///
-    /// A Ziel edit changes *which* Schüsse belong to the round, so a bare aggregate would
-    /// answer empty Wertungen and an empty ledger; a caller must see the round as it now
-    /// stands. The read is owner-free because the write already proved the caller may see it.
-    async fn runde_mit_schuessen<E>(
-        &self,
-        runde: DomainRunde,
-        runde_id: RundeId,
-        ladefehler: impl Fn() -> E + Send + Sync,
-    ) -> ResultReport<Runde, E>
-    where
-        E: logandaim_core::ThreadSafeError + Send + Sync,
-    {
-        let schüsse = self
-            .app
-            .execute_fn(AuthContext::Anonymous, async |ctx| {
-                let uow = ctx.enter().await.change_context(ladefehler())?;
-                let schüsse = uow
-                    .schüsse()
-                    .find_by_runde(runde_id)
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(ladefehler())?
-                    .into_iter()
-                    .map(|schuss| schuss.into_data())
-                    .collect();
-                uow.finish(Ok::<_, Report<E>>(schüsse), ladefehler()).await
-            })
-            .await?;
-        Ok(Runde::gelesen(runde, schüsse))
-    }
-
-    /// One Runde with both Wertungen; owner or Systemadministrator (AC-9, AC-13).
-    pub async fn runde_anzeigen(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-    ) -> ResultReport<Runde, RundeAnzeigenFehler> {
+    ) -> ResultReport<Vec<GameSummary>, GameReadError> {
         self.app
             .execute_fn(auth, async |ctx| {
-                let benutzer_id = ctx
+                let user_id = ctx
                     .auth()
                     .require_benutzer_id()
-                    .change_context(RundeAnzeigenFehler::NichtAngemeldet)?;
-
+                    .change_context(GameReadError::Unauthorized)?;
                 let uow = ctx
                     .enter()
                     .await
-                    .change_context(RundeAnzeigenFehler::RundeLaden)?;
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let games = uow
+                        .games()
+                        .find_for_user(user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameReadError::Persistence)?;
 
-                let ergebnis = async {
-                    let runde = match uow.runden().find_by_id(runde_id).await {
-                        Ok(runde) => runde,
-                        Err(fehler) => {
-                            return Err(match fehler.current_context() {
-                                RepositoryError::NotFound => {
-                                    Report::new(RundeAnzeigenFehler::NichtGefunden)
-                                }
-                                _ => fehler.change_context(RundeAnzeigenFehler::RundeLaden),
-                            });
-                        }
-                    };
-
-                    // Owner or Systemadministrator. An Anlage's staff never reads another
-                    // Benutzer's Runde (AC-13), which is why the AnlageVerwaltung grants
-                    // nothing here.
-                    if !runde.gehört_zu(benutzer_id) {
-                        let benutzer = uow
-                            .benutzer()
-                            .find_by_id(benutzer_id)
+                    let mut summaries = Vec::with_capacity(games.len());
+                    for game in games {
+                        let players = uow
+                            .games()
+                            .find_players(game.id())
                             .await
                             .map_err(IntoReport::into_report)
-                            .change_context(RundeAnzeigenFehler::BenutzerLaden)?;
-                        if !benutzer.ist_systemadministrator() {
-                            return Err(Report::new(RundeAnzeigenFehler::NichtErlaubt));
+                            .change_context(GameReadError::Persistence)?;
+                        let mut winner = None;
+                        if let Some(winner_id) = game.winner_user_id()
+                            && let Ok(profile) = uow.profiles().find_by_user_id(winner_id).await
+                        {
+                            winner = Some(badge_from_profile(
+                                profile.into_data(),
+                                players
+                                    .iter()
+                                    .find(|p| p.user_id == winner_id)
+                                    .is_some_and(|p| p.draft_locked),
+                                game.host_user_id() == winner_id,
+                            ));
                         }
+                        summaries.push(GameSummary {
+                            id: game.id().0,
+                            invite_code: game.invite_code().as_str().to_owned(),
+                            title: game.title().as_str().to_owned(),
+                            grid_size: game.grid_size() as u8,
+                            visibility_mode: game.visibility_mode().into(),
+                            include_free_space: game.include_free_space(),
+                            status: game.status().into(),
+                            player_count: players.len() as u32,
+                            winner,
+                            started_at: game.started_at(),
+                            ended_at: game.ended_at(),
+                            created_at: game.created_at(),
+                        });
                     }
-
-                    let schüsse: Vec<logandaim_core::domain::Schuss> = uow
-                        .schüsse()
-                        .find_by_runde(runde_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(RundeAnzeigenFehler::SchüsseLaden)?
-                        .into_iter()
-                        .map(|schuss| schuss.into_data())
-                        .collect();
-
-                    Ok::<_, Report<RundeAnzeigenFehler>>(Runde::gelesen(runde.into_data(), schüsse))
+                    Ok::<_, Report<GameReadError>>(summaries)
                 }
                 .await;
-
-                uow.finish(ergebnis, RundeAnzeigenFehler::RundeLaden).await
+                uow.finish(res, GameReadError::Persistence).await
             })
             .await
     }
 
-    /// The caller's own Runden, newest first.
-    pub async fn runden_anzeigen(
+    pub async fn game_by_invite_code(
         &self,
         auth: AuthContext,
-    ) -> ResultReport<Vec<RundeBasic>, RundenAnzeigenFehler> {
+        code: String,
+    ) -> ResultReport<GameSummary, GameReadError> {
+        let invite_code =
+            InviteCode::new(code).map_err(|_| Report::new(GameReadError::BadRequest))?;
         self.app
             .execute_fn(auth, async |ctx| {
-                let benutzer_id = ctx
+                let _user_id = ctx
                     .auth()
                     .require_benutzer_id()
-                    .change_context(RundenAnzeigenFehler::NichtAngemeldet)?;
-
+                    .change_context(GameReadError::Unauthorized)?;
                 let uow = ctx
                     .enter()
                     .await
-                    .change_context(RundenAnzeigenFehler::Laden)?;
-
-                let ergebnis = async {
-                    let mut runden: Vec<_> = uow
-                        .runden()
-                        .find_by_benutzer(benutzer_id)
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let game = match uow.games().find_by_invite_code(&invite_code).await {
+                        Ok(g) => g,
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(GameReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
+                    };
+                    let players = uow
+                        .games()
+                        .find_players(game.id())
                         .await
                         .map_err(IntoReport::into_report)
-                        .change_context(RundenAnzeigenFehler::Laden)?
-                        .into_iter()
-                        .map(|runde| runde.into_data())
-                        .collect();
-                    let schüsse = uow
-                        .schüsse()
-                        .find_by_benutzer(benutzer_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(RundenAnzeigenFehler::Laden)?;
-                    let mut erfasste_ziele: std::collections::HashMap<
-                        RundeId,
-                        std::collections::HashSet<uuid::Uuid>,
-                    > = std::collections::HashMap::new();
-                    for schuss in schüsse {
-                        erfasste_ziele
-                            .entry(schuss.runde_id())
-                            .or_default()
-                            .insert(schuss.ziel_id().0);
+                        .change_context(GameReadError::Persistence)?;
+                    let mut winner = None;
+                    if let Some(winner_id) = game.winner_user_id()
+                        && let Ok(profile) = uow.profiles().find_by_user_id(winner_id).await
+                    {
+                        winner = Some(badge_from_profile(
+                            profile.into_data(),
+                            false,
+                            game.host_user_id() == winner_id,
+                        ));
                     }
-                    // Newest first: the list a caller opens to find the latest Runde.
-                    runden.sort_by_key(|runde| std::cmp::Reverse(runde.begonnen_am()));
-                    let result: Vec<RundeBasic> = runden
-                        .into_iter()
-                        .map(|runde| {
-                            let id = runde.id();
-                            let mut basic: RundeBasic = runde.into();
-                            basic.anzahl_erfasste_ziele =
-                                erfasste_ziele.get(&id).map_or(0, |ziele| ziele.len());
-                            basic
-                        })
-                        .collect();
-                    Ok::<_, Report<RundenAnzeigenFehler>>(result)
+                    Ok::<_, Report<GameReadError>>(GameSummary {
+                        id: game.id().0,
+                        invite_code: game.invite_code().as_str().to_owned(),
+                        title: game.title().as_str().to_owned(),
+                        grid_size: game.grid_size() as u8,
+                        visibility_mode: game.visibility_mode().into(),
+                        include_free_space: game.include_free_space(),
+                        status: game.status().into(),
+                        player_count: players.len() as u32,
+                        winner,
+                        started_at: game.started_at(),
+                        ended_at: game.ended_at(),
+                        created_at: game.created_at(),
+                    })
                 }
                 .await;
-
-                let runden = uow.finish(ergebnis, RundenAnzeigenFehler::Laden).await?;
-                Ok(runden.into_iter().collect())
+                uow.finish(res, GameReadError::Persistence).await
             })
             .await
     }
 
-    pub async fn runde_loeschen(
+    pub async fn game_create(
         &self,
         auth: AuthContext,
-        runde_id: RundeId,
-    ) -> ResultReport<(), logandaim_core::service::RundeLöschenFehler> {
-        self.app
-            .execute(auth, logandaim_core::service::RundeLöschen { runde_id })
+        req: requests::CreateGameRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case()?;
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
             .await
     }
 
-    pub async fn runde_abschliessen(
+    pub async fn game_join(
         &self,
         auth: AuthContext,
-        runde_id: RundeId,
-    ) -> ResultReport<Runde, RundeAbschliessenFehler> {
-        let runde = self
+        req: requests::JoinGameRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case()?;
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_update_settings(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::UpdateGameSettingsRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case(game_id)?;
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_start_drafting(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let game = self.app.execute(auth, StartDrafting { game_id }).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_save_prompts(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::SaveDraftPromptsRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case(game_id)?;
+        self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game_id, GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_lock_prompts(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let game = self.app.execute(auth, LockDraftPrompts { game_id }).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    async fn load_game_detail_after_write<E: logandaim_core::ThreadSafeError>(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        fallback_err: E,
+    ) -> ResultReport<GameDetail, E> {
+        self.game_detail(auth, game_id)
+            .await
+            .map_err(|err| err.change_context(fallback_err))
+    }
+
+    pub async fn game_detail(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let game = match uow.games().find_by_id(game_id).await {
+                        Ok(g) => g.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(GameReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
+                    };
+
+                    let mut players = uow
+                        .games()
+                        .find_players(game_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameReadError::Persistence)?;
+                    players.sort_by(|a, b| {
+                        a.joined_at
+                            .cmp(&b.joined_at)
+                            .then(a.user_id.cmp(&b.user_id))
+                    });
+
+                    if !is_player_in_game(&players, viewer_id) {
+                        return Err(Report::new(GameReadError::Forbidden));
+                    }
+
+                    let player_ids: Vec<_> = players.iter().map(|p| p.user_id).collect();
+                    let profiles = uow
+                        .profiles()
+                        .find_by_user_ids(&player_ids)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameReadError::Persistence)?;
+
+                    let badges = build_badge_map(
+                        &game,
+                        &players,
+                        profiles.into_iter().map(|p| p.into_data()),
+                    );
+                    let player_badges: Vec<PlayerBadge> = players
+                        .iter()
+                        .filter_map(|p| badges.get(&p.user_id).cloned())
+                        .collect();
+
+                    let winner = game
+                        .winner_user_id()
+                        .and_then(|wid| badges.get(&wid).cloned());
+
+                    // Drafting quotas & caller's saved drafts
+                    let (my_quotas, my_drafts) = if game.status() == GameStatus::Drafting {
+                        let quotas = target_quotas_for_author(
+                            &player_ids,
+                            viewer_id,
+                            game.playable_tile_count(),
+                        )
+                        .map_err(|e| e.change_context(GameReadError::Persistence))?;
+                        let quota_views = quotas
+                            .into_iter()
+                            .filter_map(|(target_id, count)| {
+                                badges
+                                    .get(&target_id)
+                                    .cloned()
+                                    .map(|badge| DraftTargetQuota {
+                                        target_user: badge,
+                                        required_count: count as u32,
+                                    })
+                            })
+                            .collect();
+                        let drafts = uow
+                            .games()
+                            .find_prompts_by_author(game_id, viewer_id)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(GameReadError::Persistence)?
+                            .into_iter()
+                            .map(|p| PromptSubmissionView {
+                                id: p.id.0,
+                                target_user_id: p.target_user_id.0,
+                                text: p.text.into_string(),
+                                source: p.source.into(),
+                            })
+                            .collect();
+                        (quota_views, drafts)
+                    } else {
+                        (Vec::new(), Vec::new())
+                    };
+
+                    // Boards & Captures
+                    let mut my_board = None;
+                    let mut all_boards = Vec::new();
+                    let mut feed = Vec::new();
+                    let mut superlatives = Vec::new();
+
+                    if game.status() == GameStatus::Active || game.status() == GameStatus::Completed
+                    {
+                        let boards = uow
+                            .boards()
+                            .find_boards_by_game(game_id)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(GameReadError::Persistence)?;
+                        let tiles = uow
+                            .boards()
+                            .find_tiles_by_game(game_id)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(GameReadError::Persistence)?;
+                        let captures: Vec<Capture> = uow
+                            .captures()
+                            .find_by_game(game_id)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(GameReadError::Persistence)?
+                            .into_iter()
+                            .map(|c| c.into_data())
+                            .collect();
+
+                        let capture_by_id: HashMap<_, _> =
+                            captures.iter().map(|c| (c.id(), c)).collect();
+                        let mut tiles_by_board: HashMap<_, Vec<BoardTile>> = HashMap::new();
+                        for tile in tiles {
+                            tiles_by_board
+                                .entry(tile.board_id())
+                                .or_default()
+                                .push(tile);
+                        }
+
+                        for b in boards {
+                            let b = b.into_data();
+                            let owner_id = b.owner_user_id();
+                            let is_mine = owner_id == viewer_id;
+                            if !is_mine && game.status() != GameStatus::Completed {
+                                continue;
+                            }
+                            let Some(owner_badge) = badges.get(&owner_id).cloned() else {
+                                continue;
+                            };
+                            let mut board_tiles =
+                                tiles_by_board.remove(&b.id()).unwrap_or_default();
+                            board_tiles.sort_by_key(|t| (t.row(), t.col()));
+
+                            let tile_views = board_tiles
+                                .into_iter()
+                                .map(|t| {
+                                    let cap =
+                                        t.capture_id().and_then(|cid| capture_by_id.get(&cid));
+                                    let show_photo = cap.is_some_and(|c| {
+                                        can_view_full_capture(&game, &players, c, viewer_id)
+                                    });
+                                    BoardTileView {
+                                        id: t.id().0,
+                                        row: t.row(),
+                                        col: t.col(),
+                                        prompt_text: t.prompt_text().as_str().to_owned(),
+                                        target_user: t
+                                            .target_user_id()
+                                            .and_then(|tid| badges.get(&tid).cloned()),
+                                        is_free_space: t.is_free_space(),
+                                        is_captured: t.capture_id().is_some(),
+                                        capture_id: t.capture_id().map(|c| c.0),
+                                        image_storage_key: if show_photo {
+                                            cap.map(|c| c.image_storage_key().to_owned())
+                                        } else {
+                                            None
+                                        },
+                                        captured_at: cap.map(|c| c.captured_at()),
+                                    }
+                                })
+                                .collect();
+
+                            let view = BoardView {
+                                id: b.id().0,
+                                owner: owner_badge,
+                                has_bingo: b.has_bingo(),
+                                tiles: tile_views,
+                            };
+                            if is_mine {
+                                my_board = Some(view.clone());
+                            }
+                            if game.status() == GameStatus::Completed {
+                                all_boards.push(view);
+                            }
+                        }
+
+                        for cap in &captures {
+                            if let Some(item) =
+                                capture_to_feed_item(&game, &players, &badges, cap, viewer_id)
+                            {
+                                feed.push(item);
+                            }
+                        }
+
+                        if game.status() == GameStatus::Completed {
+                            for sup in
+                                compute_superlatives(&player_ids, &captures, game.started_at())
+                            {
+                                if let Some(user) = badges.get(&sup.user_id).cloned() {
+                                    superlatives.push(SuperlativeView {
+                                        kind: sup.kind.into(),
+                                        user,
+                                        metric_value: sup.metric_value,
+                                        capture_id: sup.capture_id.map(|c| c.0),
+                                    });
+                                }
+                            }
+                        }
+                    }
+
+                    Ok::<_, Report<GameReadError>>(GameDetail {
+                        id: game.id().0,
+                        invite_code: game.invite_code().as_str().to_owned(),
+                        host_user_id: game.host_user_id().0,
+                        title: game.title().as_str().to_owned(),
+                        grid_size: game.grid_size() as u8,
+                        visibility_mode: game.visibility_mode().into(),
+                        include_free_space: game.include_free_space(),
+                        status: game.status().into(),
+                        playable_tile_count: game.playable_tile_count() as u32,
+                        started_at: game.started_at(),
+                        ended_at: game.ended_at(),
+                        winner,
+                        created_at: game.created_at(),
+                        players: player_badges,
+                        my_quotas,
+                        my_drafts,
+                        my_board,
+                        all_boards,
+                        feed,
+                        superlatives,
+                    })
+                }
+                .await;
+                uow.finish(res, GameReadError::Persistence).await
+            })
+            .await
+    }
+
+    // ---------------------------------------------------------------- Captures
+
+    pub async fn capture_submit(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        tile_id: BoardTileId,
+        image_bytes: Vec<u8>,
+    ) -> ResultReport<CaptureOutcome, CaptureUseCaseError> {
+        let outcome = self
             .app
-            .execute(auth, RundeAbschliessen { runde_id })
-            .await?;
-        // Closing changes only the round's state, but the answer is the whole read model:
-        // reporting it shotless would claim the archer's twenty arrows vanished.
-        self.runde_mit_schuessen(runde, runde_id, || RundeAbschliessenFehler::RundeLaden)
-            .await
-    }
-
-    // ---------------------------------------------------------------- Schuss
-
-    /// Log one arrow. The owner comes from the token, never from the body (AC-9).
-    pub async fn schuss_registrieren(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-        anfrage: requests::SchussErstellungRequest,
-    ) -> ResultReport<Schuss, SchussRegistrierenFehler> {
-        let use_case: SchussRegistrieren = anfrage
-            .in_use_case(runde_id)
-            .map_err(|error| error.change_context(SchussRegistrierenFehler::UngültigeAnfrage))?;
-        let schuss = self.app.execute(auth, use_case).await?;
-        Ok(schuss.into())
-    }
-
-    pub async fn schuss_aendern(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-        schuss_id: SchussId,
-        anfrage: requests::SchussAenderungRequest,
-    ) -> ResultReport<Schuss, SchussÄndernFehler> {
-        let use_case = anfrage.in_use_case(runde_id, schuss_id)?;
-        self.app.execute(auth, use_case).await.map(Into::into)
-    }
-
-    pub async fn schuss_loeschen(
-        &self,
-        auth: AuthContext,
-        runde_id: RundeId,
-        schuss_id: SchussId,
-    ) -> ResultReport<(), SchussLöschenFehler> {
-        self.app
             .execute(
                 auth,
-                SchussLöschen {
-                    runde_id,
-                    schuss_id,
+                SubmitCapture {
+                    game_id,
+                    tile_id,
+                    image_bytes,
                 },
             )
+            .await?;
+
+        let viewer_id = auth
+            .require_benutzer_id()
+            .change_context(CaptureUseCaseError::Unauthorized)?;
+
+        // Load badges for the returned capture item
+        let item = self
+            .app
+            .execute_fn(auth, async |ctx| {
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(CaptureUseCaseError::Persistence)?;
+                let res = async {
+                    let game = uow
+                        .games()
+                        .find_by_id(game_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(CaptureUseCaseError::Persistence)?
+                        .into_data();
+                    let players = uow
+                        .games()
+                        .find_players(game_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(CaptureUseCaseError::Persistence)?;
+                    let ids: Vec<_> = players.iter().map(|p| p.user_id).collect();
+                    let profiles = uow
+                        .profiles()
+                        .find_by_user_ids(&ids)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(CaptureUseCaseError::Persistence)?;
+                    let badges = build_badge_map(
+                        &game,
+                        &players,
+                        profiles.into_iter().map(|p| p.into_data()),
+                    );
+                    let item =
+                        capture_to_feed_item(&game, &players, &badges, &outcome.capture, viewer_id)
+                            .ok_or_else(|| Report::new(CaptureUseCaseError::Persistence))?;
+                    Ok::<_, Report<CaptureUseCaseError>>(item)
+                }
+                .await;
+                uow.finish(res, CaptureUseCaseError::Persistence).await
+            })
+            .await?;
+
+        Ok(CaptureOutcome {
+            capture: item,
+            game_completed: outcome.game_completed,
+            winning_line: outcome
+                .winning_line
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(row, col)| GridCoordinate { row, col })
+                .collect(),
+        })
+    }
+
+    // ---------------------------------------------------------------- Profiles & Galleries
+
+    pub async fn profile_get(
+        &self,
+        auth: AuthContext,
+        target_user_id: BenutzerId,
+    ) -> ResultReport<UserProfile, ProfileReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let _viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(ProfileReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(ProfileReadError::Persistence)?;
+                let res = async {
+                    let profile = match uow.profiles().find_by_user_id(target_user_id).await {
+                        Ok(p) => p.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(ProfileReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(ProfileReadError::Persistence),
+                    };
+
+                    let games = uow
+                        .games()
+                        .find_for_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let caught = uow
+                        .captures()
+                        .find_by_target_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let captured = uow
+                        .captures()
+                        .find_by_catcher_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+
+                    Ok::<_, Report<ProfileReadError>>(profile_to_schema(
+                        &profile,
+                        games.len() as u32,
+                        captured.len() as u32,
+                        caught.len() as u32,
+                    ))
+                }
+                .await;
+                uow.finish(res, ProfileReadError::Persistence).await
+            })
             .await
     }
 
-    // ---------------------------------------------------------------- Registration
+    pub async fn profile_update(
+        &self,
+        auth: AuthContext,
+        req: requests::UpdateProfileRequest,
+    ) -> ResultReport<UserProfile, ProfileUseCaseError> {
+        let updated = self
+            .app
+            .execute(auth, logandaim_core::service::UpdateProfile::from(req))
+            .await?;
+        self.profile_get(auth, updated.user_id())
+            .await
+            .map_err(|e| e.change_context(ProfileUseCaseError::Persistence))
+    }
 
-    /// Step 1. Always answers `Ok`: a taken address is not disclosed (AC-2).
+    pub async fn profile_upload_avatar(
+        &self,
+        auth: AuthContext,
+        image_bytes: Vec<u8>,
+    ) -> ResultReport<UserProfile, ProfileUseCaseError> {
+        let updated = self.app.execute(auth, UploadAvatar { image_bytes }).await?;
+        self.profile_get(auth, updated.user_id())
+            .await
+            .map_err(|e| e.change_context(ProfileUseCaseError::Persistence))
+    }
+
+    pub async fn user_gallery(
+        &self,
+        auth: AuthContext,
+        target_user_id: BenutzerId,
+    ) -> ResultReport<UserGallery, ProfileReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(ProfileReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(ProfileReadError::Persistence)?;
+                let res = async {
+                    let target_profile = match uow.profiles().find_by_user_id(target_user_id).await
+                    {
+                        Ok(p) => p.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(ProfileReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(ProfileReadError::Persistence),
+                    };
+
+                    let games = uow
+                        .games()
+                        .find_for_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let caught_all: Vec<Capture> = uow
+                        .captures()
+                        .find_by_target_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?
+                        .into_iter()
+                        .map(|c| c.into_data())
+                        .collect();
+                    let captured_all: Vec<Capture> = uow
+                        .captures()
+                        .find_by_catcher_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?
+                        .into_iter()
+                        .map(|c| c.into_data())
+                        .collect();
+
+                    type CachedGame = (Game, Vec<GamePlayer>, HashMap<BenutzerId, PlayerBadge>);
+                    let mut game_cache: HashMap<GameId, CachedGame> = HashMap::new();
+                    let mut all_game_ids: HashSet<GameId> = HashSet::new();
+                    for c in caught_all.iter().chain(captured_all.iter()) {
+                        all_game_ids.insert(c.game_id());
+                    }
+
+                    for gid in all_game_ids {
+                        let Ok(game) = uow.games().find_by_id(gid).await else {
+                            continue;
+                        };
+                        let game = game.into_data();
+                        let players = uow
+                            .games()
+                            .find_players(gid)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(ProfileReadError::Persistence)?;
+                        let ids: Vec<_> = players.iter().map(|p| p.user_id).collect();
+                        let profiles = uow
+                            .profiles()
+                            .find_by_user_ids(&ids)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(ProfileReadError::Persistence)?;
+                        let badges = build_badge_map(
+                            &game,
+                            &players,
+                            profiles.into_iter().map(|p| p.into_data()),
+                        );
+                        game_cache.insert(gid, (game, players, badges));
+                    }
+
+                    let group_captures = |list: &[Capture]| -> Vec<GalleryGameGroup> {
+                        let mut by_game: HashMap<GameId, Vec<CaptureFeedItem>> = HashMap::new();
+                        for cap in list {
+                            let Some((game, players, badges)) = game_cache.get(&cap.game_id())
+                            else {
+                                continue;
+                            };
+                            // Only show full-resolution unredacted memories in galleries once visible!
+                            if !can_view_full_capture(game, players, cap, viewer_id) {
+                                continue;
+                            }
+                            if let Some(item) =
+                                capture_to_feed_item(game, players, badges, cap, viewer_id)
+                            {
+                                by_game.entry(game.id()).or_default().push(item);
+                            }
+                        }
+
+                        let mut groups: Vec<GalleryGameGroup> = by_game
+                            .into_iter()
+                            .filter_map(|(gid, mut photos)| {
+                                let (game, _, badges) = game_cache.get(&gid)?;
+                                photos.sort_by_key(|p| std::cmp::Reverse(p.captured_at));
+                                Some(GalleryGameGroup {
+                                    game_id: game.id().0,
+                                    game_title: game.title().as_str().to_owned(),
+                                    started_at: game.started_at(),
+                                    ended_at: game.ended_at(),
+                                    winner: game
+                                        .winner_user_id()
+                                        .and_then(|wid| badges.get(&wid).cloned()),
+                                    photos,
+                                })
+                            })
+                            .collect();
+                        groups.sort_by_key(|g| std::cmp::Reverse(g.ended_at.or(g.started_at)));
+                        groups
+                    };
+
+                    let caught_groups = group_captures(&caught_all);
+                    let captured_groups = group_captures(&captured_all);
+
+                    Ok::<_, Report<ProfileReadError>>(UserGallery {
+                        user: profile_to_schema(
+                            &target_profile,
+                            games.len() as u32,
+                            captured_all.len() as u32,
+                            caught_all.len() as u32,
+                        ),
+                        caught: caught_groups,
+                        captured: captured_groups,
+                    })
+                }
+                .await;
+                uow.finish(res, ProfileReadError::Persistence).await
+            })
+            .await
+    }
+
+    // ---------------------------------------------------------------- Media
+
+    pub async fn media_get(
+        &self,
+        auth: AuthContext,
+        storage_key: String,
+    ) -> ResultReport<ObjectStream, MediaReadError> {
+        if storage_key.is_empty()
+            || storage_key.contains('/')
+            || storage_key.contains("..")
+            || storage_key.contains('\\')
+        {
+            return Err(Report::new(MediaReadError::NotFound));
+        }
+
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(MediaReadError::Unauthorized)?;
+
+                if !storage_key.starts_with("avatar_") {
+                    let uow = ctx.enter().await.change_context(MediaReadError::Storage)?;
+                    let allowed = async {
+                        let capture = match uow.captures().find_by_storage_key(&storage_key).await {
+                            Ok(c) => c.into_data(),
+                            Err(err)
+                                if matches!(err.current_context(), RepositoryError::NotFound) =>
+                            {
+                                return Err(Report::new(MediaReadError::NotFound));
+                            }
+                            Err(err) => return Err(err).change_context(MediaReadError::Storage),
+                        };
+                        let game = uow
+                            .games()
+                            .find_by_id(capture.game_id())
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(MediaReadError::Storage)?
+                            .into_data();
+                        let players = uow
+                            .games()
+                            .find_players(game.id())
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(MediaReadError::Storage)?;
+
+                        let permitted = if storage_key == capture.thumbnail_storage_key() {
+                            can_view_blurred_capture(&game, &players, &capture, viewer_id)
+                        } else {
+                            can_view_full_capture(&game, &players, &capture, viewer_id)
+                        };
+                        if !permitted {
+                            return Err(Report::new(MediaReadError::Forbidden));
+                        }
+                        Ok::<_, Report<MediaReadError>>(())
+                    }
+                    .await;
+                    uow.finish(allowed, MediaReadError::Storage).await?;
+                }
+
+                let stream = ctx
+                    .object_store()
+                    .get(&storage_key)
+                    .await
+                    .change_context(MediaReadError::Storage)?
+                    .ok_or_else(|| Report::new(MediaReadError::NotFound))?;
+                Ok(stream)
+            })
+            .await
+    }
+
+    // ---------------------------------------------------------------- Registration & Login
+
     pub async fn registrierung_starten(
         &self,
         anfrage: requests::RegistrierungStartRequest,
@@ -778,7 +943,6 @@ impl LogandaimAppApi {
         self.app.execute(AuthContext::Anonymous, use_case).await
     }
 
-    /// Step 2. Creates the Benutzer, its Konto, and the first session.
     pub async fn registrierung_abschließen(
         &self,
         anfrage: requests::RegistrierungAbschlussRequest,
@@ -788,8 +952,6 @@ impl LogandaimAppApi {
         let ausgestellt = self.app.execute(AuthContext::Anonymous, use_case).await?;
         Ok(ausgestellt)
     }
-
-    // ---------------------------------------------------------------- Login
 
     pub async fn anmelden(
         &self,
@@ -801,8 +963,6 @@ impl LogandaimAppApi {
         Ok(ausgestellt)
     }
 
-    // TODO: serializable dto for session ausgestellt (as per api standard)
-    /// Rotate the refresh token. The presented one is spent; a replay ends the family.
     pub async fn session_erneuern(
         &self,
         refresh_token: String,
@@ -849,8 +1009,6 @@ impl LogandaimAppApi {
         self.app.execute(auth, Abmeldung).await
     }
 
-    // ---------------------------------------------------------------- Passwort
-
     pub async fn passwort_vergessen(
         &self,
         anfrage: requests::PasswortVergessenRequest,
@@ -860,7 +1018,6 @@ impl LogandaimAppApi {
         self.app.execute(AuthContext::Anonymous, use_case).await
     }
 
-    /// Single use, and ends every session of the Benutzer.
     pub async fn passwort_wiederherstellen(
         &self,
         anfrage: requests::PasswortWiederherstellenRequest,
@@ -869,80 +1026,59 @@ impl LogandaimAppApi {
         self.app.execute(AuthContext::Anonymous, use_case).await
     }
 
-    // ---------------------------------------------------------------- Benutzer
-
-    /// Resolve one account by exact email for assigning AnlageVerwaltung. A Systemadministrator
-    /// or the active Anlage's Administrator may search; no partial/bulk enumeration is exposed.
-    pub async fn benutzer_nach_email_suchen(
+    pub async fn benutzer_anzeigen(
         &self,
         auth: AuthContext,
-        anlage_id: AnlageId,
-        e_mail_adresse: String,
-    ) -> ResultReport<Vec<Benutzer>, StammdatenFehler> {
+    ) -> ResultReport<AuthenticatedBenutzer, ProfileReadError> {
         self.app
             .execute_fn(auth, async |ctx| {
-                let e_mail_adresse = EmailAdresse::normalisiert(e_mail_adresse)
-                    .map_err(|_| Report::new(StammdatenFehler::UngültigeAnfrage))?;
                 let benutzer_id = ctx
                     .auth()
                     .require_benutzer_id()
-                    .change_context(StammdatenFehler::NichtAngemeldet)?;
+                    .change_context(ProfileReadError::Unauthorized)?;
                 let uow = ctx
                     .enter()
                     .await
-                    .change_context(StammdatenFehler::AnlageLaden)?;
-
-                let ergebnis =
-                    async {
-                        let benutzer = uow
-                            .benutzer()
-                            .find_by_id(benutzer_id)
-                            .await
-                            .map_err(error_stack::IntoReport::into_report)
-                            .change_context(StammdatenFehler::BenutzerLaden)?;
-                        let anlage = match uow.anlagen().find_by_id(anlage_id).await {
-                            Ok(anlage) => anlage,
-                            Err(fehler) => {
-                                return Err(match fehler.current_context() {
-                                    RepositoryError::NotFound => {
-                                        Report::new(StammdatenFehler::NichtGefunden)
-                                    }
-                                    _ => fehler.change_context(StammdatenFehler::AnlageLaden),
-                                });
-                            }
-                        };
-                        if !darf_anlage_verwalten(&benutzer, &anlage) {
-                            return Err(error_stack::Report::new(StammdatenFehler::NichtErlaubt));
+                    .change_context(ProfileReadError::Persistence)?;
+                let ergebnis = async {
+                    let benutzer = uow
+                        .benutzer()
+                        .find_by_id(benutzer_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let konten = uow
+                        .konten()
+                        .find_by_benutzer(benutzer_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let Some(konto) = konten.into_iter().next() else {
+                        return Err(Report::new(ProfileReadError::NotFound));
+                    };
+                    let profile = match uow.profiles().find_by_user_id(benutzer_id).await {
+                        Ok(p) => p.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            let new_prof = logandaim_core::domain::NewUserProfile::from_email(
+                                benutzer_id,
+                                konto.email(),
+                                benutzer.created_at(),
+                            );
+                            uow.profiles()
+                                .create(new_prof)
+                                .await
+                                .map_err(IntoReport::into_report)
+                                .change_context(ProfileReadError::Persistence)?
+                                .into_data()
                         }
-                        if anlage.ist_archiviert() {
-                            return Err(error_stack::Report::new(StammdatenFehler::Archiviert));
-                        }
-
-                        let email = &e_mail_adresse;
-                        match uow.konten().find_by_email(email).await {
-                            Ok(konto) => {
-                                if anlage.verwaltungen().iter().any(|verwaltung| {
-                                    verwaltung.benutzer_id() == konto.benutzer_id()
-                                }) {
-                                    return Ok(Vec::new());
-                                }
-                                let benutzer = uow
-                                    .benutzer()
-                                    .find_by_id(konto.benutzer_id())
-                                    .await
-                                    .map_err(error_stack::IntoReport::into_report)
-                                    .change_context(StammdatenFehler::BenutzerLaden)?;
-                                Ok(vec![(benutzer.into_data(), email.clone()).into()])
-                            }
-                            Err(fehler) => match fehler.current_context() {
-                                RepositoryError::NotFound => Ok(Vec::new()),
-                                _ => Err(fehler.change_context(StammdatenFehler::BenutzerLaden)),
-                            },
-                        }
-                    }
-                    .await;
-
-                uow.finish(ergebnis, StammdatenFehler::AnlageLaden).await
+                        Err(err) => return Err(err).change_context(ProfileReadError::Persistence),
+                    };
+                    Ok((benutzer.into_data(), konto.email().clone(), profile))
+                }
+                .await;
+                let (benutzer, email, profile) =
+                    uow.finish(ergebnis, ProfileReadError::Persistence).await?;
+                Ok((benutzer, email, profile).into())
             })
             .await
     }
@@ -954,5 +1090,130 @@ impl LogandaimAppApi {
     ) -> ResultReport<(), BenutzerLöschenFehler> {
         let use_case: BenutzerLöschen = anfrage.in_use_case()?;
         self.app.execute(auth, use_case).await
+    }
+}
+
+fn badge_from_profile(
+    profile: DomainUserProfile,
+    draft_locked: bool,
+    is_host: bool,
+) -> PlayerBadge {
+    let effective_title = profile.effective_title().to_owned();
+    PlayerBadge {
+        id: profile.user_id().0,
+        username: profile.username().as_str().to_owned(),
+        display_name: profile.display_name().as_str().to_owned(),
+        avatar_storage_key: profile.avatar_storage_key().map(str::to_owned),
+        gold_medal_count: profile.gold_medal_count(),
+        effective_title,
+        draft_locked,
+        is_host,
+    }
+}
+
+fn build_badge_map(
+    game: &Game,
+    players: &[GamePlayer],
+    profiles: impl Iterator<Item = DomainUserProfile>,
+) -> HashMap<BenutzerId, PlayerBadge> {
+    let profile_map: HashMap<BenutzerId, DomainUserProfile> =
+        profiles.map(|p| (p.user_id(), p)).collect();
+    let mut out = HashMap::new();
+    for player in players {
+        if let Some(p) = profile_map.get(&player.user_id) {
+            out.insert(
+                player.user_id,
+                badge_from_profile(
+                    p.clone(),
+                    player.draft_locked,
+                    game.host_user_id() == player.user_id,
+                ),
+            );
+        } else {
+            out.insert(
+                player.user_id,
+                PlayerBadge {
+                    id: player.user_id.0,
+                    username: format!("player_{}", &player.user_id.0.simple().to_string()[..6]),
+                    display_name: "Spieler".to_owned(),
+                    avatar_storage_key: None,
+                    gold_medal_count: 0,
+                    effective_title: "Neuling".to_owned(),
+                    draft_locked: player.draft_locked,
+                    is_host: game.host_user_id() == player.user_id,
+                },
+            );
+        }
+    }
+    out
+}
+
+fn capture_to_feed_item(
+    game: &Game,
+    players: &[GamePlayer],
+    badges: &HashMap<BenutzerId, PlayerBadge>,
+    cap: &Capture,
+    viewer_id: BenutzerId,
+) -> Option<CaptureFeedItem> {
+    let can_full = can_view_full_capture(game, players, cap, viewer_id);
+    let can_blurred = can_view_blurred_capture(game, players, cap, viewer_id);
+
+    if !can_blurred {
+        return None;
+    }
+
+    let catcher = badges.get(&cap.catcher_user_id())?.clone();
+    if can_full {
+        Some(CaptureFeedItem {
+            id: cap.id().0,
+            tile_id: cap.tile_id().0,
+            catcher,
+            target: cap
+                .target_user_id()
+                .and_then(|tid| badges.get(&tid).cloned()),
+            prompt_text: Some(cap.prompt_text().as_str().to_owned()),
+            image_storage_key: Some(cap.image_storage_key().to_owned()),
+            thumbnail_storage_key: cap.thumbnail_storage_key().to_owned(),
+            captured_at: cap.captured_at(),
+            is_blurred: false,
+        })
+    } else {
+        // BlurredTeaser mode during active play: reveal teaser thumbnail & timestamp without target/prompt!
+        Some(CaptureFeedItem {
+            id: cap.id().0,
+            tile_id: cap.tile_id().0,
+            catcher,
+            target: None,
+            prompt_text: None,
+            image_storage_key: None,
+            thumbnail_storage_key: cap.thumbnail_storage_key().to_owned(),
+            captured_at: cap.captured_at(),
+            is_blurred: true,
+        })
+    }
+}
+
+fn profile_to_schema(
+    profile: &DomainUserProfile,
+    games_played: u32,
+    captures_made: u32,
+    times_caught: u32,
+) -> UserProfile {
+    UserProfile {
+        id: profile.user_id().0,
+        username: profile.username().as_str().to_owned(),
+        display_name: profile.display_name().as_str().to_owned(),
+        avatar_storage_key: profile.avatar_storage_key().map(str::to_owned),
+        gold_medal_count: profile.gold_medal_count(),
+        equipped_title: profile.equipped_title().map(str::to_owned),
+        effective_title: profile.effective_title().to_owned(),
+        unlocked_titles: profile
+            .unlocked_titles()
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        games_played,
+        captures_made,
+        times_caught,
     }
 }

@@ -18,8 +18,6 @@ pub use session::*;
 /// Never store an auth response.
 const NO_STORE: &str = "no-store";
 
-// ------------------------------------------------------------------ responses
-
 #[derive(ApiResponse)]
 pub enum TypicalJsonResponse<T: ToJSON> {
     #[oai(status = 200)]
@@ -47,11 +45,11 @@ impl<T: ToJSON, C: ThreadSafeError + HttpStatusMapping> From<Result<T, Report<C>
     }
 }
 
-/// Streaming binary HTTP response for OpenAPI (poem `ApiResponse` needs `Payload`).
-pub struct StreamBody(Response);
+/// Streaming JPEG image body for OpenAPI.
+pub struct ImageStreamBody(Response);
 
-impl Payload for StreamBody {
-    const CONTENT_TYPE: &'static str = "application/pdf";
+impl Payload for ImageStreamBody {
+    const CONTENT_TYPE: &'static str = "image/jpeg";
 
     fn check_content_type(_content_type: &str) -> bool {
         true
@@ -65,16 +63,16 @@ impl Payload for StreamBody {
     }
 }
 
-impl IntoResponse for StreamBody {
+impl IntoResponse for ImageStreamBody {
     fn into_response(self) -> Response {
         self.0
     }
 }
 
 #[derive(ApiResponse)]
-pub enum StreamBinaryResponse {
-    #[oai(status = 200, content_type = "application/pdf")]
-    Ok(StreamBody),
+pub enum StreamImageResponse {
+    #[oai(status = 200, content_type = "image/jpeg")]
+    Ok(ImageStreamBody),
     #[oai(status = 404)]
     NotFound(Json<StructuredError>),
     #[oai(status_range = "4XX")]
@@ -84,7 +82,7 @@ pub enum StreamBinaryResponse {
 }
 
 impl<C: ThreadSafeError + HttpStatusMapping> From<Result<ObjectStream, Report<C>>>
-    for StreamBinaryResponse
+    for StreamImageResponse
 {
     fn from(result: Result<ObjectStream, Report<C>>) -> Self {
         match result {
@@ -92,21 +90,22 @@ impl<C: ThreadSafeError + HttpStatusMapping> From<Result<ObjectStream, Report<C>
                 let body = Body::from_bytes_stream(
                     stream.map(|chunk| chunk.map_err(|err| std::io::Error::other(err.to_string()))),
                 );
-                StreamBinaryResponse::Ok(StreamBody(
+                StreamImageResponse::Ok(ImageStreamBody(
                     Response::builder()
-                        .content_type("application/pdf")
+                        .content_type("image/jpeg")
+                        .header("Cache-Control", "private, max-age=3600")
                         .body(body),
                 ))
             }
             Err(error) => {
                 let status = status_from_report(&error);
                 if status == StatusCode::NOT_FOUND {
-                    return StreamBinaryResponse::NotFound(Json(error.into()));
+                    return StreamImageResponse::NotFound(Json(error.into()));
                 }
                 if status.is_server_error() {
-                    return StreamBinaryResponse::InternalError(PlainText(InternalServerError));
+                    return StreamImageResponse::InternalError(PlainText(InternalServerError));
                 }
-                StreamBinaryResponse::ClientError(status, Json(error.into()))
+                StreamImageResponse::ClientError(status, Json(error.into()))
             }
         }
     }

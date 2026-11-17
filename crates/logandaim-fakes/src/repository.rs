@@ -9,8 +9,9 @@ use logandaim_core::{
     ResultReport,
     application::uow::Versioned,
     domain::{
-        Anlage, AnlageAktiv, AnlageId, AnlageZielId, EmailAdresse, Erfasser, NeueAnlage, NeueRunde,
-        NeuerSchuss, ParkourId, Runde, RundeId, Schuss, SchussId, ZielId,
+        Board, BoardId, BoardTile, BoardTileId, Capture, CaptureId, EmailAdresse, Game, GameId,
+        GamePlayer, InviteCode, NewCapture, NewGame, NewUserProfile, PromptSubmission, StarterDeck,
+        UserProfile, builtin_starter_decks,
         konto::{
             Benutzer, BenutzerId, BestätigungId, EmailBestätigung, Konto, KontoId, NeueBestätigung,
             NeuePasswortWiederherstellung, NeueSession, NeuerBenutzer, NeuesKonto,
@@ -19,22 +20,23 @@ use logandaim_core::{
         },
     },
     ports::{
-        AnlageRepository, BenutzerRepository, EmailBestätigungRepository, KontoRepository, Mail,
-        MailError, MailSender, PasswortWiederherstellungRepository, RepositoryError,
-        RepositoryResult, RundeRepository, SchussRepository, SessionRepository,
+        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
+        EmailBestätigungRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
+        PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
+        UserProfileRepository,
     },
 };
 
 /// In-memory backing store: one map per aggregate, all on the same snapshot.
-///
-/// `Clone` copies the maps, which is what the fake unit of work uses to get transaction
-/// semantics without a database. There is no fake hasher and no fake signer: tests use the
-/// real domain crypto, so a test can never pass against an algorithm the product does not
-/// ship.
 pub struct FakeDatastore {
-    pub anlagen: Mutex<FxHashMap<AnlageId, Versioned<Anlage>>>,
-    pub runden: Mutex<FxHashMap<RundeId, Versioned<Runde>>>,
-    pub schüsse: Mutex<FxHashMap<SchussId, Versioned<Schuss>>>,
+    pub profiles: Mutex<FxHashMap<BenutzerId, Versioned<UserProfile>>>,
+    pub games: Mutex<FxHashMap<GameId, Versioned<Game>>>,
+    pub game_players: Mutex<Vec<GamePlayer>>,
+    pub prompt_submissions: Mutex<Vec<PromptSubmission>>,
+    pub boards: Mutex<FxHashMap<BoardId, Versioned<Board>>>,
+    pub board_tiles: Mutex<FxHashMap<BoardTileId, BoardTile>>,
+    pub captures: Mutex<FxHashMap<CaptureId, Versioned<Capture>>>,
+    pub decks: Mutex<Vec<StarterDeck>>,
     pub benutzer: Mutex<FxHashMap<BenutzerId, Versioned<Benutzer>>>,
     pub konten: Mutex<FxHashMap<KontoId, Versioned<Konto>>>,
     pub sessions: Mutex<FxHashMap<SessionId, Versioned<Session>>>,
@@ -46,9 +48,14 @@ pub struct FakeDatastore {
 impl Clone for FakeDatastore {
     fn clone(&self) -> Self {
         Self {
-            anlagen: Mutex::new(self.anlagen().clone()),
-            runden: Mutex::new(self.runden().clone()),
-            schüsse: Mutex::new(self.schüsse().clone()),
+            profiles: Mutex::new(self.profiles().clone()),
+            games: Mutex::new(self.games().clone()),
+            game_players: Mutex::new(self.game_players().clone()),
+            prompt_submissions: Mutex::new(self.prompt_submissions().clone()),
+            boards: Mutex::new(self.boards().clone()),
+            board_tiles: Mutex::new(self.board_tiles().clone()),
+            captures: Mutex::new(self.captures().clone()),
+            decks: Mutex::new(self.decks().clone()),
             benutzer: Mutex::new(self.benutzer().clone()),
             konten: Mutex::new(self.konten().clone()),
             sessions: Mutex::new(self.sessions().clone()),
@@ -67,9 +74,14 @@ impl Default for FakeDatastore {
 impl FakeDatastore {
     pub fn new() -> Self {
         Self {
-            anlagen: Mutex::new(FxHashMap::default()),
-            runden: Mutex::new(FxHashMap::default()),
-            schüsse: Mutex::new(FxHashMap::default()),
+            profiles: Mutex::new(FxHashMap::default()),
+            games: Mutex::new(FxHashMap::default()),
+            game_players: Mutex::new(Vec::new()),
+            prompt_submissions: Mutex::new(Vec::new()),
+            boards: Mutex::new(FxHashMap::default()),
+            board_tiles: Mutex::new(FxHashMap::default()),
+            captures: Mutex::new(FxHashMap::default()),
+            decks: Mutex::new(builtin_starter_decks()),
             benutzer: Mutex::new(FxHashMap::default()),
             konten: Mutex::new(FxHashMap::default()),
             sessions: Mutex::new(FxHashMap::default()),
@@ -78,16 +90,36 @@ impl FakeDatastore {
         }
     }
 
-    pub fn anlagen(&self) -> MutexGuard<'_, FxHashMap<AnlageId, Versioned<Anlage>>> {
-        self.anlagen.lock().unwrap()
+    pub fn profiles(&self) -> MutexGuard<'_, FxHashMap<BenutzerId, Versioned<UserProfile>>> {
+        self.profiles.lock().unwrap()
     }
 
-    pub fn runden(&self) -> MutexGuard<'_, FxHashMap<RundeId, Versioned<Runde>>> {
-        self.runden.lock().unwrap()
+    pub fn games(&self) -> MutexGuard<'_, FxHashMap<GameId, Versioned<Game>>> {
+        self.games.lock().unwrap()
     }
 
-    pub fn schüsse(&self) -> MutexGuard<'_, FxHashMap<SchussId, Versioned<Schuss>>> {
-        self.schüsse.lock().unwrap()
+    pub fn game_players(&self) -> MutexGuard<'_, Vec<GamePlayer>> {
+        self.game_players.lock().unwrap()
+    }
+
+    pub fn prompt_submissions(&self) -> MutexGuard<'_, Vec<PromptSubmission>> {
+        self.prompt_submissions.lock().unwrap()
+    }
+
+    pub fn boards(&self) -> MutexGuard<'_, FxHashMap<BoardId, Versioned<Board>>> {
+        self.boards.lock().unwrap()
+    }
+
+    pub fn board_tiles(&self) -> MutexGuard<'_, FxHashMap<BoardTileId, BoardTile>> {
+        self.board_tiles.lock().unwrap()
+    }
+
+    pub fn captures(&self) -> MutexGuard<'_, FxHashMap<CaptureId, Versioned<Capture>>> {
+        self.captures.lock().unwrap()
+    }
+
+    pub fn decks(&self) -> MutexGuard<'_, Vec<StarterDeck>> {
+        self.decks.lock().unwrap()
     }
 
     pub fn benutzer(&self) -> MutexGuard<'_, FxHashMap<BenutzerId, Versioned<Benutzer>>> {
@@ -115,11 +147,15 @@ impl FakeDatastore {
         self.wiederherstellungen.lock().unwrap()
     }
 
-    /// Replace this datastore's contents with `other` (commit of a snapshot).
     pub fn replace_with(&self, other: &FakeDatastore) {
-        *self.anlagen() = other.anlagen().clone();
-        *self.runden() = other.runden().clone();
-        *self.schüsse() = other.schüsse().clone();
+        *self.profiles() = other.profiles().clone();
+        *self.games() = other.games().clone();
+        *self.game_players() = other.game_players().clone();
+        *self.prompt_submissions() = other.prompt_submissions().clone();
+        *self.boards() = other.boards().clone();
+        *self.board_tiles() = other.board_tiles().clone();
+        *self.captures() = other.captures().clone();
+        *self.decks() = other.decks().clone();
         *self.benutzer() = other.benutzer().clone();
         *self.konten() = other.konten().clone();
         *self.sessions() = other.sessions().clone();
@@ -128,8 +164,6 @@ impl FakeDatastore {
     }
 }
 
-/// Write `neu` into `map` only when the stored row is still at `neu.v()`, mirroring the
-/// conditional `UPDATE ... WHERE _version = ?`, then bump `neu`'s version in place.
 fn store_update<K, T>(
     map: &mut FxHashMap<K, Versioned<T>>,
     id: K,
@@ -153,8 +187,6 @@ where
     Ok(())
 }
 
-/// Remove `geladen` from `map` only when the stored row is still at its version, mirroring
-/// the conditional `DELETE ... WHERE id = ? AND _version = ?`.
 fn store_delete<K, T>(
     map: &mut FxHashMap<K, Versioned<T>>,
     id: K,
@@ -176,240 +208,421 @@ where
     Ok(())
 }
 
-pub struct FakeAnlageRepository {
+pub struct FakeUserProfileRepository {
     datastore: Arc<FakeDatastore>,
 }
 
-impl FakeAnlageRepository {
+impl FakeUserProfileRepository {
     pub fn new(datastore: Arc<FakeDatastore>) -> Self {
         Self { datastore }
     }
 }
 
 #[async_trait]
-impl AnlageRepository for FakeAnlageRepository {
-    async fn create(&self, anlage: NeueAnlage) -> RepositoryResult<Versioned<Anlage>> {
-        let id = AnlageId(Uuid::new_v4());
-        let erstellt = Versioned::init(Anlage::Aktiv(AnlageAktiv::neu(id, anlage)));
-        self.datastore.anlagen().insert(id, erstellt.clone());
-        Ok(erstellt)
+impl UserProfileRepository for FakeUserProfileRepository {
+    async fn create(&self, profile: NewUserProfile) -> RepositoryResult<Versioned<UserProfile>> {
+        let mut profiles = self.datastore.profiles();
+        if profiles.contains_key(&profile.user_id) {
+            return Err(Report::new(RepositoryError::Conflict));
+        }
+        let user_id = profile.user_id;
+        let created = Versioned::init(UserProfile::new(profile));
+        profiles.insert(user_id, created.clone());
+        Ok(created)
     }
 
-    async fn find_by_id(&self, id: AnlageId) -> RepositoryResult<Versioned<Anlage>> {
+    async fn find_by_user_id(
+        &self,
+        user_id: BenutzerId,
+    ) -> RepositoryResult<Versioned<UserProfile>> {
         self.datastore
-            .anlagen()
+            .profiles()
+            .get(&user_id)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn find_by_user_ids(
+        &self,
+        user_ids: &[BenutzerId],
+    ) -> RepositoryResult<Vec<Versioned<UserProfile>>> {
+        let profiles = self.datastore.profiles();
+        Ok(user_ids
+            .iter()
+            .filter_map(|id| profiles.get(id).cloned())
+            .collect())
+    }
+
+    async fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<UserProfile>> {
+        self.datastore
+            .profiles()
+            .values()
+            .find(|p| p.username().as_str().eq_ignore_ascii_case(username))
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn update(&self, profile: &mut Versioned<UserProfile>) -> RepositoryResult<()> {
+        let mut map = self.datastore.profiles();
+        store_update(&mut map, profile.user_id(), profile)
+    }
+
+    async fn delete_by_user_id(&self, user_id: BenutzerId) -> RepositoryResult<()> {
+        self.datastore.profiles().remove(&user_id);
+        Ok(())
+    }
+}
+
+pub struct FakeGameRepository {
+    datastore: Arc<FakeDatastore>,
+}
+
+impl FakeGameRepository {
+    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
+        Self { datastore }
+    }
+}
+
+#[async_trait]
+impl GameRepository for FakeGameRepository {
+    async fn create(&self, game: NewGame) -> RepositoryResult<Versioned<Game>> {
+        let mut games = self.datastore.games();
+        if games.values().any(|g| g.invite_code() == &game.invite_code) {
+            return Err(Report::new(RepositoryError::Conflict));
+        }
+        let id = GameId(Uuid::new_v4());
+        let created = Versioned::init(Game::new(id, game));
+        games.insert(id, created.clone());
+        Ok(created)
+    }
+
+    async fn find_by_id(&self, id: GameId) -> RepositoryResult<Versioned<Game>> {
+        self.datastore
+            .games()
             .get(&id)
             .cloned()
             .ok_or_else(|| Report::new(RepositoryError::NotFound))
     }
 
-    async fn find_aktiv(&self) -> RepositoryResult<Vec<Versioned<Anlage>>> {
-        Ok(self
-            .datastore
-            .anlagen()
-            .values()
-            .filter(|anlage| !anlage.ist_archiviert())
-            .cloned()
-            .collect())
-    }
-
-    async fn find_by_verwaltung(
-        &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Vec<Versioned<Anlage>>> {
-        Ok(self
-            .datastore
-            .anlagen()
-            .values()
-            .filter(|anlage| anlage.rolle_von(benutzer_id).is_some())
-            .cloned()
-            .collect())
-    }
-
-    async fn find_by_parkour_id(&self, id: ParkourId) -> RepositoryResult<Versioned<Anlage>> {
+    async fn find_by_invite_code(&self, code: &InviteCode) -> RepositoryResult<Versioned<Game>> {
         self.datastore
-            .anlagen()
+            .games()
             .values()
-            .find(|anlage| anlage.parkour_mit_id(id).is_some())
+            .find(|g| g.invite_code() == code)
             .cloned()
             .ok_or_else(|| Report::new(RepositoryError::NotFound))
     }
 
-    async fn update(&self, anlage: &mut Versioned<Anlage>) -> RepositoryResult<()> {
-        let mut map = self.datastore.anlagen();
-        store_update(&mut map, anlage.id(), anlage)
+    async fn find_for_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Game>>> {
+        let game_ids: Vec<GameId> = self
+            .datastore
+            .game_players()
+            .iter()
+            .filter(|p| p.user_id == user_id)
+            .map(|p| p.game_id)
+            .collect();
+        let games = self.datastore.games();
+        let mut out: Vec<_> = game_ids
+            .into_iter()
+            .filter_map(|id| games.get(&id).cloned())
+            .collect();
+        out.sort_by_key(|g| std::cmp::Reverse(g.created_at()));
+        Ok(out)
     }
-    async fn delete(&self, anlage: Versioned<Anlage>) -> RepositoryResult<()> {
-        let mut map = self.datastore.anlagen();
-        store_delete(&mut map, anlage.id(), &anlage)
+
+    async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()> {
+        let mut map = self.datastore.games();
+        store_update(&mut map, game.id(), game)
     }
-}
 
-pub struct FakeRundeRepository {
-    datastore: Arc<FakeDatastore>,
-}
-
-impl FakeRundeRepository {
-    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
-        Self { datastore }
-    }
-}
-
-#[async_trait]
-impl RundeRepository for FakeRundeRepository {
-    async fn create(&self, runde: NeueRunde) -> RepositoryResult<Versioned<Runde>> {
-        let mut runden = self.datastore.runden();
-        if let Erfasser::Benutzer(benutzer_id) = runde.erfasst_von()
-            && runden
-                .values()
-                .any(|bestehend| bestehend.gehört_zu(benutzer_id) && bestehend.ist_in_bearbeitung())
+    async fn add_player(&self, player: GamePlayer) -> RepositoryResult<()> {
+        let mut players = self.datastore.game_players();
+        if players
+            .iter()
+            .any(|p| p.game_id == player.game_id && p.user_id == player.user_id)
         {
             return Err(Report::new(RepositoryError::Conflict));
         }
-        let id = RundeId(Uuid::new_v4());
-        let erstellt = Versioned::init(Runde::aus_neu(id, runde));
-        runden.insert(id, erstellt.clone());
-        Ok(erstellt)
+        players.push(player);
+        Ok(())
     }
 
-    async fn find_by_id(&self, id: RundeId) -> RepositoryResult<Versioned<Runde>> {
-        self.datastore
-            .runden()
-            .get(&id)
+    async fn find_players(&self, game_id: GameId) -> RepositoryResult<Vec<GamePlayer>> {
+        let mut out: Vec<_> = self
+            .datastore
+            .game_players()
+            .iter()
+            .filter(|p| p.game_id == game_id)
             .cloned()
-            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+            .collect();
+        out.sort_by(|a, b| {
+            a.joined_at
+                .cmp(&b.joined_at)
+                .then(a.user_id.cmp(&b.user_id))
+        });
+        Ok(out)
     }
 
-    async fn find_by_benutzer(
+    async fn set_player_draft_locked(
         &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Vec<Versioned<Runde>>> {
+        game_id: GameId,
+        user_id: BenutzerId,
+        locked: bool,
+    ) -> RepositoryResult<()> {
+        let mut players = self.datastore.game_players();
+        let Some(p) = players
+            .iter_mut()
+            .find(|p| p.game_id == game_id && p.user_id == user_id)
+        else {
+            return Err(Report::new(RepositoryError::NotFound));
+        };
+        p.draft_locked = locked;
+        Ok(())
+    }
+
+    async fn replace_author_prompts(
+        &self,
+        game_id: GameId,
+        author_user_id: BenutzerId,
+        prompts: Vec<PromptSubmission>,
+    ) -> RepositoryResult<()> {
+        let mut all = self.datastore.prompt_submissions();
+        all.retain(|p| !(p.game_id == game_id && p.author_user_id == author_user_id));
+        all.extend(prompts);
+        Ok(())
+    }
+
+    async fn find_prompts_by_game(
+        &self,
+        game_id: GameId,
+    ) -> RepositoryResult<Vec<PromptSubmission>> {
         Ok(self
             .datastore
-            .runden()
-            .values()
-            .filter(|runde| runde.gehört_zu(benutzer_id))
+            .prompt_submissions()
+            .iter()
+            .filter(|p| p.game_id == game_id)
             .cloned()
             .collect())
     }
 
-    async fn find_offen_by_benutzer(
+    async fn find_prompts_by_author(
         &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Versioned<Runde>> {
-        self.datastore
-            .runden()
-            .values()
-            .find(|runde| runde.gehört_zu(benutzer_id) && runde.ist_in_bearbeitung())
+        game_id: GameId,
+        author_user_id: BenutzerId,
+    ) -> RepositoryResult<Vec<PromptSubmission>> {
+        Ok(self
+            .datastore
+            .prompt_submissions()
+            .iter()
+            .filter(|p| p.game_id == game_id && p.author_user_id == author_user_id)
             .cloned()
-            .ok_or_else(|| Report::new(RepositoryError::NotFound))
-    }
-
-    async fn update(&self, runde: &mut Versioned<Runde>) -> RepositoryResult<()> {
-        let mut map = self.datastore.runden();
-        store_update(&mut map, runde.id(), runde)
-    }
-
-    async fn delete(&self, runde: Versioned<Runde>) -> RepositoryResult<()> {
-        let mut map = self.datastore.runden();
-        store_delete(&mut map, runde.id(), &runde)
-    }
-
-    async fn exists_referencing_anlage(&self, id: AnlageId) -> RepositoryResult<bool> {
-        Ok(self.datastore.runden().values().any(|runde| {
-            runde
-                .herkunft()
-                .is_some_and(|herkunft| herkunft.anlage_id == id)
-        }))
-    }
-
-    async fn exists_referencing_parkour(&self, id: ParkourId) -> RepositoryResult<bool> {
-        Ok(self.datastore.runden().values().any(|runde| {
-            runde
-                .herkunft()
-                .is_some_and(|herkunft| herkunft.parkour_id == id)
-        }))
-    }
-
-    async fn exists_referencing_ziel(&self, id: AnlageZielId) -> RepositoryResult<bool> {
-        Ok(self.datastore.runden().values().any(|runde| {
-            runde
-                .aufbau()
-                .ziele()
-                .iter()
-                .any(|ziel| ziel.anlage_ziel_id() == Some(id))
-        }))
+            .collect())
     }
 }
 
-pub struct FakeSchussRepository {
+pub struct FakeBoardRepository {
     datastore: Arc<FakeDatastore>,
 }
 
-impl FakeSchussRepository {
+impl FakeBoardRepository {
     pub fn new(datastore: Arc<FakeDatastore>) -> Self {
         Self { datastore }
     }
 }
 
 #[async_trait]
-impl SchussRepository for FakeSchussRepository {
-    async fn create(&self, schuss: NeuerSchuss) -> RepositoryResult<Versioned<Schuss>> {
-        let id = SchussId(Uuid::new_v4());
-        let erstellt = Versioned::init(Schuss::neu(id, schuss));
-        self.datastore.schüsse().insert(id, erstellt.clone());
-        Ok(erstellt)
+impl BoardRepository for FakeBoardRepository {
+    async fn create_board_with_tiles(
+        &self,
+        board: Board,
+        tiles: Vec<BoardTile>,
+    ) -> RepositoryResult<()> {
+        let id = board.id();
+        self.datastore.boards().insert(id, Versioned::init(board));
+        let mut tile_map = self.datastore.board_tiles();
+        for tile in tiles {
+            tile_map.insert(tile.id(), tile);
+        }
+        Ok(())
     }
 
-    async fn find_by_id(&self, id: SchussId) -> RepositoryResult<Versioned<Schuss>> {
+    async fn find_boards_by_game(
+        &self,
+        game_id: GameId,
+    ) -> RepositoryResult<Vec<Versioned<Board>>> {
+        Ok(self
+            .datastore
+            .boards()
+            .values()
+            .filter(|b| b.game_id() == game_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn find_board_by_game_and_owner(
+        &self,
+        game_id: GameId,
+        owner: BenutzerId,
+    ) -> RepositoryResult<Versioned<Board>> {
         self.datastore
-            .schüsse()
+            .boards()
+            .values()
+            .find(|b| b.game_id() == game_id && b.owner_user_id() == owner)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn find_tiles_by_board(&self, board_id: BoardId) -> RepositoryResult<Vec<BoardTile>> {
+        let mut out: Vec<_> = self
+            .datastore
+            .board_tiles()
+            .values()
+            .filter(|t| t.board_id() == board_id)
+            .cloned()
+            .collect();
+        out.sort_by_key(|t| (t.row(), t.col()));
+        Ok(out)
+    }
+
+    async fn find_tiles_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<BoardTile>> {
+        let board_ids: Vec<BoardId> = self
+            .datastore
+            .boards()
+            .values()
+            .filter(|b| b.game_id() == game_id)
+            .map(|b| b.id())
+            .collect();
+        let mut out: Vec<_> = self
+            .datastore
+            .board_tiles()
+            .values()
+            .filter(|t| board_ids.contains(&t.board_id()))
+            .cloned()
+            .collect();
+        out.sort_by_key(|t| (t.row(), t.col()));
+        Ok(out)
+    }
+
+    async fn find_tile_by_id(&self, tile_id: BoardTileId) -> RepositoryResult<BoardTile> {
+        self.datastore
+            .board_tiles()
+            .get(&tile_id)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn update_board(&self, board: &mut Versioned<Board>) -> RepositoryResult<()> {
+        let mut map = self.datastore.boards();
+        store_update(&mut map, board.id(), board)
+    }
+
+    async fn attach_tile_capture(
+        &self,
+        tile_id: BoardTileId,
+        capture_id: CaptureId,
+    ) -> RepositoryResult<()> {
+        let mut map = self.datastore.board_tiles();
+        let tile = map
+            .get_mut(&tile_id)
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))?;
+        tile.attach_capture(capture_id);
+        Ok(())
+    }
+}
+
+pub struct FakeCaptureRepository {
+    datastore: Arc<FakeDatastore>,
+}
+
+impl FakeCaptureRepository {
+    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
+        Self { datastore }
+    }
+}
+
+#[async_trait]
+impl CaptureRepository for FakeCaptureRepository {
+    async fn create(&self, capture: NewCapture) -> RepositoryResult<Versioned<Capture>> {
+        let id = CaptureId(Uuid::new_v4());
+        let created = Versioned::init(Capture::new(id, capture));
+        self.datastore.captures().insert(id, created.clone());
+        Ok(created)
+    }
+
+    async fn find_by_id(&self, id: CaptureId) -> RepositoryResult<Versioned<Capture>> {
+        self.datastore
+            .captures()
             .get(&id)
             .cloned()
             .ok_or_else(|| Report::new(RepositoryError::NotFound))
     }
 
-    async fn find_by_runde(&self, runde_id: RundeId) -> RepositoryResult<Vec<Versioned<Schuss>>> {
-        Ok(self
+    async fn find_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<Versioned<Capture>>> {
+        let mut out: Vec<_> = self
             .datastore
-            .schüsse()
+            .captures()
             .values()
-            .filter(|schuss| schuss.runde_id() == runde_id)
+            .filter(|c| c.game_id() == game_id)
             .cloned()
-            .collect())
+            .collect();
+        out.sort_by_key(|c| c.captured_at());
+        Ok(out)
     }
 
-    async fn find_by_ziel(&self, ziel_id: ZielId) -> RepositoryResult<Vec<Versioned<Schuss>>> {
-        Ok(self
-            .datastore
-            .schüsse()
-            .values()
-            .filter(|schuss| schuss.ziel_id() == ziel_id)
-            .cloned()
-            .collect())
-    }
-
-    async fn find_by_benutzer(
+    async fn find_by_target_user(
         &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Vec<Versioned<Schuss>>> {
-        Ok(self
+        user_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<Capture>>> {
+        let mut out: Vec<_> = self
             .datastore
-            .schüsse()
+            .captures()
             .values()
-            .filter(|schuss| schuss.erfasser().benutzer() == Some(benutzer_id))
+            .filter(|c| c.target_user_id() == Some(user_id))
             .cloned()
-            .collect())
+            .collect();
+        out.sort_by_key(|c| std::cmp::Reverse(c.captured_at()));
+        Ok(out)
     }
 
-    async fn update(&self, schuss: &mut Versioned<Schuss>) -> RepositoryResult<()> {
-        let mut map = self.datastore.schüsse();
-        store_update(&mut map, schuss.id(), schuss)
+    async fn find_by_catcher_user(
+        &self,
+        user_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<Capture>>> {
+        let mut out: Vec<_> = self
+            .datastore
+            .captures()
+            .values()
+            .filter(|c| c.catcher_user_id() == user_id)
+            .cloned()
+            .collect();
+        out.sort_by_key(|c| std::cmp::Reverse(c.captured_at()));
+        Ok(out)
     }
 
-    async fn delete(&self, schuss: Versioned<Schuss>) -> RepositoryResult<()> {
-        let mut map = self.datastore.schüsse();
-        store_delete(&mut map, schuss.id(), &schuss)
+    async fn find_by_storage_key(&self, key: &str) -> RepositoryResult<Versioned<Capture>> {
+        self.datastore
+            .captures()
+            .values()
+            .find(|c| c.image_storage_key() == key || c.thumbnail_storage_key() == key)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+}
+
+pub struct FakeDeckRepository {
+    datastore: Arc<FakeDatastore>,
+}
+
+impl FakeDeckRepository {
+    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
+        Self { datastore }
+    }
+}
+
+#[async_trait]
+impl DeckRepository for FakeDeckRepository {
+    async fn list_all(&self) -> RepositoryResult<Vec<StarterDeck>> {
+        Ok(self.datastore.decks().clone())
     }
 }
 
@@ -750,7 +963,6 @@ impl PasswortWiederherstellungRepository for FakePasswortWiederherstellungReposi
     }
 }
 
-/// Records every mail it is asked to send, so a case can assert on the link it carries.
 #[derive(Default)]
 pub struct FakeMailSender {
     gesendet: Mutex<Vec<Mail>>,
@@ -761,20 +973,16 @@ impl FakeMailSender {
         Self::default()
     }
 
-    /// Every mail sent so far, oldest first.
     pub fn sent(&self) -> Vec<Mail> {
         self.gesendet.lock().unwrap().clone()
     }
 
-    /// The single mail sent so far. Panics on none or several, which is what a happy-path
-    /// case actually asserts.
     pub fn single(&self) -> Mail {
         let gesendet = self.sent();
         assert_eq!(gesendet.len(), 1, "erwartet genau eine Mail");
         gesendet.into_iter().next().unwrap()
     }
 
-    /// The most recently sent mail, which is the one a case just triggered.
     pub fn latest(&self) -> Mail {
         self.gesendet
             .lock()

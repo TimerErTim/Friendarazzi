@@ -186,6 +186,7 @@ fn cors(config: &config::ServerConfig) -> Cors {
             poem::http::Method::GET,
             poem::http::Method::POST,
             poem::http::Method::PUT,
+            poem::http::Method::PATCH,
             poem::http::Method::DELETE,
             poem::http::Method::OPTIONS,
         ])

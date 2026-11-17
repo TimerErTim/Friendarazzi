@@ -17,8 +17,8 @@ services:
     environment:
       LOGANDAIM_BIND_ADDRESS: 0.0.0.0
       LOGANDAIM_BIND_PORT: "3000"
-      LOGANDAIM_DATABASE_URL: /data/sqlite/logandaim.db
-      LOGANDAIM_OBJECT_STORE_DIR: /data/objects
+      LOGANDAIM_DATABASE_URL: /data/sqlite/friendarazzi.db
+      LOGANDAIM_OBJECT_STORE_DIR: /data/media
       # No signing key file: the server generates an Ed25519 key per process. Session rows
       # carry the public half each token was signed with, and a request is checked against
       # its own row, so a restart does not invalidate outstanding tokens. A mounted key
@@ -36,8 +36,8 @@ services:
       LOGANDAIM_SMTP_VERSCHLUESSELUNG: start-tls
       LOGANDAIM_SMTP_ABSENDER: ${MAIL_ABSENDER:?Set MAIL_ABSENDER in .env}
     volumes:
-      - ${LOGANDAIM_HOST_ROOT:?Set LOGANDAIM_HOST_ROOT in .env}/data/sqlite:/data/sqlite
-      - ${LOGANDAIM_HOST_ROOT:?Set LOGANDAIM_HOST_ROOT in .env}/data/objects:/data/objects
+      - ${LOGANDAIM_HOST_ROOT:-.}/data/sqlite:/data/sqlite
+      - ${LOGANDAIM_HOST_ROOT:-.}/data/media:/data/media
     expose:
       - "3000"
     healthcheck:

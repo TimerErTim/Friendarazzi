@@ -1,39 +1,40 @@
-//! Refusals of the reads that run inline in [`LogandaimAppApi`](super::LogandaimAppApi).
-//!
-//! A read is not a use case, so its error enum lives beside the read rather than in
-//! `logandaim-core`. Each variant names what the read could not do and keeps the underlying
-//! repository error in the `error_stack` chain; `errors/http_status.rs` gives it its status.
+//! Refusals of reads that run inline in [`LogandaimAppApi`](super::LogandaimAppApi).
 
-// ---------------------------------------------------------------------------------------
-// RundenAnzeigen error
-// ---------------------------------------------------------------------------------------
-
-/// The refusals of the caller's own Runden list, which the API facade reads inline.
+/// Refusals when reading games or game details.
 #[derive(Debug, thiserror::Error)]
-pub enum RundenAnzeigenFehler {
+pub enum GameReadError {
     #[error("für diese Aktion ist eine Anmeldung erforderlich")]
-    NichtAngemeldet,
-    #[error("die Runden konnten nicht geladen werden")]
-    Laden,
+    Unauthorized,
+    #[error("du bist nicht berechtigt, dieses Spiel einzusehen")]
+    Forbidden,
+    #[error("das Spiel wurde nicht gefunden")]
+    NotFound,
+    #[error("ungültige Anfrage")]
+    BadRequest,
+    #[error("Spieldaten konnten nicht geladen werden")]
+    Persistence,
 }
 
-// ---------------------------------------------------------------------------------------
-// RundeAnzeigen error
-// ---------------------------------------------------------------------------------------
-
-/// The refusals of one Runde's detail read, which the API facade reads inline.
+/// Refusals when reading user profiles or galleries.
 #[derive(Debug, thiserror::Error)]
-pub enum RundeAnzeigenFehler {
+pub enum ProfileReadError {
     #[error("für diese Aktion ist eine Anmeldung erforderlich")]
-    NichtAngemeldet,
-    #[error("diese Runde darf nicht eingesehen werden")]
-    NichtErlaubt,
-    #[error("die Runde wurde nicht gefunden")]
-    NichtGefunden,
-    #[error("die Runde konnte nicht geladen werden")]
-    RundeLaden,
-    #[error("die Schüsse konnten nicht geladen werden")]
-    SchüsseLaden,
-    #[error("der Benutzer konnte nicht geladen werden")]
-    BenutzerLaden,
+    Unauthorized,
+    #[error("das Profil wurde nicht gefunden")]
+    NotFound,
+    #[error("Profildaten konnten nicht geladen werden")]
+    Persistence,
+}
+
+/// Refusals when streaming stored media objects.
+#[derive(Debug, thiserror::Error)]
+pub enum MediaReadError {
+    #[error("für diese Aktion ist eine Anmeldung erforderlich")]
+    Unauthorized,
+    #[error("dieses Foto darfst du aktuell nicht sehen")]
+    Forbidden,
+    #[error("das Medium wurde nicht gefunden")]
+    NotFound,
+    #[error("Medium konnte nicht geladen werden")]
+    Storage,
 }

@@ -27,12 +27,11 @@ use poem::{Route, http::StatusCode, test::TestClient};
 use serde_json::Value;
 use tempdir::TempDir;
 
+pub mod friendarazzi;
 pub mod health;
 pub mod konto;
 pub mod mailpit;
-pub mod runde;
 pub mod spec;
-pub mod stammdaten;
 
 /// The frontend origin every e2e case's mailed links are spelled from, and the routes the
 /// adapter appends to it.
@@ -297,6 +296,61 @@ impl LogandaimApiTestClient {
             .to_string();
         let body = resp.0.into_body().into_vec().await.unwrap_or_default();
         (status, body, content_type)
+    }
+
+    pub async fn get_bytes_auth(&self, path: &str, bearer: &str) -> (StatusCode, Vec<u8>, String) {
+        let resp = self
+            .client
+            .get(path)
+            .header("Authorization", format!("Bearer {bearer}"))
+            .send()
+            .await;
+        let status = resp.0.status();
+        let content_type = resp
+            .0
+            .headers()
+            .get("content-type")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let body = resp.0.into_body().into_vec().await.unwrap_or_default();
+        (status, body, content_type)
+    }
+
+    pub async fn post_multipart_file_auth(
+        &self,
+        path: &str,
+        field_name: &str,
+        filename: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+        bearer: &str,
+    ) -> (StatusCode, Value) {
+        let boundary = "----friendarazzi-test-boundary";
+        let mut payload = Vec::new();
+        payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        payload.extend_from_slice(
+            format!(
+                "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        payload.extend_from_slice(&bytes);
+        payload.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        json_response(
+            self.client
+                .post(path)
+                .header("Authorization", format!("Bearer {bearer}"))
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(payload)
+                .send()
+                .await,
+        )
+        .await
     }
 
     pub async fn put_json(&self, path: &str, body: Value) -> (StatusCode, Value) {

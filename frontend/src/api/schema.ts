@@ -80,7 +80,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/anlagen": {
+    "/decks": {
         parameters: {
             query?: never;
             header?: never;
@@ -88,8 +88,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the Anlagen the caller may administer.
-         * @description Each row includes the caller's role in that Anlage.
+         * List curated Quick-Start starter decks.
+         * @description Returns themed prompt collections used during the drafting phase.
          */
         get: {
             parameters: {
@@ -107,7 +107,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["AnlageZugriff"][];
+                        "application/json; charset=utf-8": components["schemas"]["StarterDeck"][];
                     };
                 };
                 500: {
@@ -129,58 +129,14 @@ export interface paths {
             };
         };
         put?: never;
-        /**
-         * Create an Anlage. Systemadministrator only.
-         * @description The caller becomes its first Administrator.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    authorization?: string | null;
-                };
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["AnlageErstellungRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/anlagen/oeffentlich": {
+    "/games": {
         parameters: {
             query?: never;
             header?: never;
@@ -188,8 +144,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the active Anlagen with the Parkour each offers. No sign-in needed.
-         * @description This public directory contains no contact data.
+         * List all games the caller participates in.
+         * @description Sorted newest first, including active lobbies, ongoing hunts, and completed games.
          */
         get: {
             parameters: {
@@ -207,7 +163,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["AnlageOeffentlich"][];
+                        "application/json; charset=utf-8": components["schemas"]["GameSummary"][];
                     };
                 };
                 500: {
@@ -229,934 +185,9 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
         /**
-         * Read one Anlage with its whole master data.
-         * @description Only a Systemadministrator can access an archived Anlage.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        /**
-         * Rewrite the Anlage's own fields: name, address, and contact. Administrator only.
-         * @description The whole set is replaced; omitted contact fields become empty.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["AnlageAenderungRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/deaktivierung": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Deactivate an Anlage once and for all.
-         * @description An archived Anlage remains available for reading but cannot be changed.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/verwaltungen": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Grant a role in the Anlage to an existing Benutzer. Administrator only.
-         * @description The Benutzer is named by identity; find it with `benutzer-suche` first.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["AnlageVerwaltungRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/benutzer-suche": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find a Benutzer by exact e-mail address, for granting a role.
-         * @description The result contains the matching Benutzer, if one exists.
-         */
-        get: {
-            parameters: {
-                query: {
-                    e_mail_adresse: string;
-                };
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Benutzer"][];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/verwaltungen/{benutzer_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Change an existing role. Administrator only.
-         * @description The target is in the path, so the body only names the role.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    benutzer_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["AnlageVerwaltungRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        /**
-         * Revoke a role. Administrator only.
-         * @description The last Administrator of an Anlage cannot be revoked.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    benutzer_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/ziele": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Add a physical Ziel to the Anlage.
-         * @description The new Ziel is added to the Anlage's target list.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ZielRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/ziele/{ziel_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Edit a Ziel's details.
-         * @description The identity stays, and so does everything already recorded against it.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    ziel_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ZielRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        /**
-         * Remove a Ziel: archive it when recorded Runden reference it, delete it otherwise.
-         * @description Answers the Anlage as it stands afterwards, so the Ziel is absent from `ziele` either
-         *     way and an archived one no longer appears among the active ones.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    ziel_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/ziele/{ziel_id}/ersatz": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Replace the physical Ziel with a new one in the same slot.
-         * @description The replacement has a new identity; the history of the old Ziel stays as recorded.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    ziel_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ZielRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/parkour": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create a Parkour with its Pflock setup and its route.
-         * @description Provide the Pflöcke in the order in which they should appear.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ParkourErstellungRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/parkour/{parkour_id}/setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Replace the whole shooting setup: Pflöcke and the route that places Ziele among them.
-         * @description Existing Runden keep the snapshot they captured; only future Runden see the change.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    parkour_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ParkourSetupRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/anlagen/{anlage_id}/parkour/{parkour_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Rename a Parkour.
-         * @description The identity stays, and every captured snapshot keeps the name it recorded.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    parkour_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ParkourUmbenennenRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        /**
-         * Remove a Parkour: archive it when a Runde captured it, delete it otherwise.
-         * @description Answers the Anlage as it stands afterwards.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    anlage_id: string;
-                    parkour_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Anlage"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/parkour": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List every active Parkour of every active Anlage. No sign-in needed.
-         * @description Use this list to choose a Parkour when starting a round.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["ParkourOeffentlich"][];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/mit-parkour": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start a Runde on one active Parkour.
-         * @description Later changes to the Parkour do not change the setup captured by this Runde.
+         * Create a new Friendarazzi game lobby.
+         * @description The caller becomes the host and first player of the lobby.
          */
         post: {
             parameters: {
@@ -1169,7 +200,7 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json; charset=utf-8": components["schemas"]["RundeMitParkourStartenRequest"];
+                    "application/json; charset=utf-8": components["schemas"]["CreateGameRequest"];
                 };
             };
             responses: {
@@ -1178,7 +209,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
                     };
                 };
                 500: {
@@ -1205,7 +236,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/runden": {
+    "/games/by-code/{invite_code}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1213,371 +244,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the caller's own Runden, newest first.
-         * @description Only the owner can see these Runden.
-         */
-        get: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["RundeBasic"][];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/frei": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Start a `Freie Runde`: no Anlage, no Parkour, and its own name.
-         * @description The response identifies this round as having no Anlage or Parkour.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path?: never;
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["FreieRundeStartenRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/{runde_id}/ziele": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Append one `Freies Ziel` to the caller's own open `Freie Runde`.
-         * @description Targets in a Parkour round cannot be changed.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    runde_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ZielHinzufuegenRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/{runde_id}/ziele/{ziel_id}/notiz": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Set or clear a target note (up to 1000 characters) in a running Runde.
-         * @description An empty or whitespace-only note clears it. Completed rounds are immutable.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    runde_id: string;
-                    ziel_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ZielNotizSetzenRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/{runde_id}/ziele/{ziel_id}/name": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Rename one `Freies Ziel` in a running free Runde.
-         * @description A name containing only whitespace is invalid. Only an open free round can be changed.
-         */
-        put: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    runde_id: string;
-                    ziel_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["ZielUmbenennenRequest"];
-                };
-            };
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/{runde_id}/ziele/{ziel_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Remove one `Freies Ziel` from a free Runde.
-         * @description Removing a target also removes its recorded shots. The response contains the updated round.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    runde_id: string;
-                    ziel_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/{runde_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Read one Runde with its captured route and both Wertungen.
-         * @description The Runde is visible to its owner and to a Systemadministrator.
+         * Look up a game summary by invite code.
+         * @description Used by `/join` invite links to preview lobby details before joining.
          */
         get: {
             parameters: {
@@ -1586,7 +254,7 @@ export interface paths {
                     Authorization?: string | null;
                 };
                 path: {
-                    runde_id: string;
+                    invite_code: string;
                 };
                 cookie?: never;
             };
@@ -1597,7 +265,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
+                        "application/json; charset=utf-8": components["schemas"]["GameSummary"];
                     };
                 };
                 500: {
@@ -1620,113 +288,13 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /**
-         * Delete the caller's Runde and every Schuss that belongs to it.
-         * @description This removes the Runde from history and clears its per-Ziel shot records.
-         */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    runde_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Ok"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/runden/{runde_id}/abschluss": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Close the caller's own Runde.
-         * @description Once closed, the Runde no longer accepts Schüsse.
-         */
-        post: {
-            parameters: {
-                query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
-                path: {
-                    runde_id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["Runde"];
-                    };
-                };
-                500: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain; charset=utf-8": string;
-                    };
-                };
-                "4XX": {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
-                    };
-                };
-            };
-        };
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/runden/{runde_id}/schuesse": {
+    "/games/join": {
         parameters: {
             query?: never;
             header?: never;
@@ -1736,8 +304,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Log one arrow at a Ziel of the caller's own open Runde.
-         * @description The target must belong to the round.
+         * Join an existing game lobby using its invite code.
+         * @description Joining an already-joined lobby is idempotent and returns the game state.
          */
         post: {
             parameters: {
@@ -1745,14 +313,12 @@ export interface paths {
                 header?: {
                     Authorization?: string | null;
                 };
-                path: {
-                    runde_id: string;
-                };
+                path?: never;
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json; charset=utf-8": components["schemas"]["SchussErstellungRequest"];
+                    "application/json; charset=utf-8": components["schemas"]["JoinGameRequest"];
                 };
             };
             responses: {
@@ -1761,7 +327,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["Schuss"];
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
                     };
                 };
                 500: {
@@ -1788,7 +354,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/runden/{runde_id}/schuesse/{schuss_id}": {
+    "/games/{game_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read full adaptive state for a game.
+         * @description Adapts payload contents to the game's current status and visibility mode.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/settings": {
         parameters: {
             query?: never;
             header?: never;
@@ -1797,8 +421,8 @@ export interface paths {
         };
         get?: never;
         /**
-         * Replace the scoring zone and position of one of the caller's shots.
-         * @description Sending `position: null` clears the saved position.
+         * Update lobby settings before drafting begins.
+         * @description Host only; allows configuring title, grid size, visibility mode, and Free Space.
          */
         put: {
             parameters: {
@@ -1807,14 +431,13 @@ export interface paths {
                     Authorization?: string | null;
                 };
                 path: {
-                    runde_id: string;
-                    schuss_id: string;
+                    game_id: string;
                 };
                 cookie?: never;
             };
             requestBody: {
                 content: {
-                    "application/json; charset=utf-8": components["schemas"]["SchussAenderungRequest"];
+                    "application/json; charset=utf-8": components["schemas"]["UpdateGameSettingsRequest"];
                 };
             };
             responses: {
@@ -1823,7 +446,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["Schuss"];
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
                     };
                 };
                 500: {
@@ -1845,19 +468,33 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/start-drafting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
         /**
-         * Delete one of the caller's shots and renumber later shots at the same Ziel.
-         * @description The scoring total is recomputed from the remaining shots.
+         * Transition a game from Lobby to Drafting.
+         * @description Host only; requires at least 3 players in the lobby.
          */
-        delete: {
+        post: {
             parameters: {
                 query?: never;
                 header?: {
                     Authorization?: string | null;
                 };
                 path: {
-                    runde_id: string;
-                    schuss_id: string;
+                    game_id: string;
                 };
                 cookie?: never;
             };
@@ -1868,7 +505,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["Ok"];
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
                     };
                 };
                 500: {
@@ -1889,6 +526,504 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save or replace the caller's draft prompts for a game.
+         * @description Rejects self-targeted prompts and resets the caller's draft lock.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["SaveDraftPromptsRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/prompts/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lock in the caller's draft prompts and start active play when all players are locked.
+         * @description Validates equal-distribution quotas and generates conflict-free Bingo boards once everyone locks.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/tiles/{tile_id}/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload photo proof for a tile on the caller's Bingo board.
+         * @description Compresses the photo, generates a 64px blurred teaser, evaluates Bingo win atomically, and awards a Gold Medal on victory.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                    tile_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /**
+                         * Format: binary
+                         * @description Uploaded image file (JPEG, PNG, or WebP).
+                         */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["CaptureOutcome"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/media/{storage_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retrieve an uploaded capture photo, blurred teaser, or user avatar.
+         * @description Enforces game membership and visibility-mode rules before streaming the image.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    storage_key: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/jpeg": string;
+                    };
+                };
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a user's public profile, Gold Medals, and statistics.
+         * @description Returns rank titles unlocked by Gold Medals and lifetime capture counts.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    user_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["UserProfile"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}/gallery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a user's Caught and Captured photo galleries grouped by game.
+         * @description Respects active visibility mode restrictions so undercover captures are never leaked early.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    user_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["UserGallery"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profil": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update the authenticated caller's username, display name, and equipped rank title.
+         * @description Rejects locked titles or already-taken handles.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["UpdateProfileRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["UserProfile"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profil/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload and set the authenticated caller's avatar image.
+         * @description Normalizes the image to a 400x400 JPEG stored in the object store.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /**
+                         * Format: binary
+                         * @description Uploaded image file (JPEG, PNG, or WebP).
+                         */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["UserProfile"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2350,7 +1485,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read the authenticated caller, including its account-level role.
+         * Read the authenticated caller, including profile summary and Gold Medals.
          * @description Requires a valid sign-in.
          */
         get: {
@@ -2471,184 +1606,6 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * Anlage
-         * @description The Anlage with its whole master data, as `GET /anlagen/{id}` answers it.
-         */
-        Anlage: {
-            /**
-             * Format: uuid
-             * @description Identity of the Anlage.
-             */
-            id: string;
-            /** @description Shown name of the Anlage. */
-            name: string;
-            /** @description Its structured address. */
-            adresse: components["schemas"]["AnlageAdresse"] & unknown;
-            /** @description Its optional contact details. */
-            kontakt: components["schemas"]["AnlageKontakt"] & unknown;
-            /** @description Whether it is in use or archived. */
-            zustand: components["schemas"]["AnlageZustand"] & unknown;
-            /** @description The role assignments in this Anlage. */
-            verwaltungen: components["schemas"]["AnlageVerwaltung"][];
-            /** @description Its physical Ziele. */
-            ziele: components["schemas"]["AnlageZiel"][];
-            /** @description Its Parkour, each with its setup and route. */
-            parkour: components["schemas"]["Parkour"][];
-        };
-        /**
-         * AnlageAdresse
-         * @description One structured address. Every field is required.
-         */
-        AnlageAdresse: {
-            /** @description Street and house number. */
-            strasse: string;
-            /** @description Postal code of the place. */
-            postleitzahl: string;
-            /** @description The place itself. */
-            ort: string;
-            /** @description Two-letter country code; only `AT`, `DE`, and `CH` are accepted. */
-            laendercode: components["schemas"]["Laendercode"] & unknown;
-        };
-        /**
-         * AnlageAenderungRequest
-         * @description Rewrite the Anlage's descriptive fields.
-         */
-        AnlageAenderungRequest: {
-            /** @description Shown name of the Anlage. */
-            name: string;
-            /** @description Its structured address; every address field is required. */
-            adresse: components["schemas"]["AnlageAdresse"] & unknown;
-            /** @description Optional contact details. */
-            kontakt: components["schemas"]["AnlageKontakt"] & unknown;
-        };
-        /**
-         * AnlageErstellungRequest
-         * @description Create an Anlage. Systemadministrator only.
-         */
-        AnlageErstellungRequest: {
-            /** @description Shown name of the new Anlage. */
-            name: string;
-            /** @description Its structured address; every address field is required. */
-            adresse: components["schemas"]["AnlageAdresse"] & unknown;
-            /** @description Optional contact details. */
-            kontakt: components["schemas"]["AnlageKontakt"] & unknown;
-        };
-        /**
-         * AnlageKontakt
-         * @description Optional contact details of an Anlage; each may be absent on its own.
-         */
-        AnlageKontakt: {
-            /** @description Name of the person to reach. */
-            name?: string | null;
-            /**
-             * E-Mail-Adresse
-             * @description E-mail address of the person to reach.
-             * @example test@example.com
-             */
-            email?: string | null;
-            /** @description Phone number of the person to reach. */
-            telefon?: string | null;
-            /** @description Website of the Anlage. */
-            website?: string | null;
-        };
-        /**
-         * AnlageOeffentlich
-         * @description One active Anlage in the public directory.
-         *
-         *     Public, so it carries no contact data: an email address or phone number is personal data
-         *     and is not published.
-         */
-        AnlageOeffentlich: {
-            /**
-             * Format: uuid
-             * @description Identity of the Anlage.
-             */
-            anlageId: string;
-            /** @description Shown name of the Anlage. */
-            name: string;
-            /** @description The place the Anlage is in. */
-            ort: string;
-            /** @description Two-letter country code of that place. */
-            laendercode: components["schemas"]["Laendercode"] & unknown;
-            /** @description The Parkour it currently offers, without their setup. */
-            parkour: components["schemas"]["ParkourKurz"][];
-        };
-        /**
-         * AnlageVerwaltung
-         * @description One role assignment: which Benutzer holds which role in this Anlage.
-         */
-        AnlageVerwaltung: {
-            /**
-             * Format: uuid
-             * @description The Benutzer that holds the role.
-             */
-            benutzerId: string;
-            /** @description The role it holds. */
-            rolle: components["schemas"]["AnlageVerwaltungRolle"] & unknown;
-        };
-        /**
-         * AnlageVerwaltungRequest
-         * @description Grant or change one role in an Anlage.
-         */
-        AnlageVerwaltungRequest: {
-            /**
-             * Format: uuid
-             * @description The Benutzer that should hold the role.
-             */
-            benutzerId: string;
-            /** @description The role to assert. */
-            rolle: components["schemas"]["AnlageVerwaltungRolle"] & unknown;
-        };
-        /**
-         * @description `Administrator` or `Mitarbeiter`: the Anlage's role inside one Anlage.
-         *
-         *     An Administrator may change the Anlage, its roles, and its master data; a Mitarbeiter
-         *     may maintain Ziele and Parkour but not the Anlage's own fields.
-         * @enum {string}
-         */
-        AnlageVerwaltungRolle: AnlageVerwaltungRolle;
-        /**
-         * AnlageZiel
-         * @description One physical Ziel of the Anlage.
-         */
-        AnlageZiel: {
-            /**
-             * Format: uuid
-             * @description Stable identity of this physical target.
-             */
-            id: string;
-            /** @description Animal name shown to the shooter. */
-            tiername: string;
-            /**
-             * Format: uint32
-             * @description 1-based ordinal that tells duplicate animal names apart ("Reh 1", "Reh 2").
-             */
-            zielnummer: number;
-            /** @description Whether the Ziel is in use or retired. */
-            zustand: components["schemas"]["AnlageZustand"] & unknown;
-            /** @description Where this physical Ziel currently lies, across this Anlage's active Parkour. */
-            verwendungen: components["schemas"]["Zielverwendung"][];
-        };
-        /**
-         * AnlageZugriff
-         * @description One Anlage together with the caller's access to it.
-         */
-        AnlageZugriff: {
-            /** @description The Anlage itself, with its whole master data. */
-            anlage: components["schemas"]["Anlage"] & unknown;
-            /** @description The caller's role in this Anlage, absent when it holds none. */
-            rolle?: components["schemas"]["AnlageVerwaltungRolle"] | (never | null);
-            /** @description Whether the caller is a Systemadministrator and may act regardless of `rolle`. */
-            istSystemadministrator: boolean;
-        };
-        /**
-         * @description `Aktiv` or `Archiviert`.
-         *
-         *     An archived Anlage stays readable; every write to one answers `409`.
-         * @enum {string}
-         */
-        AnlageZustand: AnlageZustand;
-        /**
          * AnmeldungRequest
          * @description Sign-in with the account's e-mail address and password.
          */
@@ -2661,17 +1618,6 @@ export interface components {
             eMailAdresse: string;
             /** @description The account's password. */
             passwort: string;
-        };
-        /**
-         * AnonymisierterErfasser
-         * @description A row whose owner was deleted.
-         */
-        AnonymisierterErfasser: {
-            /**
-             * Format: date-time
-             * @description When the row was anonymised.
-             */
-            am: string;
         };
         /**
          * AuthenticatedBenutzer
@@ -2691,34 +1637,19 @@ export interface components {
             eMailAdresse: string;
             /** @description Its role on the whole instance. */
             rolle: components["schemas"]["BenutzerRolle"] & unknown;
-        };
-        /**
-         * Benutzer
-         * @description A known Benutzer: the account an exact e-mail lookup found.
-         */
-        Benutzer: {
+            /** @description Public handle of the player. */
+            username: string;
+            /** @description Display name shown in lobbies and boards. */
+            displayName: string;
+            /** @description Storage key of the player's avatar, if uploaded. */
+            avatarStorageKey?: string | null;
             /**
-             * Format: uuid
-             * @description Identity of the matching Benutzer.
+             * Format: uint32
+             * @description Lifetime Gold Medals earned.
              */
-            id: string;
-            /**
-             * E-Mail-Adresse
-             * @description The address that matched.
-             * @example test@example.com
-             */
-            eMailAdresse: string;
-        };
-        /**
-         * BenutzerErfasser
-         * @description A row still owned by a Benutzer.
-         */
-        BenutzerErfasser: {
-            /**
-             * Format: uuid
-             * @description Identity of the owning Benutzer.
-             */
-            benutzerId: string;
+            goldMedalCount: number;
+            /** @description Effective rank title displayed on badges. */
+            effectiveTitle: string;
         };
         /**
          * BenutzerLoeschungRequest
@@ -2732,87 +1663,328 @@ export interface components {
         };
         /**
          * @description `Benutzer` or `Systemadministrator`: the role a Benutzer holds on the whole instance.
-         *
-         *     A Systemadministrator may create and administer any Anlage, independently of its
-         *     per-Anlage roles.
          * @enum {string}
          */
         BenutzerRolle: BenutzerRolle;
         /**
-         * DistanzPosition
-         * @description One logged position expressed as a whole-metre distance.
+         * BoardTileView
+         * @description One tile on a Bingo board.
          */
-        DistanzPosition: {
+        BoardTileView: {
+            /**
+             * Format: uuid
+             * @description Tile ID.
+             */
+            id: string;
+            /**
+             * Format: uint8
+             * @description Zero-based grid row.
+             */
+            row: number;
+            /**
+             * Format: uint8
+             * @description Zero-based grid column.
+             */
+            col: number;
+            /** @description Prompt text on the tile. */
+            promptText: string;
+            /** @description Target friend badge, or null for Free Space. */
+            targetUser?: components["schemas"]["PlayerBadge"] | (never | null);
+            /** @description True if this is the center Free Space tile. */
+            isFreeSpace: boolean;
+            /** @description True if a photo capture is attached. */
+            isCaptured: boolean;
+            /**
+             * Format: uuid
+             * @description Attached capture ID if visible to the caller.
+             */
+            captureId?: string | null;
+            /** @description Media storage key for the tile photo if visible to the caller. */
+            imageStorageKey?: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp when the tile was captured.
+             */
+            capturedAt?: string | null;
+        };
+        /**
+         * BoardView
+         * @description One player's Bingo board.
+         */
+        BoardView: {
+            /**
+             * Format: uuid
+             * @description Board ID.
+             */
+            id: string;
+            /** @description Owner player badge. */
+            owner: components["schemas"]["PlayerBadge"] & unknown;
+            /** @description True if this board completed a Bingo line. */
+            hasBingo: boolean;
+            /** @description Grid tiles ordered by row then column. */
+            tiles: components["schemas"]["BoardTileView"][];
+        };
+        /**
+         * CaptureFeedItem
+         * @description One capture entry shown in the game feed, 1:1 timeline, or galleries.
+         */
+        CaptureFeedItem: {
+            /**
+             * Format: uuid
+             * @description Capture ID.
+             */
+            id: string;
+            /**
+             * Format: uuid
+             * @description Tile ID on the catcher's board.
+             */
+            tileId: string;
+            /** @description Catcher player badge. */
+            catcher: components["schemas"]["PlayerBadge"] & unknown;
+            /** @description Target player badge, redacted as null during BlurredTeaser active play. */
+            target?: components["schemas"]["PlayerBadge"] | (never | null);
+            /** @description Prompt text, redacted as null during BlurredTeaser active play. */
+            promptText?: string | null;
+            /** @description Full image storage key, redacted as null during BlurredTeaser active play. */
+            imageStorageKey?: string | null;
+            /** @description Blurred 64px thumbnail storage key. */
+            thumbnailStorageKey: string;
+            /**
+             * Format: date-time
+             * @description Capture timestamp.
+             */
+            capturedAt: string;
+            /** @description True when the item is currently blurred/redacted. */
+            isBlurred: boolean;
+        };
+        /**
+         * CaptureOutcome
+         * @description Response returned after uploading a photo capture for a tile.
+         */
+        CaptureOutcome: {
+            /** @description Created capture record. */
+            capture: components["schemas"]["CaptureFeedItem"] & unknown;
+            /** @description True if this capture triggered Bingo and ended the game. */
+            gameCompleted: boolean;
+            /** @description Winning coordinates if Bingo was achieved. */
+            winningLine: components["schemas"]["GridCoordinate"][];
+        };
+        /**
+         * CreateGameRequest
+         * @description Create a new Friendarazzi game lobby.
+         */
+        CreateGameRequest: {
+            /** @description Name of the game (e.g., "Friday Night Out"). */
+            title: string;
+            /**
+             * Format: uint8
+             * @description Board side length: 3, 4, or 5.
+             */
+            gridSize: number;
+            /** @description Proof visibility mode. */
+            visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+            /** @description Whether odd-sized boards include a central Free Space tile. */
+            includeFreeSpace: boolean;
+        };
+        /**
+         * DraftPromptRequestItem
+         * @description Single prompt item in a player's draft submission batch.
+         */
+        DraftPromptRequestItem: {
+            /**
+             * Format: uuid
+             * @description Target friend user ID.
+             */
+            targetUserId: string;
+            /** @description Prompt text describing the habit/action. */
+            text: string;
+            /** @description Custom or StarterDeck. */
+            source: components["schemas"]["PromptSource"] & unknown;
+        };
+        /**
+         * DraftTargetQuota
+         * @description Required submission count for one target friend during drafting.
+         */
+        DraftTargetQuota: {
+            /** @description Target friend badge. */
+            targetUser: components["schemas"]["PlayerBadge"] & unknown;
             /**
              * Format: uint32
-             * @description Positive whole metres from the Ziel.
+             * @description Exact number of prompts required for this friend.
              */
-            meter: number;
+            requiredCount: number;
         };
         /**
-         * DistanzPositionRequest
-         * @description A typed distance position request, in whole metres.
+         * GalleryGameGroup
+         * @description One game section in a user's Caught / Captured photo gallery.
          */
-        DistanzPositionRequest: {
+        GalleryGameGroup: {
+            /**
+             * Format: uuid
+             * @description Game ID.
+             */
+            gameId: string;
+            /** @description Game title. */
+            gameTitle: string;
+            /**
+             * Format: date-time
+             * @description Timestamp when game started.
+             */
+            startedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp when game ended.
+             */
+            endedAt?: string | null;
+            /** @description Winner badge if completed. */
+            winner?: components["schemas"]["PlayerBadge"] | (never | null);
+            /** @description Visible photos belonging to this game. */
+            photos: components["schemas"]["CaptureFeedItem"][];
+        };
+        /**
+         * GameDetail
+         * @description Complete adaptive state of a game for `/games?id=...`.
+         */
+        GameDetail: {
+            /**
+             * Format: uuid
+             * @description Game ID.
+             */
+            id: string;
+            /** @description Short invite code. */
+            inviteCode: string;
+            /**
+             * Format: uuid
+             * @description Host user ID.
+             */
+            hostUserId: string;
+            /** @description Game title. */
+            title: string;
+            /**
+             * Format: uint8
+             * @description Board side length (3, 4, or 5).
+             */
+            gridSize: number;
+            /** @description Proof visibility mode. */
+            visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+            /** @description Whether center Free Space is enabled on odd boards. */
+            includeFreeSpace: boolean;
+            /** @description Current lifecycle state. */
+            status: components["schemas"]["GameStatus"] & unknown;
             /**
              * Format: uint32
-             * @description Positive whole metres from the Ziel.
+             * @description Playable tile count per player.
              */
-            meter: number;
+            playableTileCount: number;
+            /**
+             * Format: date-time
+             * @description Timestamp when active play started.
+             */
+            startedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp when Bingo was achieved.
+             */
+            endedAt?: string | null;
+            /** @description Winner badge if completed. */
+            winner?: components["schemas"]["PlayerBadge"] | (never | null);
+            /**
+             * Format: date-time
+             * @description Creation timestamp.
+             */
+            createdAt: string;
+            /** @description Joined players in deterministic turn order. */
+            players: components["schemas"]["PlayerBadge"][];
+            /** @description Equal-distribution prompt quotas for the caller during Drafting. */
+            myQuotas: components["schemas"]["DraftTargetQuota"][];
+            /** @description Caller's saved prompt drafts during Drafting. */
+            myDrafts: components["schemas"]["PromptSubmissionView"][];
+            /** @description Caller's own Bingo board during Active and Completed play. */
+            myBoard?: components["schemas"]["BoardView"] | (never | null);
+            /** @description All players' unlocked boards once Completed. */
+            allBoards: components["schemas"]["BoardView"][];
+            /** @description Group activity / timeline captures visible according to game mode & status. */
+            feed: components["schemas"]["CaptureFeedItem"][];
+            /** @description Automated post-game superlatives once Completed. */
+            superlatives: components["schemas"]["SuperlativeView"][];
         };
         /**
-         * @description Who a row belongs to.
-         *
-         *     A Benutzer deletion anonymises its rows: the identity is gone and only the anonymisation
-         *     time remains, so history survives without naming anyone.
-         */
-        Erfasser: components["schemas"]["Erfasser_Benutzer"] | components["schemas"]["Erfasser_Anonymisiert"];
-        /**
-         * @description Who a row belongs to.
-         *
-         *     A Benutzer deletion anonymises its rows: the identity is gone and only the anonymisation
-         *     time remains, so history survives without naming anyone.
-         */
-        Erfasser_Anonymisiert: {
-            Anonymisiert: components["schemas"]["AnonymisierterErfasser"];
-        };
-        /**
-         * @description Who a row belongs to.
-         *
-         *     A Benutzer deletion anonymises its rows: the identity is gone and only the anonymisation
-         *     time remains, so history survives without naming anyone.
-         */
-        Erfasser_Benutzer: {
-            Benutzer: components["schemas"]["BenutzerErfasser"];
-        };
-        /**
-         * ExplicitPfloecke
-         * @description This Ziel's own near-to-far Pflock order, which replaces the Parkour-wide one. Never
-         *     empty.
-         */
-        ExplicitPfloecke: {
-            /** @description The own Pflöcke, near to far. */
-            pfloecke: components["schemas"]["ParkourPflock"][];
-        };
-        /**
-         * FreieRundeStartenRequest
-         * @description Start a `Freie Runde`: no Anlage, no Parkour, and its own name.
-         */
-        FreieRundeStartenRequest: {
-            /** @description What the archer calls this round; it is the round's own name, not a Parkour's. */
-            name: string;
-        };
-        /**
-         * InheritFromParkourPfloecke
-         * @description The Parkour-wide order applies to this Ziel. Carries nothing; the discriminator is the
-         *     whole message.
-         */
-        InheritFromParkourPfloecke: Record<string, unknown>;
-        /**
-         * @description Country codes currently accepted for Anlage addresses.
+         * @description Lifecycle state of a game.
          * @enum {string}
          */
-        Laendercode: Laendercode;
+        GameStatus: GameStatus;
+        /**
+         * GameSummary
+         * @description Summary card for a game in lists and invite previews.
+         */
+        GameSummary: {
+            /**
+             * Format: uuid
+             * @description Game ID.
+             */
+            id: string;
+            /** @description Short invite code. */
+            inviteCode: string;
+            /** @description Game title. */
+            title: string;
+            /**
+             * Format: uint8
+             * @description Board side length (3, 4, or 5).
+             */
+            gridSize: number;
+            /** @description Proof visibility mode. */
+            visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+            /** @description Whether center Free Space is enabled on odd boards. */
+            includeFreeSpace: boolean;
+            /** @description Current lifecycle state. */
+            status: components["schemas"]["GameStatus"] & unknown;
+            /**
+             * Format: uint32
+             * @description Number of joined players.
+             */
+            playerCount: number;
+            /** @description Winner badge if completed. */
+            winner?: components["schemas"]["PlayerBadge"] | (never | null);
+            /**
+             * Format: date-time
+             * @description Timestamp when active play started.
+             */
+            startedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp when Bingo was achieved.
+             */
+            endedAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Creation timestamp.
+             */
+            createdAt: string;
+        };
+        /**
+         * GridCoordinate
+         * @description Grid coordinate on a Bingo board.
+         */
+        GridCoordinate: {
+            /**
+             * Format: uint8
+             * @description Zero-based row.
+             */
+            row: number;
+            /**
+             * Format: uint8
+             * @description Zero-based column.
+             */
+            col: number;
+        };
+        /**
+         * JoinGameRequest
+         * @description Join a game lobby using an invite code.
+         */
+        JoinGameRequest: {
+            /** @description Short URL-safe invite code. */
+            inviteCode: string;
+        };
         /**
          * @description The mail relay's last probe verdict, tagged by `status`.
          *
@@ -2897,9 +2069,6 @@ export interface components {
         /**
          * Ok
          * @description Acknowledgement of a request that has nothing to return.
-         *
-         *     A bare `204` would be indistinguishable from a proxy's empty answer, so the explicit body
-         *     is worth the two bytes.
          * @example {
          *       "ok": true
          *     }
@@ -2907,109 +2076,6 @@ export interface components {
         Ok: {
             /** @description Always `true`; the presence of the body is the acknowledgement. */
             ok: boolean;
-        };
-        /**
-         * Parkour
-         * @description One Parkour of the Anlage: its name, its Pflöcke, and the route they form.
-         */
-        Parkour: {
-            /**
-             * Format: uuid
-             * @description Identity of the Parkour.
-             */
-            id: string;
-            /** @description Shown name. Renaming keeps the identity and every captured snapshot. */
-            name: string;
-            /** @description Whether the Parkour is in use or retired. */
-            zustand: components["schemas"]["AnlageZustand"] & unknown;
-            /** @description Far to near, in the order the shooter walks them. Never inferred from a colour. */
-            pfloecke: components["schemas"]["ParkourPflock"][];
-            /** @description In route order. */
-            platzierungen: components["schemas"]["Zielplatzierung"][];
-        };
-        /**
-         * ParkourErstellungRequest
-         * @description Create a Parkour with its Pflock setup and its route.
-         */
-        ParkourErstellungRequest: {
-            /** @description Shown name of the new Parkour. */
-            name: string;
-            /** @description The Pflöcke, far to near. */
-            pfloecke: components["schemas"]["ParkourPflock"][];
-            /** @description The Ziele on the route, in walking order. May be empty. */
-            platzierungen: components["schemas"]["Zielplatzierung"][];
-        };
-        /**
-         * ParkourKurz
-         * @description One active Parkour as the public directory names it: counts only, no setup.
-         */
-        ParkourKurz: {
-            /**
-             * Format: uuid
-             * @description Identity of the Parkour.
-             */
-            id: string;
-            /** @description Shown name of the Parkour. */
-            name: string;
-            /**
-             * Format: uint64
-             * @description How many Pflöcke the route uses.
-             */
-            anzahlPfloecke: number;
-            /**
-             * Format: uint64
-             * @description How many Ziele the route places.
-             */
-            anzahlZiele: number;
-        };
-        /**
-         * ParkourOeffentlich
-         * @description One active Parkour with the Anlage that holds it, for starting a Runde.
-         */
-        ParkourOeffentlich: {
-            /**
-             * Format: uuid
-             * @description The Anlage that offers this Parkour.
-             */
-            anlageId: string;
-            /** @description That Anlage's name. */
-            anlageName: string;
-            /** @description The Parkour with its whole setup. */
-            parkour: components["schemas"]["Parkour"] & unknown;
-        };
-        /**
-         * ParkourPflock
-         * @description One shooting position. Its colour identifies it; no label exists.
-         */
-        ParkourPflock: {
-            /**
-             * Format: uuid
-             * @description Identity of the Pflock inside its Parkour.
-             */
-            id: string;
-            /**
-             * A Pflock colour as validated `#rrggbb`.
-             * @description The Pflock's colour. It is what distinguishes one Pflock from another.
-             */
-            farbe: string;
-        };
-        /**
-         * ParkourSetupRequest
-         * @description Replace a Parkour' whole shooting setup.
-         */
-        ParkourSetupRequest: {
-            /** @description The Pflöcke, far to near. */
-            pfloecke: components["schemas"]["ParkourPflock"][];
-            /** @description The Ziele on the route, in walking order. May be empty. */
-            platzierungen: components["schemas"]["Zielplatzierung"][];
-        };
-        /**
-         * ParkourUmbenennenRequest
-         * @description Rename a Parkour. Existing snapshots keep the name they captured.
-         */
-        ParkourUmbenennenRequest: {
-            /** @description The new shown name. */
-            name: string;
         };
         /**
          * PasswortVergessenRequest
@@ -3034,63 +2100,57 @@ export interface components {
             neuesPasswort: string;
         };
         /**
-         * Pflock
-         * @description One Pflock of this Ziel's captured route.
-         *
-         *     `abstand` is the configured distance from this Pflock to its Ziel, in metres; it is absent
-         *     when no distance was configured.
+         * PlayerBadge
+         * @description Compact player badge used for crosslinked avatars across lobbies, boards, and feeds.
          */
-        Pflock: {
-            /**
-             * A Pflock colour as validated `#rrggbb`.
-             * @description The captured Pflock's colour.
-             */
-            farbe: string;
-            /**
-             * Format: uint32
-             * @description Distance from this Pflock to its Ziel, in metres; absent when unconfigured.
-             */
-            abstand?: number | null;
-        };
-        /**
-         * PflockAbstand
-         * @description One distance from a Pflock to a Ziel.
-         *
-         *     `meter` is absent when no distance is configured for that Pflock.
-         */
-        PflockAbstand: {
+        PlayerBadge: {
             /**
              * Format: uuid
-             * @description The Pflock the distance is measured from.
+             * @description Player user ID.
              */
-            pflockId: string;
+            id: string;
+            /** @description Public handle. */
+            username: string;
+            /** @description Display name. */
+            displayName: string;
+            /** @description Avatar storage key, if present. */
+            avatarStorageKey?: string | null;
             /**
              * Format: uint32
-             * @description Distance from that Pflock to the Ziel, in metres; absent when unconfigured.
+             * @description Lifetime Gold Medals earned.
              */
-            meter?: number | null;
+            goldMedalCount: number;
+            /** @description Active rank title. */
+            effectiveTitle: string;
+            /** @description Whether this player has locked their draft in the current game. */
+            draftLocked: boolean;
+            /** @description Whether this player is the host of the current game. */
+            isHost: boolean;
         };
         /**
-         * PflockPosition
-         * @description One logged position expressed as a configured Pflock colour.
+         * @description Source of a submitted prompt.
+         * @enum {string}
          */
-        PflockPosition: {
-            /**
-             * A Pflock colour as validated `#rrggbb`.
-             * @description The configured Pflock's colour.
-             */
-            farbe: string;
-        };
+        PromptSource: PromptSource;
         /**
-         * PflockPositionRequest
-         * @description A position request naming one configured Pflock.
+         * PromptSubmissionView
+         * @description One prompt submission authored by the caller.
          */
-        PflockPositionRequest: {
+        PromptSubmissionView: {
             /**
-             * A Pflock colour as validated `#rrggbb`.
-             * @description The configured Pflock's colour.
+             * Format: uuid
+             * @description Prompt submission ID.
              */
-            farbe: string;
+            id: string;
+            /**
+             * Format: uuid
+             * @description Friend targeted by this prompt.
+             */
+            targetUserId: string;
+            /** @description Prompt text. */
+            text: string;
+            /** @description Custom or StarterDeck. */
+            source: components["schemas"]["PromptSource"] & unknown;
         };
         /**
          * RegistrierungAbschlussRequest
@@ -3115,203 +2175,12 @@ export interface components {
             eMailAdresse: string;
         };
         /**
-         * Runde
-         * @description The whole read model of one Runde, as `GET /runden/{id}` answers it.
+         * SaveDraftPromptsRequest
+         * @description Save or replace the caller's draft prompt submissions for a game.
          */
-        Runde: {
-            /**
-             * Format: uuid
-             * @description Identity of the Runde.
-             */
-            id: string;
-            /** @description The Anlage/Parkour pair; absent on a `Freie Runde`. */
-            herkunft?: components["schemas"]["RundeHerkunft"] | (never | null);
-            /** @description The round's own name. */
-            name: string;
-            /** @description Who the Runde belongs to. */
-            erfasstVon: components["schemas"]["Erfasser"] & unknown;
-            /** @description Whether it is still open or already closed. */
-            zustand: components["schemas"]["RundeZustand"] & unknown;
-            /**
-             * Format: date-time
-             * @description Start of the Runde.
-             */
-            begonnenAm: string;
-            /**
-             * Format: date-time
-             * @description End of the Runde; absent while it is open.
-             */
-            abgeschlossenAm?: string | null;
-            /** @description The Ziele as captured, with their results. */
-            ziele: components["schemas"]["Ziel"][];
-            /**
-             * Format: uint32
-             * @description First-arrow hits over the whole Runde.
-             */
-            gesamtErsterTreffer: number;
-            /**
-             * Format: uint32
-             * @description Follow-up hits over the whole Runde.
-             */
-            gesamtMehrschuss: number;
-            /**
-             * Format: uint64
-             * @description How many Ziele already carry a Wertung.
-             */
-            zieleMitWertung: number;
-        };
-        /**
-         * RundeBasic
-         * @description A Runde without its captured route, for a list of many.
-         *
-         *     Named for what it is, not for the endpoint that serves it: the same shape answers any
-         *     collection of Runden.
-         */
-        RundeBasic: {
-            /**
-             * Format: uuid
-             * @description Identity of the Runde.
-             */
-            id: string;
-            /** @description The Anlage/Parkour pair; absent on a `Freie Runde`. */
-            herkunft?: components["schemas"]["RundeHerkunft"] | (never | null);
-            /** @description The round's own name. */
-            name: string;
-            /**
-             * Format: uint64
-             * @description Number of Ziele in the captured route.
-             */
-            anzahlZiele: number;
-            /**
-             * Format: uint64
-             * @description Number of Ziele with a recorded shot.
-             */
-            anzahlErfassteZiele: number;
-            /** @description Whether it is still open or already closed. */
-            zustand: components["schemas"]["RundeZustand"] & unknown;
-            /**
-             * Format: date-time
-             * @description Start of the Runde.
-             */
-            begonnenAm: string;
-            /**
-             * Format: date-time
-             * @description End of the Runde; absent while it is open.
-             */
-            abgeschlossenAm?: string | null;
-        };
-        /**
-         * RundeHerkunft
-         * @description The Anlage/Parkour identities a Runde was started from.
-         *
-         *     Both ids are present together; free rounds have no provenance.
-         */
-        RundeHerkunft: {
-            /**
-             * Format: uuid
-             * @description The Anlage the Parkour belongs to.
-             */
-            anlageId: string;
-            /**
-             * Format: uuid
-             * @description The Parkour this Runde was started on.
-             */
-            parkourId: string;
-        };
-        /**
-         * RundeMitParkourStartenRequest
-         * @description Start a Runde on one active Parkour.
-         */
-        RundeMitParkourStartenRequest: {
-            /**
-             * Format: uuid
-             * @description The Parkour to shoot. It must be active.
-             */
-            parkourId: string;
-        };
-        /**
-         * @description `InBearbeitung` or `Abgeschlossen`.
-         *
-         *     A completed Runde refuses further Schüsse and its Wertungen are final.
-         * @enum {string}
-         */
-        RundeZustand: RundeZustand;
-        /**
-         * Schuss
-         * @description One logged arrow.
-         *
-         *     Its position is either a whole-metre distance or a configured Pflock colour.
-         */
-        Schuss: {
-            /**
-             * Format: uuid
-             * @description Identity of the Schuss.
-             */
-            id: string;
-            /**
-             * Format: uuid
-             * @description The Runde it belongs to.
-             */
-            rundeId: string;
-            /**
-             * Format: uuid
-             * @description The Ziel it hit or missed.
-             */
-            zielId: string;
-            /** @description Who logged it. */
-            erfasser: components["schemas"]["Erfasser"] & unknown;
-            /**
-             * Format: uint64
-             * @description 1-based position of the arrow at its Ziel.
-             */
-            pfeil: number;
-            /** @description Where on the Ziel it landed. */
-            wertungszone: components["schemas"]["Wertungszone"] & unknown;
-            position?: components["schemas"]["Schussposition"] | (never | null);
-        };
-        /**
-         * SchussAenderungRequest
-         * @description Replace a Schuss's scoring zone and optional position.
-         */
-        SchussAenderungRequest: {
-            /** @description Where on the Ziel the arrow landed. */
-            wertungszone: components["schemas"]["Wertungszone"] & unknown;
-            /** @description Optional shot position; null clears the stored position. */
-            position?: components["schemas"]["SchusspositionRequest"] | (never | null);
-        };
-        /**
-         * SchussErstellungRequest
-         * @description Register one Schuss inside the caller's own open Runde.
-         */
-        SchussErstellungRequest: {
-            /**
-             * Format: uuid
-             * @description The neutral round-local Ziel identity.
-             */
-            zielId: string;
-            /** @description Where on the Ziel the arrow landed. */
-            wertungszone: components["schemas"]["Wertungszone"] & unknown;
-            position?: components["schemas"]["SchusspositionRequest"] | (never | null);
-        };
-        /** @description One logged arrow. */
-        Schussposition: components["schemas"]["Schussposition_Distanz"] | components["schemas"]["Schussposition_Pflock"];
-        /** @description Position supplied for a logged arrow. */
-        SchusspositionRequest: components["schemas"]["SchusspositionRequest_Distanz"] | components["schemas"]["SchusspositionRequest_Pflock"];
-        /** @description Position supplied for a logged arrow. */
-        SchusspositionRequest_Distanz: {
-            Distanz: components["schemas"]["DistanzPositionRequest"];
-        };
-        /** @description Position supplied for a logged arrow. */
-        SchusspositionRequest_Pflock: {
-            Pflock: components["schemas"]["PflockPositionRequest"];
-        };
-        /** @description One logged arrow. */
-        Schussposition_Distanz: {
-            Distanz: components["schemas"]["DistanzPosition"];
-        };
-        /** @description One logged arrow. */
-        Schussposition_Pflock: {
-            Pflock: components["schemas"]["PflockPosition"];
+        SaveDraftPromptsRequest: {
+            /** @description Full list of prompts authored by the caller. */
+            prompts: components["schemas"]["DraftPromptRequestItem"][];
         };
         /**
          * SessionResponseContent
@@ -3323,6 +2192,25 @@ export interface components {
         SessionResponseContent: {
             /** @description The token to send as `Authorization: Bearer <token>`. */
             accessToken: string;
+        };
+        /**
+         * StarterDeck
+         * @description Quick-Start deck template collection.
+         */
+        StarterDeck: {
+            /**
+             * Format: uuid
+             * @description Deck identifier.
+             */
+            id: string;
+            /** @description URL-safe slug. */
+            slug: string;
+            /** @description Display name of the deck. */
+            name: string;
+            /** @description Short description of the deck theme. */
+            description: string;
+            /** @description Prompt templates containing `{name}` placeholder. */
+            prompts: string[];
         };
         /**
          * StructuredError
@@ -3341,168 +2229,119 @@ export interface components {
             sources: components["schemas"]["StructuredError"][];
         };
         /**
-         * @description API mirror of the domain's scoring zone.
-         *
-         *     `Spot` and `Kill` are hits, `Body` a non-lethal hit, `Miss` a miss.
+         * @description Automated post-game superlative category.
          * @enum {string}
          */
-        Wertungszone: Wertungszone;
+        SuperlativeKind: SuperlativeKind;
         /**
-         * Ziel
-         * @description One target in this Runde's captured route: identity, name, ordinal, Pflöcke, and Wertung.
-         *
-         *     A free-round Ziel has no configured Pflöcke.
+         * SuperlativeView
+         * @description Post-game automated superlative award.
          */
-        Ziel: {
+        SuperlativeView: {
+            /** @description Superlative category. */
+            kind: components["schemas"]["SuperlativeKind"] & unknown;
+            /** @description Awarded player badge. */
+            user: components["schemas"]["PlayerBadge"] & unknown;
+            /**
+             * Format: int64
+             * @description Numeric metric value (count or elapsed seconds).
+             */
+            metricValue: number;
             /**
              * Format: uuid
-             * @description Identity of the target within this Runde.
+             * @description Associated capture ID for QuickestDraw.
              */
-            zielId: string;
-            /** @description Name captured in the route. */
-            tiername: string;
+            captureId?: string | null;
+        };
+        /**
+         * UpdateGameSettingsRequest
+         * @description Update lobby settings before drafting starts.
+         */
+        UpdateGameSettingsRequest: {
+            /** @description Updated game title. */
+            title: string;
             /**
-             * Format: uint32
-             * @description 1-based route ordinal.
+             * Format: uint8
+             * @description Board side length: 3, 4, or 5.
              */
-            zielnummer: number;
-            /** @description The Pflöcke that apply to this Ziel as captured, near to far. */
-            pfloecke: components["schemas"]["Pflock"][];
-            /** @description Optional note attached to this Ziel. */
-            notiz?: string | null;
-            /** @description The Wertung of this Ziel; absent while no Schuss has been logged at it. */
-            wertung?: components["schemas"]["Zielwertung"] | (never | null);
-            /** @description The logged arrows at this Ziel, in Pfeil order. */
-            schuesse: components["schemas"]["Schuss"][];
+            gridSize: number;
+            /** @description Proof visibility mode. */
+            visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+            /** @description Whether odd-sized boards include a central Free Space tile. */
+            includeFreeSpace: boolean;
         };
         /**
-         * ZielHinzufuegenRequest
-         * @description Append one `Freies Ziel` to a free Runde.
+         * UpdateProfileRequest
+         * @description Update the caller's profile details and equipped Gold Medal title.
          */
-        ZielHinzufuegenRequest: {
-            /** @description The Ziel's name; absent means "Ziel N" from its ordinal. */
-            name?: string | null;
+        UpdateProfileRequest: {
+            /** @description Public handle (2..=32 ASCII alphanumeric, `_`, or `-`). */
+            username: string;
+            /** @description Display name shown to friends. */
+            displayName: string;
+            /** @description Optional unlocked rank title to equip. */
+            equippedTitle?: string | null;
         };
         /**
-         * ZielNotizSetzenRequest
-         * @description Set or clear one Ziel's note inside its Runde.
+         * UserGallery
+         * @description User profile photo galleries grouped by game.
          */
-        ZielNotizSetzenRequest: {
-            notiz: string;
+        UserGallery: {
+            /** @description Profile owner summary. */
+            user: components["schemas"]["UserProfile"] & unknown;
+            /** @description Photos where this user was the target, grouped by game. */
+            caught: components["schemas"]["GalleryGameGroup"][];
+            /** @description Photos taken by this user as the catcher, grouped by game. */
+            captured: components["schemas"]["GalleryGameGroup"][];
         };
         /**
-         * @description Whether a Ziel uses the Parkour-wide Pflock order or its own.
-         *
-         *     `InheritFromParkour` selects the Parkour's order. `Explicit` provides a non-empty
-         *     near-to-far order that replaces it.
+         * UserProfile
+         * @description Full player profile with prestige stats and unlocked titles.
          */
-        ZielPfloecke: components["schemas"]["ZielPfloecke_InheritFromParkour"] | components["schemas"]["ZielPfloecke_Explicit"];
-        /**
-         * @description Whether a Ziel uses the Parkour-wide Pflock order or its own.
-         *
-         *     `InheritFromParkour` selects the Parkour's order. `Explicit` provides a non-empty
-         *     near-to-far order that replaces it.
-         */
-        ZielPfloecke_Explicit: {
-            /**
-             * @example Explicit
-             * @enum {string}
-             */
-            art: ZielPfloecke_ExplicitArt;
-        } & components["schemas"]["ExplicitPfloecke"];
-        /**
-         * @description Whether a Ziel uses the Parkour-wide Pflock order or its own.
-         *
-         *     `InheritFromParkour` selects the Parkour's order. `Explicit` provides a non-empty
-         *     near-to-far order that replaces it.
-         */
-        ZielPfloecke_InheritFromParkour: {
-            /**
-             * @example InheritFromParkour
-             * @enum {string}
-             */
-            art: ZielPfloecke_InheritFromParkourArt;
-        } & components["schemas"]["InheritFromParkourPfloecke"];
-        /**
-         * ZielRequest
-         * @description Add or edit a Ziel.
-         */
-        ZielRequest: {
-            /** @description Animal name shown to the shooter. */
-            tiername: string;
-            /**
-             * Format: uint32
-             * @description 1-based ordinal that tells duplicate animal names apart ("Reh 1", "Reh 2").
-             *
-             *     Omitted on creation, where the Anlage derives the next free ordinal from the
-             *     Tiername. Editing refuses a request without one, because correcting the ordinal is
-             *     the user's own act.
-             */
-            zielnummer?: number | null;
-        };
-        /**
-         * ZielUmbenennenRequest
-         * @description Rename one free Ziel inside its Runde.
-         */
-        ZielUmbenennenRequest: {
-            name: string;
-        };
-        /**
-         * Zielplatzierung
-         * @description One Ziel's place in a Parkour, with its distances keyed by Pflock identity.
-         */
-        Zielplatzierung: {
+        UserProfile: {
             /**
              * Format: uuid
-             * @description The Ziel that stands here.
+             * @description Player user ID.
              */
-            zielId: string;
-            pfloecke: components["schemas"]["ZielPfloecke"];
-            /** @description Distances by Pflock identity; a missing entry means no distance is configured. */
-            abstaende: components["schemas"]["PflockAbstand"][];
-        };
-        /**
-         * Zielverwendung
-         * @description One Parkour' use of one Ziel, with that Parkour' own distances.
-         */
-        Zielverwendung: {
-            /**
-             * Format: uuid
-             * @description The Parkour that places this Ziel.
-             */
-            parkourId: string;
-            /**
-             * Format: uint64
-             * @description 0-based position in that Parkour' route.
-             */
-            position: number;
-            pfloecke: components["schemas"]["ZielPfloecke"];
-            /** @description Pflock identity to metres, near to far. */
-            abstaende: components["schemas"]["PflockAbstand"][];
-        };
-        /**
-         * Zielwertung
-         * @description The fold of every Schuss at one Ziel: both Wertungen plus the first-arrow hit.
-         */
-        Zielwertung: {
+            id: string;
+            /** @description Public handle. */
+            username: string;
+            /** @description Display name. */
+            displayName: string;
+            /** @description Avatar storage key, if present. */
+            avatarStorageKey?: string | null;
             /**
              * Format: uint32
-             * @description First-arrow hits at this Ziel.
+             * @description Lifetime Gold Medals earned.
              */
-            ersterTreffer: number;
+            goldMedalCount: number;
+            /** @description Explicitly equipped rank title, if any. */
+            equippedTitle?: string | null;
+            /** @description Effective rank title currently shown. */
+            effectiveTitle: string;
+            /** @description All rank titles unlocked for this user. */
+            unlockedTitles: string[];
             /**
              * Format: uint32
-             * @description Follow-up hits at this Ziel.
+             * @description Total games participated in.
              */
-            mehrschuss: number;
-            /** @description Whether the very first arrow hit. */
-            ersterPfeilGetroffen: boolean;
+            gamesPlayed: number;
             /**
-             * Format: uint64
-             * @description How many Schüsse were logged at this Ziel.
+             * Format: uint32
+             * @description Total captures taken by this user.
              */
-            anzahlSchuesse: number;
+            capturesMade: number;
+            /**
+             * Format: uint32
+             * @description Total times this user was caught in a photo.
+             */
+            timesCaught: number;
         };
+        /**
+         * @description Proof visibility mode of a Friendarazzi game.
+         * @enum {string}
+         */
+        VisibilityMode: VisibilityMode;
     };
     responses: never;
     parameters: never;
@@ -3511,22 +2350,15 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export enum AnlageVerwaltungRolle {
-    Administrator = "Administrator",
-    Mitarbeiter = "Mitarbeiter"
-}
-export enum AnlageZustand {
-    Aktiv = "Aktiv",
-    Archiviert = "Archiviert"
-}
 export enum BenutzerRolle {
     Benutzer = "Benutzer",
     Systemadministrator = "Systemadministrator"
 }
-export enum Laendercode {
-    AT = "AT",
-    DE = "DE",
-    CH = "CH"
+export enum GameStatus {
+    Lobby = "Lobby",
+    Drafting = "Drafting",
+    Active = "Active",
+    Completed = "Completed"
 }
 export enum MailHealth_FailedStatus {
     Failed = "Failed"
@@ -3537,20 +2369,19 @@ export enum MailHealth_OkStatus {
 export enum MailHealth_UnknownStatus {
     Unknown = "Unknown"
 }
-export enum RundeZustand {
-    InBearbeitung = "InBearbeitung",
-    Abgeschlossen = "Abgeschlossen"
+export enum PromptSource {
+    Custom = "Custom",
+    StarterDeck = "StarterDeck"
 }
-export enum Wertungszone {
-    Spot = "Spot",
-    Kill = "Kill",
-    Body = "Body",
-    Miss = "Miss"
+export enum SuperlativeKind {
+    MostWanted = "MostWanted",
+    Ghost = "Ghost",
+    QuickestDraw = "QuickestDraw",
+    Sniper = "Sniper"
 }
-export enum ZielPfloecke_ExplicitArt {
-    Explicit = "Explicit"
-}
-export enum ZielPfloecke_InheritFromParkourArt {
-    InheritFromParkour = "InheritFromParkour"
+export enum VisibilityMode {
+    Undercover = "Undercover",
+    LiveFeed = "LiveFeed",
+    BlurredTeaser = "BlurredTeaser"
 }
 export type operations = Record<string, never>;

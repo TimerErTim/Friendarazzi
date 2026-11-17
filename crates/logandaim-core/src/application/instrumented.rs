@@ -8,11 +8,11 @@ use crate::ResultReport;
 use crate::application::instrumented_repos::RepoStorage;
 use crate::application::uow::UnitOfWorkImpl;
 use crate::ports::{
-    AnlageRepository, BenutzerRepository, ClientKey, EmailBestätigungRepository, KontoRepository,
-    Mail, MailError, MailSender, ObjectStore, ObjectStoreError, ObjectStream,
-    PasswortWiederherstellungRepository, PdfDokument, PdfRenderError, PdfRenderer,
-    RepositoryResult, RundeRepository, SchussRepository, SessionRepository, Throttle,
-    ThrottleAction, ThrottleError,
+    BenutzerRepository, BoardRepository, CaptureRepository, ClientKey, DeckRepository,
+    EmailBestätigungRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
+    ObjectStore, ObjectStoreError, ObjectStream, PasswortWiederherstellungRepository, PdfDokument,
+    PdfRenderError, PdfRenderer, RepositoryResult, SessionRepository, Throttle, ThrottleAction,
+    ThrottleError, UserProfileRepository,
 };
 
 #[derive(Clone)]
@@ -167,16 +167,24 @@ impl UnitOfWorkImpl for InstrumentedUnitOfWork {
         uow.rollback().await
     }
 
-    fn anlagen(&self) -> &dyn AnlageRepository {
-        &self.storage.anlagen
+    fn profiles(&self) -> &dyn UserProfileRepository {
+        &self.storage.profiles
     }
 
-    fn runden(&self) -> &dyn RundeRepository {
-        &self.storage.runden
+    fn games(&self) -> &dyn GameRepository {
+        &self.storage.games
     }
 
-    fn schüsse(&self) -> &dyn SchussRepository {
-        &self.storage.schüsse
+    fn boards(&self) -> &dyn BoardRepository {
+        &self.storage.boards
+    }
+
+    fn captures(&self) -> &dyn CaptureRepository {
+        &self.storage.captures
+    }
+
+    fn decks(&self) -> &dyn DeckRepository {
+        &self.storage.decks
     }
 
     fn benutzer(&self) -> &dyn BenutzerRepository {

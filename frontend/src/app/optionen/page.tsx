@@ -72,9 +72,8 @@ export default function OptionsPage() {
           <div className="space-y-1">
             <h2 className="text-sm font-semibold text-ink">Konto löschen</h2>
             <p className="text-sm text-secondary">
-              Ihr Konto und Ihre persönlichen Daten werden entfernt. Runden
-              bleiben anonymisiert erhalten. Dieser Vorgang kann nicht
-              rückgängig gemacht werden.
+              Ihr Konto, Ihr Profil und Ihre persönlichen Daten werden entfernt.
+              Dieser Vorgang kann nicht rückgängig gemacht werden.
             </p>
           </div>
           {message ? (

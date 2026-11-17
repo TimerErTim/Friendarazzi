@@ -8,8 +8,9 @@ use crate::domain::konto::{
     PasswortWiederherstellung, PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Anlage, AnlageId, AnlageZielId, EmailAdresse, NeueAnlage, NeueRunde, NeuerSchuss, ParkourId,
-    Runde, RundeId, Schuss, SchussId, ZielId,
+    Board, BoardId, BoardTile, BoardTileId, Capture, CaptureId, EmailAdresse, Game, GameId,
+    GamePlayer, InviteCode, NewCapture, NewGame, NewUserProfile, PromptSubmission, StarterDeck,
+    UserProfile,
 };
 
 pub type RepositoryResult<T> = ResultReport<T, RepositoryError>;
@@ -36,86 +37,98 @@ pub enum RepositoryError {
     Unknown,
 }
 
-/// Store and load one aggregate; never compute or enforce a business rule.
 #[async_trait]
-pub trait AnlageRepository: Send + Sync {
-    async fn create(&self, anlage: NeueAnlage) -> RepositoryResult<Versioned<Anlage>>;
-
-    /// Load either lifecycle state.
-    async fn find_by_id(&self, id: AnlageId) -> RepositoryResult<Versioned<Anlage>>;
-
-    async fn find_aktiv(&self) -> RepositoryResult<Vec<Versioned<Anlage>>>;
-
-    /// The Anlage that owns the given Parkour, in either lifecycle state, or `NotFound`.
-    ///
-    /// A Parkour has no lifecycle outside its Anlage, so this is the one question a caller
-    /// that only holds a `ParkourId` has to ask; walking `find_aktiv` would silently miss an
-    /// archived owner and read every aggregate to answer it.
-    async fn find_by_parkour_id(&self, id: ParkourId) -> RepositoryResult<Versioned<Anlage>>;
-
-    async fn find_by_verwaltung(
+pub trait UserProfileRepository: Send + Sync {
+    async fn create(&self, profile: NewUserProfile) -> RepositoryResult<Versioned<UserProfile>>;
+    async fn find_by_user_id(
         &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Vec<Versioned<Anlage>>>;
-
-    /// Write the root and its child rows back, guarded by the root version.
-    async fn update(&self, anlage: &mut Versioned<Anlage>) -> RepositoryResult<()>;
-
-    async fn delete(&self, anlage: Versioned<Anlage>) -> RepositoryResult<()>;
+        user_id: BenutzerId,
+    ) -> RepositoryResult<Versioned<UserProfile>>;
+    async fn find_by_user_ids(
+        &self,
+        user_ids: &[BenutzerId],
+    ) -> RepositoryResult<Vec<Versioned<UserProfile>>>;
+    async fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<UserProfile>>;
+    async fn update(&self, profile: &mut Versioned<UserProfile>) -> RepositoryResult<()>;
+    async fn delete_by_user_id(&self, user_id: BenutzerId) -> RepositoryResult<()>;
 }
 
 #[async_trait]
-pub trait RundeRepository: Send + Sync {
-    /// Conflict if the owner already has an open Runde (the database is the concurrency backstop).
-    async fn create(&self, runde: NeueRunde) -> RepositoryResult<Versioned<Runde>>;
-
-    async fn find_by_id(&self, id: RundeId) -> RepositoryResult<Versioned<Runde>>;
-
-    /// Every Runde of one Benutzer; anonymised rows no longer match.
-    async fn find_by_benutzer(
+pub trait GameRepository: Send + Sync {
+    async fn create(&self, game: NewGame) -> RepositoryResult<Versioned<Game>>;
+    async fn find_by_id(&self, id: GameId) -> RepositoryResult<Versioned<Game>>;
+    async fn find_by_invite_code(&self, code: &InviteCode) -> RepositoryResult<Versioned<Game>>;
+    async fn find_for_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Game>>>;
+    async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()>;
+    async fn add_player(&self, player: GamePlayer) -> RepositoryResult<()>;
+    async fn find_players(&self, game_id: GameId) -> RepositoryResult<Vec<GamePlayer>>;
+    async fn set_player_draft_locked(
         &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Vec<Versioned<Runde>>>;
-
-    /// Find the user's open Runde; returns `RepositoryError::NotFound` when none exists.
-    async fn find_offen_by_benutzer(
+        game_id: GameId,
+        user_id: BenutzerId,
+        locked: bool,
+    ) -> RepositoryResult<()>;
+    async fn replace_author_prompts(
         &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Versioned<Runde>>;
-
-    async fn update(&self, runde: &mut Versioned<Runde>) -> RepositoryResult<()>;
-
-    async fn delete(&self, runde: Versioned<Runde>) -> RepositoryResult<()>;
-
-    /// Whether any Runde still refers to this Anlage.
-    async fn exists_referencing_anlage(&self, id: AnlageId) -> RepositoryResult<bool>;
-
-    /// Whether any Runde refers to this Parkour.
-    async fn exists_referencing_parkour(&self, id: ParkourId) -> RepositoryResult<bool>;
-
-    /// Whether any Runde's captured route contains this Ziel identity.
-    async fn exists_referencing_ziel(&self, id: AnlageZielId) -> RepositoryResult<bool>;
+        game_id: GameId,
+        author_user_id: BenutzerId,
+        prompts: Vec<PromptSubmission>,
+    ) -> RepositoryResult<()>;
+    async fn find_prompts_by_game(
+        &self,
+        game_id: GameId,
+    ) -> RepositoryResult<Vec<PromptSubmission>>;
+    async fn find_prompts_by_author(
+        &self,
+        game_id: GameId,
+        author_user_id: BenutzerId,
+    ) -> RepositoryResult<Vec<PromptSubmission>>;
 }
 
 #[async_trait]
-pub trait SchussRepository: Send + Sync {
-    async fn create(&self, schuss: NeuerSchuss) -> RepositoryResult<Versioned<Schuss>>;
-
-    async fn find_by_id(&self, id: SchussId) -> RepositoryResult<Versioned<Schuss>>;
-
-    async fn find_by_runde(&self, runde_id: RundeId) -> RepositoryResult<Vec<Versioned<Schuss>>>;
-
-    /// Per-physical-Ziel history, independent of the Runde that produced it.
-    async fn find_by_ziel(&self, ziel_id: ZielId) -> RepositoryResult<Vec<Versioned<Schuss>>>;
-
-    async fn find_by_benutzer(
+pub trait BoardRepository: Send + Sync {
+    async fn create_board_with_tiles(
         &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Vec<Versioned<Schuss>>>;
+        board: Board,
+        tiles: Vec<BoardTile>,
+    ) -> RepositoryResult<()>;
+    async fn find_boards_by_game(&self, game_id: GameId)
+    -> RepositoryResult<Vec<Versioned<Board>>>;
+    async fn find_board_by_game_and_owner(
+        &self,
+        game_id: GameId,
+        owner: BenutzerId,
+    ) -> RepositoryResult<Versioned<Board>>;
+    async fn find_tiles_by_board(&self, board_id: BoardId) -> RepositoryResult<Vec<BoardTile>>;
+    async fn find_tiles_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<BoardTile>>;
+    async fn find_tile_by_id(&self, tile_id: BoardTileId) -> RepositoryResult<BoardTile>;
+    async fn update_board(&self, board: &mut Versioned<Board>) -> RepositoryResult<()>;
+    async fn attach_tile_capture(
+        &self,
+        tile_id: BoardTileId,
+        capture_id: CaptureId,
+    ) -> RepositoryResult<()>;
+}
 
-    async fn update(&self, schuss: &mut Versioned<Schuss>) -> RepositoryResult<()>;
+#[async_trait]
+pub trait CaptureRepository: Send + Sync {
+    async fn create(&self, capture: NewCapture) -> RepositoryResult<Versioned<Capture>>;
+    async fn find_by_id(&self, id: CaptureId) -> RepositoryResult<Versioned<Capture>>;
+    async fn find_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<Versioned<Capture>>>;
+    async fn find_by_target_user(
+        &self,
+        user_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<Capture>>>;
+    async fn find_by_catcher_user(
+        &self,
+        user_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<Capture>>>;
+    async fn find_by_storage_key(&self, key: &str) -> RepositoryResult<Versioned<Capture>>;
+}
 
-    async fn delete(&self, schuss: Versioned<Schuss>) -> RepositoryResult<()>;
+#[async_trait]
+pub trait DeckRepository: Send + Sync {
+    async fn list_all(&self) -> RepositoryResult<Vec<StarterDeck>>;
 }
 
 #[async_trait]

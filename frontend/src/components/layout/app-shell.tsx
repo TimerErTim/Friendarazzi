@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Award,
   CircleAlert,
   LogIn,
   LogOut,
@@ -11,13 +12,8 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/api/auth-provider";
-import {
-  useAnlagenQuery,
-  useAuthMutations,
-  useBenutzerQuery,
-} from "@/api/hooks";
+import { useAuthMutations, useBenutzerQuery } from "@/api/hooks";
 import { usePageChrome } from "@/components/layout/page-chrome";
-import { RundenBand } from "@/components/layout/runden-band";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -32,30 +28,19 @@ import {
 import {
   breadcrumbsForPathname,
   homeNavItem,
-  isExactPath,
-  paths,
   sidebarCategories,
-  visibleSidebarCategories,
 } from "@/lib/navigation";
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { breadcrumbLabel } = usePageChrome();
-  const isCapturePage = isExactPath(pathname, paths.rundenErfassen);
-  const breadcrumbs = isCapturePage
-    ? [{ label: "Historie", href: paths.runden }, { label: "Erfassung" }]
-    : breadcrumbsForPathname(pathname, breadcrumbLabel);
+  const breadcrumbs = breadcrumbsForPathname(pathname, breadcrumbLabel);
   const phase = useAuth();
   const benutzer = useBenutzerQuery();
-  const anlagen = useAnlagenQuery();
   const auth = useAuthMutations();
   const onAuthRoute = ["/anmeldung", "/registrierung", "/passwort"].includes(
     pathname.replace(/\/$/, ""),
   );
-
-  const categories = visibleSidebarCategories(sidebarCategories, {
-    istSystemadministrator: benutzer.data?.rolle === "Systemadministrator",
-    anzahlAnlagen: anlagen.data?.length ?? 0,
-  });
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
@@ -69,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <input id="main-drawer" type="checkbox" className="peer hidden" />
 
       <Sidebar
-        categories={categories}
+        categories={sidebarCategories}
         homeItem={homeNavItem}
         pathname={pathname}
       />
@@ -81,9 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header
-          className={`sticky top-0 ${isCapturePage ? "z-50" : "z-30"} border-b border-subtle bg-surface`}
-        >
+        <header className="sticky top-0 z-30 border-b border-subtle bg-surface">
           <div className="flex h-14 items-center gap-3 px-4">
             <label
               htmlFor="main-drawer"
@@ -123,51 +106,64 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <div className="flex shrink-0 items-center gap-2">
               {phase.status === "authenticated" && benutzer.data ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="secondary"
-                      aria-label="Profilmenü öffnen"
-                      disabled={
-                        auth.logout.isPending || auth.deleteAccount.isPending
-                      }
-                    >
-                      <UserRound />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuLabel className="normal-case">
-                      <span className="block truncate text-secondary">
-                        Angemeldet als
-                      </span>
-                      <span className="mt-1 block truncate text-sm font-medium text-ink">
-                        {benutzer.data.eMailAdresse}
-                      </span>
-                    </DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild>
-                      <Link href="/profil">
-                        <UserRound aria-hidden="true" /> Profil
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/optionen">
-                        <Settings2 aria-hidden="true" /> Optionen
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={() =>
-                        auth.logout.mutate(undefined, {
-                          onSuccess: () => window.location.assign("/"),
-                        })
-                      }
-                    >
-                      <LogOut aria-hidden="true" /> Abmelden
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <>
+                  <Link
+                    href="/profil"
+                    className="hidden items-center gap-1.5 rounded-sm border border-warning/50 bg-warning/15 px-2.5 py-1 text-xs font-semibold text-ink hover:bg-warning/25 sm:inline-flex"
+                    title="Goldmedaillen"
+                  >
+                    <Award className="size-3.5 text-warning" />
+                    <span className="tabular-nums">
+                      {benutzer.data.goldMedalCount}
+                    </span>
+                  </Link>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="icon"
+                        variant="secondary"
+                        aria-label="Profilmenü öffnen"
+                        disabled={
+                          auth.logout.isPending || auth.deleteAccount.isPending
+                        }
+                      >
+                        <UserRound />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-64">
+                      <DropdownMenuLabel className="normal-case">
+                        <span className="block truncate text-sm font-medium text-ink">
+                          {benutzer.data.displayName}
+                        </span>
+                        <span className="block truncate text-xs text-secondary">
+                          @{benutzer.data.username} ·{" "}
+                          {benutzer.data.effectiveTitle}
+                        </span>
+                      </DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link href="/profil">
+                          <UserRound aria-hidden="true" /> Mein Profil
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/optionen">
+                          <Settings2 aria-hidden="true" /> Optionen
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          auth.logout.mutate(undefined, {
+                            onSuccess: () => window.location.assign("/"),
+                          })
+                        }
+                      >
+                        <LogOut aria-hidden="true" /> Abmelden
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
               ) : !onAuthRoute ? (
                 <Link href="/anmeldung">
                   <Button
@@ -183,11 +179,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main
-          id="main"
-          tabIndex={-1}
-          className={`flex-1 overflow-y-auto ${isCapturePage ? "relative z-20" : ""}`}
-        >
+        <main id="main" tabIndex={-1} className="flex-1 overflow-y-auto">
           {phase.status === "unavailable" ? (
             <div className="mx-auto w-full max-w-5xl px-6 pt-6">
               <Alert
@@ -203,7 +195,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : null}
           {children}
         </main>
-        {!isCapturePage ? <RundenBand /> : null}
       </div>
     </div>
   );

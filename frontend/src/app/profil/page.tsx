@@ -1,70 +1,228 @@
 "use client";
 
+import { Award, Camera, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "@/api/auth-provider";
-import { useBenutzerQuery } from "@/api/hooks";
+import { apiErrorMessage } from "@/api/errors";
+import {
+  useBenutzerQuery,
+  useErfolgsmeldung,
+  useFriendarazziMutations,
+  useUserGalleryQuery,
+} from "@/api/hooks";
+import { PlayerAvatar } from "@/components/friendarazzi/player-avatar";
+import { UserGalleryTabs } from "@/components/friendarazzi/user-gallery-tabs";
+import { PageHeader } from "@/components/layout/page-header";
+import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { HatchBand } from "@/components/ui/paper-rule";
+import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ProfilePage() {
-  return <ProfileContent />;
-}
-
-function ProfileContent() {
   const phase = useAuth();
-  const benutzer = useBenutzerQuery();
   const router = useRouter();
+  const benutzer = useBenutzerQuery();
+  const gallery = useUserGalleryQuery(benutzer.data?.id ?? null);
+  const mutations = useFriendarazziMutations();
+  const feedback = useErfolgsmeldung();
+
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [equippedTitle, setEquippedTitle] = useState("");
 
   useEffect(() => {
     if (phase.status === "anonymous") router.replace("/anmeldung");
   }, [phase.status, router]);
 
+  useEffect(() => {
+    const profile = gallery.data?.user;
+    if (!profile) return;
+    setUsername(profile.username);
+    setDisplayName(profile.displayName);
+    setEquippedTitle(profile.equippedTitle ?? "");
+  }, [gallery.data?.user]);
+
+  const profile = gallery.data?.user;
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    feedback.verwerfen();
+    await mutations.updateProfile.mutateAsync({
+      username,
+      displayName,
+      equippedTitle: equippedTitle || undefined,
+    });
+    feedback.melden("Profil gespeichert.");
+  }
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    feedback.verwerfen();
+    await mutations.uploadAvatar.mutateAsync(file);
+    feedback.melden("Profilbild aktualisiert.");
+  }
+
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
-      <header className="space-y-2">
-        <p className="text-xs font-semibold tracking-[0.09em] text-secondary uppercase">
-          Konto
-        </p>
-        <h1 className="font-serif text-2xl font-semibold tracking-tight text-ink">
-          Profil
-        </h1>
-        <p className="text-sm text-secondary">Ihre Kontodaten im Überblick.</p>
-      </header>
-      <Card>
-        <CardHeader>
-          <CardTitle>Persönliche Angaben</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {phase.status === "authenticated" && benutzer.data ? (
-            <dl className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <dt className="text-xs font-semibold tracking-[0.09em] text-secondary uppercase">
-                  E-Mail-Adresse
-                </dt>
-                <dd className="text-sm text-ink">
-                  {benutzer.data.eMailAdresse}
-                </dd>
+    <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
+      <PageHeader
+        register={["Konto", "Profil"]}
+        title="Mein Profil"
+        description="Deine Goldmedaillen, freigeschalteten Titel und deine gesammelten Fotomomente."
+      />
+
+      {gallery.isLoading || !gallery.data || !profile ? (
+        <div className="space-y-4">
+          <Skeleton className="h-36 w-full" />
+          <Skeleton className="h-56 w-full" />
+        </div>
+      ) : (
+        <>
+          {/* Prestige & Avatar Card */}
+          <Card>
+            <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
+              <div className="flex items-center gap-4">
+                <PlayerAvatar user={profile} size="lg" linkToProfile={false} />
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-serif text-xl font-semibold text-ink">
+                      {profile.displayName}
+                    </h2>
+                    <Badge variant="warning" className="gap-1">
+                      <Award
+                        className="size-3.5 text-warning"
+                        aria-hidden="true"
+                      />
+                      {profile.goldMedalCount} Goldmedaillen
+                    </Badge>
+                    <Badge variant="primary">{profile.effectiveTitle}</Badge>
+                  </div>
+                  <p className="font-mono text-xs text-secondary">
+                    @{profile.username}
+                  </p>
+                  <p className="text-xs text-secondary tabular-nums">
+                    {profile.gamesPlayed} Spiele · {profile.capturesMade} Fotos
+                    geschossen · {profile.timesCaught}× erwischt
+                  </p>
+                </div>
               </div>
-              <div className="space-y-1">
-                <dt className="text-xs font-semibold tracking-[0.09em] text-secondary uppercase">
-                  Benutzer-ID
-                </dt>
-                <dd className="font-mono text-sm text-ink">
-                  {benutzer.data.id}
-                </dd>
-              </div>
-            </dl>
-          ) : phase.status === "unavailable" ? (
-            <p className="text-sm text-secondary">
-              Das Profil ist momentan nicht verfügbar. Bitte versuchen Sie es
-              später erneut.
-            </p>
-          ) : (
-            <p className="text-sm text-secondary">Profil wird geladen …</p>
-          )}
-        </CardContent>
-      </Card>
+
+              <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border border-strong bg-elevated px-4 text-sm font-medium text-ink transition-colors hover:bg-surface-muted">
+                <Camera className="size-4" aria-hidden="true" />
+                {mutations.uploadAvatar.isPending
+                  ? "Lädt hoch …"
+                  : "Profilbild ändern"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  disabled={mutations.uploadAvatar.isPending}
+                  onChange={(e) => void handleAvatarChange(e)}
+                />
+              </label>
+            </CardContent>
+          </Card>
+
+          {/* Edit Profile Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Profil bearbeiten</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={(e) => void saveProfile(e)}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    label="Anzeigename"
+                    hint="So sehen dich deine Freunde in Lobbys."
+                  >
+                    <Input
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      required
+                    />
+                  </Field>
+                  <Field
+                    label="Benutzername"
+                    hint="2–32 Zeichen (Buchstaben, Zahlen, _ oder -)."
+                  >
+                    <Input
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="font-mono"
+                      required
+                    />
+                  </Field>
+                </div>
+
+                <Field
+                  label="Angelegter Rang-Titel"
+                  hint="Weitere Titel schaltest du durch Goldmedaillen frei."
+                >
+                  <Select
+                    value={equippedTitle}
+                    onChange={(e) => setEquippedTitle(e.target.value)}
+                  >
+                    <option value="">
+                      Automatisch ({profile.effectiveTitle})
+                    </option>
+                    {profile.unlockedTitles.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+
+                {mutations.updateProfile.isError ? (
+                  <Alert variant="error">
+                    {apiErrorMessage(mutations.updateProfile.error, {
+                      fallback: "Profil konnte nicht gespeichert werden.",
+                    })}
+                  </Alert>
+                ) : null}
+
+                {mutations.uploadAvatar.isError ? (
+                  <Alert variant="error">
+                    {apiErrorMessage(mutations.uploadAvatar.error, {
+                      fallback: "Profilbild konnte nicht hochgeladen werden.",
+                    })}
+                  </Alert>
+                ) : null}
+
+                <Button
+                  type="submit"
+                  disabled={mutations.updateProfile.isPending}
+                >
+                  <Upload className="size-4" aria-hidden="true" />
+                  {mutations.updateProfile.isPending
+                    ? "Wird gespeichert …"
+                    : "Änderungen speichern"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <HatchBand />
+
+          {/* Native Phone-Style Caught / Captured Photo Tabs */}
+          <section className="space-y-3">
+            <h2 className="font-serif text-lg font-semibold text-ink">
+              Fotomomente
+            </h2>
+            <UserGalleryTabs
+              caught={gallery.data.caught}
+              captured={gallery.data.captured}
+            />
+          </section>
+        </>
+      )}
     </div>
   );
 }

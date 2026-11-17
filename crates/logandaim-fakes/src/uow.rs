@@ -3,21 +3,20 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use logandaim_core::{
     ports::{
-        AnlageRepository, BenutzerRepository, EmailBestätigungRepository, KontoRepository,
-        PasswortWiederherstellungRepository, RepositoryResult, RundeRepository, SchussRepository,
-        SessionRepository,
+        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
+        EmailBestätigungRepository, GameRepository, KontoRepository,
+        PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
+        UserProfileRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
 };
 
 use crate::repository::{
-    FakeAnlageRepository, FakeBenutzerRepository, FakeDatastore, FakeEmailBestätigungRepository,
-    FakeKontoRepository, FakePasswortWiederherstellungRepository, FakeRundeRepository,
-    FakeSchussRepository, FakeSessionRepository,
+    FakeBenutzerRepository, FakeBoardRepository, FakeCaptureRepository, FakeDatastore,
+    FakeDeckRepository, FakeEmailBestätigungRepository, FakeGameRepository, FakeKontoRepository,
+    FakePasswortWiederherstellungRepository, FakeSessionRepository, FakeUserProfileRepository,
 };
 
-/// Fake UoW with real transaction semantics: `begin` snapshots the backing datastore,
-/// repositories write into the snapshot, `commit` publishes the snapshot back.
 pub struct FakeUnitOfWorkProvider {
     pub log: Arc<Mutex<Vec<UoWEvent>>>,
     pub datastore: Arc<FakeDatastore>,
@@ -55,13 +54,13 @@ impl UnitOfWorkProvider for FakeUnitOfWorkProvider {
 
 pub struct FakeUnitOfWork {
     log: Arc<Mutex<Vec<UoWEvent>>>,
-    /// The data visible after commit. Writes only reach it via `commit`.
     backing_datastore: Arc<FakeDatastore>,
-    /// Snapshot the repositories write into; discarded on rollback.
     transaction_datastore: Arc<FakeDatastore>,
-    anlagen: FakeAnlageRepository,
-    runden: FakeRundeRepository,
-    schüsse: FakeSchussRepository,
+    profiles: FakeUserProfileRepository,
+    games: FakeGameRepository,
+    boards: FakeBoardRepository,
+    captures: FakeCaptureRepository,
+    decks: FakeDeckRepository,
     benutzer: FakeBenutzerRepository,
     konten: FakeKontoRepository,
     sessions: FakeSessionRepository,
@@ -75,9 +74,11 @@ impl FakeUnitOfWork {
         Self {
             log,
             backing_datastore: datastore,
-            anlagen: FakeAnlageRepository::new(Arc::clone(&transaction_datastore)),
-            runden: FakeRundeRepository::new(Arc::clone(&transaction_datastore)),
-            schüsse: FakeSchussRepository::new(Arc::clone(&transaction_datastore)),
+            profiles: FakeUserProfileRepository::new(Arc::clone(&transaction_datastore)),
+            games: FakeGameRepository::new(Arc::clone(&transaction_datastore)),
+            boards: FakeBoardRepository::new(Arc::clone(&transaction_datastore)),
+            captures: FakeCaptureRepository::new(Arc::clone(&transaction_datastore)),
+            decks: FakeDeckRepository::new(Arc::clone(&transaction_datastore)),
             benutzer: FakeBenutzerRepository::new(Arc::clone(&transaction_datastore)),
             konten: FakeKontoRepository::new(Arc::clone(&transaction_datastore)),
             sessions: FakeSessionRepository::new(Arc::clone(&transaction_datastore)),
@@ -106,16 +107,24 @@ impl UnitOfWorkImpl for FakeUnitOfWork {
         Ok(())
     }
 
-    fn anlagen(&self) -> &dyn AnlageRepository {
-        &self.anlagen
+    fn profiles(&self) -> &dyn UserProfileRepository {
+        &self.profiles
     }
 
-    fn runden(&self) -> &dyn RundeRepository {
-        &self.runden
+    fn games(&self) -> &dyn GameRepository {
+        &self.games
     }
 
-    fn schüsse(&self) -> &dyn SchussRepository {
-        &self.schüsse
+    fn boards(&self) -> &dyn BoardRepository {
+        &self.boards
+    }
+
+    fn captures(&self) -> &dyn CaptureRepository {
+        &self.captures
+    }
+
+    fn decks(&self) -> &dyn DeckRepository {
+        &self.decks
     }
 
     fn benutzer(&self) -> &dyn BenutzerRepository {

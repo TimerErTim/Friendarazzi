@@ -1,31 +1,21 @@
-//! Use cases, grouped by journey in English file names.
-//!
-//! The type names stay German because they name domain nouns (`Anmeldung`,
-//! `RegistrierungStarten`, `PasswortVergessen`); the modules are application structure and
-//! are English.
-//!
-//! Each use case owns its own error enum. A variant names what the use case could not do,
-//! keeps the underlying repository or crypto error in the `error_stack` chain, and has at
-//! most one HTTP meaning — `logandaim-api` maps them in `errors/http_status.rs`.
-//!
-//! Only writes live here. A read is a one-off `execute_fn` closure in `LogandaimAppApi`.
+//! Use cases, grouped by journey.
 
+mod capture;
+mod game;
 mod login;
 mod password;
+mod profile;
 mod registration;
-mod runde;
-mod schuss;
 mod session;
-mod stammdaten;
 mod user;
 
+pub use capture::*;
+pub use game::*;
 pub use login::*;
 pub use password::*;
+pub use profile::*;
 pub use registration::*;
-pub use runde::*;
-pub use schuss::*;
 pub use session::*;
-pub use stammdaten::*;
 pub use user::*;
 
 use chrono::{DateTime, Utc};
@@ -45,8 +35,6 @@ pub struct SessionAusgestellt {
     pub claims: AccessTokenClaims,
 }
 
-/// The creation input of one session, carrying the issuing key's public half so the row
-/// itself is enough to verify its access tokens (AC-17).
 pub(crate) fn new_session(
     ctx: &ExecutionContext<'_>,
     benutzer_id: BenutzerId,
@@ -61,7 +49,6 @@ pub(crate) fn new_session(
     )
 }
 
-/// The claim set of one freshly issued access token.
 pub(crate) fn claims_for_session(
     ctx: &ExecutionContext<'_>,
     benutzer_id: BenutzerId,

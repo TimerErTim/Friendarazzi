@@ -1,31 +1,21 @@
 //! The HTTP edge: one thin `#[OpenApi]` wrapper over [`LogandaimAppApi`].
-//!
-//! Everything HTTP-specific lives here and only here — response envelopes with their
-//! headers, the cookie, the client key — so the facade in `api/` stays free of `poem` and
-//! the library compiles without the `openapi` feature. Handlers take native `poem_openapi`
-//! extractors, never a raw request.
-//!
-//! Three things every handler enforces and a caller cannot opt out of:
-//!
-//! - **The refresh token never appears in a body.** It is written to the `__Host-` cookie
-//!   by the response builder; the access token travels in the body only (AC-7a).
-//! - **Every auth response is `Cache-Control: no-store`.**
-//! - **Protected handlers answer 401 instead of running with `Anonymous`.**
 
-use error_stack::{IntoReport, Report, ResultExt};
+use error_stack::Report;
 use logandaim_core::{
     App, ResultReport,
     application::AuthContext,
-    domain::{AnlageId, AnlageZielId, ParkourId, RundeId, ZielId, konto::BenutzerId},
+    domain::{BoardTileId, GameId, konto::BenutzerId},
     service::{
-        AbmeldungFehler, BenutzerLöschenFehler, PasswortWiederherstellenFehler, StammdatenFehler,
+        AbmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError,
+        PasswortWiederherstellenFehler, ProfileUseCaseError,
     },
 };
 use poem::web::RealIp;
 use poem_openapi::{
-    OpenApi, OpenApiService, ServerObject, Tags,
-    param::{Cookie, Header, Path, Query},
+    Multipart, OpenApi, OpenApiService, ServerObject, Tags,
+    param::{Cookie, Header, Path},
     payload::Json,
+    types::multipart::Upload,
 };
 use std::sync::{Arc, RwLock, atomic::AtomicBool};
 use uuid::Uuid;
@@ -43,40 +33,44 @@ use crate::{
     api::{
         LogandaimAppApi,
         requests::{
-            AnlageAenderungRequest, AnlageErstellungRequest, AnlageVerwaltungRequest,
-            AnmeldungRequest, BenutzerLoeschungRequest, FreieRundeStartenRequest,
-            ParkourErstellungRequest, ParkourSetupRequest, ParkourUmbenennenRequest,
+            AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, JoinGameRequest,
             PasswortVergessenRequest, PasswortWiederherstellenRequest,
-            RegistrierungAbschlussRequest, RegistrierungStartRequest,
-            RundeMitParkourStartenRequest, SchussAenderungRequest, SchussErstellungRequest,
-            ZielHinzufuegenRequest, ZielNotizSetzenRequest, ZielRequest, ZielUmbenennenRequest,
+            RegistrierungAbschlussRequest, RegistrierungStartRequest, SaveDraftPromptsRequest,
+            UpdateGameSettingsRequest, UpdateProfileRequest,
         },
     },
     schema::{
-        Anlage, AnlageOeffentlich, AnlageZugriff, AuthenticatedBenutzer, Benutzer, MailHealth, Ok,
-        ParkourOeffentlich, Runde, RundeBasic, Schuss,
+        AuthenticatedBenutzer, CaptureOutcome, GameDetail, GameSummary, MailHealth, Ok,
+        StarterDeck, UserGallery, UserProfile,
     },
 };
 
 /// The sections the published API is grouped into.
 #[derive(Tags)]
 pub enum ApiTag {
-    /// Anlage master data: identity, address, contact, roles, Ziele, and the public
-    /// directory.
-    Anlagen,
-    /// Parkour: Pflock setup, route order, and the distances between them.
-    Parkour,
-    /// Runden and the Schüsse logged in them.
-    Runden,
-    /// Registration, sign-in, session, password recovery, and the own Benutzer.
+    /// Friendarazzi game lobbies, drafting, and active play.
+    Games,
+    /// Photo proof uploads and media streaming.
+    Captures,
+    /// Player profiles, Gold Medals, and photo galleries.
+    Profiles,
+    /// Curated Quick-Start starter decks.
+    Decks,
+    /// Registration, sign-in, session, password recovery, and account settings.
     Konto,
     /// Liveness of the service.
     Betrieb,
 }
 
+/// Multipart form payload containing a single uploaded photo file.
+#[derive(Multipart)]
+pub struct PhotoUploadMultipart {
+    /// Uploaded image file (JPEG, PNG, or WebP).
+    pub file: Upload,
+}
+
 pub struct LogandaimApiSpec {
     app_api: LogandaimAppApi,
-    // Kept out of `App` so no use case can branch on the relay.
     mail_health: Arc<RwLock<MailHealth>>,
     mail_probe_running: Arc<AtomicBool>,
 }
@@ -121,785 +115,341 @@ impl LogandaimApiSpec {
         Json(self.mail_health())
     }
 
-    // ------------------------------------------------------------------ master data
+    // ------------------------------------------------------------------ decks
 
-    /// Create an Anlage. Systemadministrator only.
+    /// List curated Quick-Start starter decks.
     ///
-    /// The caller becomes its first Administrator.
-    #[oai(path = "/anlagen", method = "post", tag = "ApiTag::Anlagen")]
-    async fn anlage_erstellen(
-        &self,
-        authorization: RequiredBearerAuthorization,
-        body: Json<AnlageErstellungRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = self.app_api.anlage_erstellen(auth, body.0).await;
-        ergebnis.into()
-    }
-
-    /// List the Anlagen the caller may administer.
-    ///
-    /// Each row includes the caller's role in that Anlage.
-    #[oai(path = "/anlagen", method = "get", tag = "ApiTag::Anlagen")]
-    async fn anlagen_anzeigen(
+    /// Returns themed prompt collections used during the drafting phase.
+    #[oai(path = "/decks", method = "get", tag = "ApiTag::Decks")]
+    async fn decks_list(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-    ) -> TypicalJsonResponse<Vec<AnlageZugriff>> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+    ) -> TypicalJsonResponse<Vec<StarterDeck>> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = self.app_api.anlagen_anzeigen(auth).await;
-        ergebnis.into()
+        self.app_api.decks_list(auth).await.into()
     }
 
-    /// List the active Anlagen with the Parkour each offers. No sign-in needed.
-    ///
-    /// This public directory contains no contact data.
-    //
-    // The static segment wins over `/anlagen/:anlage_id`, so registration order is safe.
-    #[oai(path = "/anlagen/oeffentlich", method = "get", tag = "ApiTag::Anlagen")]
-    async fn anlagen_verzeichnis(
-        &self,
-        #[oai(name = "Authorization")] authorization: BearerAuthorization,
-    ) -> TypicalJsonResponse<Vec<AnlageOeffentlich>> {
-        // A broken token is answered as anonymous here, never as an error: this route is
-        // public, and a stale token must not hide the directory from its own reader.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(logandaim_core::application::AuthContext::Anonymous);
-        self.app_api.anlagen_verzeichnis(auth).await.into()
-    }
+    // ------------------------------------------------------------------ games
 
-    /// Read one Anlage with its whole master data.
+    /// List all games the caller participates in.
     ///
-    /// Only a Systemadministrator can access an archived Anlage.
-    #[oai(path = "/anlagen/:anlage_id", method = "get", tag = "ApiTag::Anlagen")]
-    async fn anlage_anzeigen(
+    /// Sorted newest first, including active lobbies, ongoing hunts, and completed games.
+    #[oai(path = "/games", method = "get", tag = "ApiTag::Games")]
+    async fn games_list(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+    ) -> TypicalJsonResponse<Vec<GameSummary>> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .anlage_anzeigen(auth, AnlageId(anlage_id.0))
-                .await
-        };
-        ergebnis.into()
+        self.app_api.games_list(auth).await.into()
     }
 
-    /// Rewrite the Anlage's own fields: name, address, and contact. Administrator only.
+    /// Create a new Friendarazzi game lobby.
     ///
-    /// The whole set is replaced; omitted contact fields become empty.
-    #[oai(path = "/anlagen/:anlage_id", method = "put", tag = "ApiTag::Anlagen")]
-    async fn anlage_ändern(
+    /// The caller becomes the host and first player of the lobby.
+    #[oai(path = "/games", method = "post", tag = "ApiTag::Games")]
+    async fn game_create(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        body: Json<AnlageAenderungRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        body: Json<CreateGameRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .anlage_ändern(auth, AnlageId(anlage_id.0), body.0)
-                .await
-        };
-        ergebnis.into()
+        self.app_api.game_create(auth, body.0).await.into()
     }
 
-    /// Deactivate an Anlage once and for all.
+    /// Look up a game summary by invite code.
     ///
-    /// An archived Anlage remains available for reading but cannot be changed.
+    /// Used by `/join` invite links to preview lobby details before joining.
     #[oai(
-        path = "/anlagen/:anlage_id/deaktivierung",
-        method = "post",
-        tag = "ApiTag::Anlagen"
-    )]
-    async fn anlage_deaktivieren(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .anlage_deaktivieren(auth, AnlageId(anlage_id.0))
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// Grant a role in the Anlage to an existing Benutzer. Administrator only.
-    ///
-    /// The Benutzer is named by identity; find it with `benutzer-suche` first.
-    #[oai(
-        path = "/anlagen/:anlage_id/verwaltungen",
-        method = "post",
-        tag = "ApiTag::Anlagen"
-    )]
-    async fn verwaltung_gewähren(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        body: Json<AnlageVerwaltungRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .verwaltung_gewähren(auth, AnlageId(anlage_id.0), body.0)
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// Find a Benutzer by exact e-mail address, for granting a role.
-    ///
-    /// The result contains the matching Benutzer, if one exists.
-    #[oai(
-        path = "/anlagen/:anlage_id/benutzer-suche",
+        path = "/games/by-code/:invite_code",
         method = "get",
-        tag = "ApiTag::Anlagen"
+        tag = "ApiTag::Games"
     )]
-    async fn benutzer_nach_email_suchen(
+    async fn game_by_invite_code(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        e_mail_adresse: Query<String>,
-    ) -> TypicalJsonResponse<Vec<Benutzer>> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        invite_code: Path<String>,
+    ) -> TypicalJsonResponse<GameSummary> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .benutzer_nach_email_suchen(auth, AnlageId(anlage_id.0), e_mail_adresse.0)
-                .await
-        };
-        ergebnis.into()
+        self.app_api
+            .game_by_invite_code(auth, invite_code.0)
+            .await
+            .into()
     }
 
-    /// Change an existing role. Administrator only.
+    /// Join an existing game lobby using its invite code.
     ///
-    /// The target is in the path, so the body only names the role.
+    /// Joining an already-joined lobby is idempotent and returns the game state.
+    #[oai(path = "/games/join", method = "post", tag = "ApiTag::Games")]
+    async fn game_join(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        body: Json<JoinGameRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api.game_join(auth, body.0).await.into()
+    }
+
+    /// Read full adaptive state for a game.
+    ///
+    /// Adapts payload contents to the game's current status and visibility mode.
+    #[oai(path = "/games/:game_id", method = "get", tag = "ApiTag::Games")]
+    async fn game_detail(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_detail(auth, GameId(game_id.0))
+            .await
+            .into()
+    }
+
+    /// Update lobby settings before drafting begins.
+    ///
+    /// Host only; allows configuring title, grid size, visibility mode, and Free Space.
     #[oai(
-        path = "/anlagen/:anlage_id/verwaltungen/:benutzer_id",
+        path = "/games/:game_id/settings",
         method = "put",
-        tag = "ApiTag::Anlagen"
+        tag = "ApiTag::Games"
     )]
-    async fn verwaltung_ändern(
+    async fn game_update_settings(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        benutzer_id: Path<Uuid>,
-        body: Json<AnlageVerwaltungRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        game_id: Path<Uuid>,
+        body: Json<UpdateGameSettingsRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .verwaltung_ändern(
-                    auth,
-                    AnlageId(anlage_id.0),
-                    BenutzerId(benutzer_id.0),
-                    body.0,
-                )
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// Revoke a role. Administrator only.
-    ///
-    /// The last Administrator of an Anlage cannot be revoked.
-    #[oai(
-        path = "/anlagen/:anlage_id/verwaltungen/:benutzer_id",
-        method = "delete",
-        tag = "ApiTag::Anlagen"
-    )]
-    async fn verwaltung_entziehen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        benutzer_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
+        self.app_api
+            .game_update_settings(auth, GameId(game_id.0), body.0)
             .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .verwaltung_entziehen(auth, AnlageId(anlage_id.0), BenutzerId(benutzer_id.0))
-                .await
-        };
-        ergebnis.into()
+            .into()
     }
 
-    /// Add a physical Ziel to the Anlage.
+    /// Transition a game from Lobby to Drafting.
     ///
-    /// The new Ziel is added to the Anlage's target list.
+    /// Host only; requires at least 3 players in the lobby.
     #[oai(
-        path = "/anlagen/:anlage_id/ziele",
+        path = "/games/:game_id/start-drafting",
         method = "post",
-        tag = "ApiTag::Anlagen"
+        tag = "ApiTag::Games"
     )]
-    async fn ziel_hinzufügen(
+    async fn game_start_drafting(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        body: Json<ZielRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        game_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<GameDetail> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .ziel_hinzufügen(auth, AnlageId(anlage_id.0), body.0)
-                .await
-        };
-        ergebnis.into()
+        self.app_api
+            .game_start_drafting(auth, GameId(game_id.0))
+            .await
+            .into()
     }
 
-    /// Edit a Ziel's details.
+    /// Save or replace the caller's draft prompts for a game.
     ///
-    /// The identity stays, and so does everything already recorded against it.
+    /// Rejects self-targeted prompts and resets the caller's draft lock.
     #[oai(
-        path = "/anlagen/:anlage_id/ziele/:ziel_id",
+        path = "/games/:game_id/prompts",
         method = "put",
-        tag = "ApiTag::Anlagen"
+        tag = "ApiTag::Games"
     )]
-    async fn ziel_ändern(
+    async fn game_save_prompts(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        ziel_id: Path<Uuid>,
-        body: Json<ZielRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        game_id: Path<Uuid>,
+        body: Json<SaveDraftPromptsRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .ziel_ändern(auth, AnlageId(anlage_id.0), AnlageZielId(ziel_id.0), body.0)
-                .await
-        };
-        ergebnis.into()
+        self.app_api
+            .game_save_prompts(auth, GameId(game_id.0), body.0)
+            .await
+            .into()
     }
 
-    /// Replace the physical Ziel with a new one in the same slot.
+    /// Lock in the caller's draft prompts and start active play when all players are locked.
     ///
-    /// The replacement has a new identity; the history of the old Ziel stays as recorded.
+    /// Validates equal-distribution quotas and generates conflict-free Bingo boards once everyone locks.
     #[oai(
-        path = "/anlagen/:anlage_id/ziele/:ziel_id/ersatz",
+        path = "/games/:game_id/prompts/lock",
         method = "post",
-        tag = "ApiTag::Anlagen"
+        tag = "ApiTag::Games"
     )]
-    async fn ziel_ersetzen(
+    async fn game_lock_prompts(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        ziel_id: Path<Uuid>,
-        body: Json<ZielRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        game_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<GameDetail> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .ziel_ersetzen(auth, AnlageId(anlage_id.0), AnlageZielId(ziel_id.0), body.0)
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// Remove a Ziel: archive it when recorded Runden reference it, delete it otherwise.
-    ///
-    /// Answers the Anlage as it stands afterwards, so the Ziel is absent from `ziele` either
-    /// way and an archived one no longer appears among the active ones.
-    #[oai(
-        path = "/anlagen/:anlage_id/ziele/:ziel_id",
-        method = "delete",
-        tag = "ApiTag::Anlagen"
-    )]
-    async fn ziel_entfernen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        ziel_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
+        self.app_api
+            .game_lock_prompts(auth, GameId(game_id.0))
             .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .ziel_entfernen(auth, AnlageId(anlage_id.0), AnlageZielId(ziel_id.0))
-                .await
-        };
-        ergebnis.into()
+            .into()
     }
 
-    /// Create a Parkour with its Pflock setup and its route.
+    // ------------------------------------------------------------------ captures & media
+
+    /// Upload photo proof for a tile on the caller's Bingo board.
     ///
-    /// Provide the Pflöcke in the order in which they should appear.
+    /// Compresses the photo, generates a 64px blurred teaser, evaluates Bingo win atomically, and awards a Gold Medal on victory.
     #[oai(
-        path = "/anlagen/:anlage_id/parkour",
+        path = "/games/:game_id/tiles/:tile_id/capture",
         method = "post",
-        tag = "ApiTag::Parkour"
+        tag = "ApiTag::Captures"
     )]
-    async fn parkour_hinzufügen(
+    async fn capture_submit(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        body: Json<ParkourErstellungRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        game_id: Path<Uuid>,
+        tile_id: Path<Uuid>,
+        multipart: PhotoUploadMultipart,
+    ) -> TypicalJsonResponse<CaptureOutcome> {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .parkour_hinzufügen(auth, AnlageId(anlage_id.0), body.0)
-                .await
+        let bytes = match multipart.file.into_vec().await {
+            Ok(b) => b,
+            Err(_) => {
+                return TypicalJsonResponse::from(Err(Report::new(
+                    CaptureUseCaseError::InvalidImage,
+                )));
+            }
         };
-        ergebnis.into()
+        self.app_api
+            .capture_submit(auth, GameId(game_id.0), BoardTileId(tile_id.0), bytes)
+            .await
+            .into()
     }
 
-    /// Replace the whole shooting setup: Pflöcke and the route that places Ziele among them.
+    /// Retrieve an uploaded capture photo, blurred teaser, or user avatar.
     ///
-    /// Existing Runden keep the snapshot they captured; only future Runden see the change.
-    #[oai(
-        path = "/anlagen/:anlage_id/parkour/:parkour_id/setup",
-        method = "put",
-        tag = "ApiTag::Parkour"
-    )]
-    async fn parkour_setup_ändern(
+    /// Enforces game membership and visibility-mode rules before streaming the image.
+    #[oai(path = "/media/:storage_key", method = "get", tag = "ApiTag::Captures")]
+    async fn media_get(
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        parkour_id: Path<Uuid>,
-        body: Json<ParkourSetupRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
+        storage_key: Path<String>,
+    ) -> StreamImageResponse {
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .parkour_setup_ändern(auth, AnlageId(anlage_id.0), ParkourId(parkour_id.0), body.0)
-                .await
+        self.app_api.media_get(auth, storage_key.0).await.into()
+    }
+
+    // ------------------------------------------------------------------ profiles & galleries
+
+    /// Read a user's public profile, Gold Medals, and statistics.
+    ///
+    /// Returns rank titles unlocked by Gold Medals and lifetime capture counts.
+    #[oai(path = "/users/:user_id", method = "get", tag = "ApiTag::Profiles")]
+    async fn profile_get(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        user_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<UserProfile> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .profile_get(auth, BenutzerId(user_id.0))
+            .await
+            .into()
+    }
+
+    /// Read a user's Caught and Captured photo galleries grouped by game.
+    ///
+    /// Respects active visibility mode restrictions so undercover captures are never leaked early.
+    #[oai(
+        path = "/users/:user_id/gallery",
+        method = "get",
+        tag = "ApiTag::Profiles"
+    )]
+    async fn user_gallery(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        user_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<UserGallery> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .user_gallery(auth, BenutzerId(user_id.0))
+            .await
+            .into()
+    }
+
+    /// Update the authenticated caller's username, display name, and equipped rank title.
+    ///
+    /// Rejects locked titles or already-taken handles.
+    #[oai(path = "/profil", method = "put", tag = "ApiTag::Profiles")]
+    async fn profile_update(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        body: Json<UpdateProfileRequest>,
+    ) -> TypicalJsonResponse<UserProfile> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api.profile_update(auth, body.0).await.into()
+    }
+
+    /// Upload and set the authenticated caller's avatar image.
+    ///
+    /// Normalizes the image to a 400x400 JPEG stored in the object store.
+    #[oai(path = "/profil/avatar", method = "post", tag = "ApiTag::Profiles")]
+    async fn profile_upload_avatar(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        multipart: PhotoUploadMultipart,
+    ) -> TypicalJsonResponse<UserProfile> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        let bytes = match multipart.file.into_vec().await {
+            Ok(b) => b,
+            Err(_) => {
+                return TypicalJsonResponse::from(Err(Report::new(
+                    ProfileUseCaseError::BadRequest,
+                )));
+            }
         };
-        ergebnis.into()
-    }
-
-    /// Rename a Parkour.
-    ///
-    /// The identity stays, and every captured snapshot keeps the name it recorded.
-    #[oai(
-        path = "/anlagen/:anlage_id/parkour/:parkour_id",
-        method = "put",
-        tag = "ApiTag::Parkour"
-    )]
-    async fn parkour_umbenennen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        parkour_id: Path<Uuid>,
-        body: Json<ParkourUmbenennenRequest>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .parkour_umbenennen(auth, AnlageId(anlage_id.0), ParkourId(parkour_id.0), body.0)
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// Remove a Parkour: archive it when a Runde captured it, delete it otherwise.
-    ///
-    /// Answers the Anlage as it stands afterwards.
-    #[oai(
-        path = "/anlagen/:anlage_id/parkour/:parkour_id",
-        method = "delete",
-        tag = "ApiTag::Parkour"
-    )]
-    async fn parkour_entfernen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        anlage_id: Path<Uuid>,
-        parkour_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Anlage> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .parkour_entfernen(auth, AnlageId(anlage_id.0), ParkourId(parkour_id.0))
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// List every active Parkour of every active Anlage. No sign-in needed.
-    ///
-    /// Use this list to choose a Parkour when starting a round.
-    #[oai(path = "/parkour", method = "get", tag = "ApiTag::Parkour")]
-    async fn parkour_anzeigen(
-        &self,
-        #[oai(name = "Authorization")] authorization: BearerAuthorization,
-    ) -> TypicalJsonResponse<Vec<ParkourOeffentlich>> {
-        // A broken token is answered as anonymous here, never as an error: this route is
-        // public, and a stale token must not hide master data from its own reader.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(logandaim_core::application::AuthContext::Anonymous);
-        self.app_api.parkour_anzeigen(auth).await.into()
-    }
-
-    // ------------------------------------------------------------------ Runden
-
-    /// Start a Runde on one active Parkour.
-    ///
-    /// Later changes to the Parkour do not change the setup captured by this Runde.
-    #[oai(path = "/runden/mit-parkour", method = "post", tag = "ApiTag::Runden")]
-    async fn runde_starten(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        body: Json<RundeMitParkourStartenRequest>,
-    ) -> TypicalJsonResponse<Runde> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = self.app_api.runde_mit_parkour_starten(auth, body.0).await;
-        ergebnis.into()
-    }
-
-    /// List the caller's own Runden, newest first.
-    ///
-    /// Only the owner can see these Runden.
-    #[oai(path = "/runden", method = "get", tag = "ApiTag::Runden")]
-    async fn runden_anzeigen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-    ) -> TypicalJsonResponse<Vec<RundeBasic>> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = self.app_api.runden_anzeigen(auth).await;
-        ergebnis.into()
-    }
-
-    /// Start a `Freie Runde`: no Anlage, no Parkour, and its own name.
-    ///
-    /// The response identifies this round as having no Anlage or Parkour.
-    #[oai(path = "/runden/frei", method = "post", tag = "ApiTag::Runden")]
-    async fn runde_starten_frei(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        body: Json<FreieRundeStartenRequest>,
-    ) -> TypicalJsonResponse<Runde> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api.freie_runde_starten(auth, body.0).await.into()
-    }
-
-    /// Append one `Freies Ziel` to the caller's own open `Freie Runde`.
-    ///
-    /// Targets in a Parkour round cannot be changed.
-    #[oai(
-        path = "/runden/:runde_id/ziele",
-        method = "post",
-        tag = "ApiTag::Runden"
-    )]
-    async fn runde_ziel_hinzufuegen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-        body: Json<ZielHinzufuegenRequest>,
-    ) -> TypicalJsonResponse<Runde> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .runde_ziel_hinzufuegen(auth, RundeId(runde_id.0), body.0)
-            .await
-            .into()
-    }
-
-    /// Set or clear a target note (up to 1000 characters) in a running Runde.
-    ///
-    /// An empty or whitespace-only note clears it. Completed rounds are immutable.
-    #[oai(
-        path = "/runden/:runde_id/ziele/:ziel_id/notiz",
-        method = "put",
-        tag = "ApiTag::Runden"
-    )]
-    async fn runde_ziel_notiz_setzen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-        ziel_id: Path<Uuid>,
-        body: Json<ZielNotizSetzenRequest>,
-    ) -> TypicalJsonResponse<Runde> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .runde_ziel_notiz_setzen(auth, RundeId(runde_id.0), ZielId(ziel_id.0), body.0)
-            .await
-            .into()
-    }
-
-    /// Rename one `Freies Ziel` in a running free Runde.
-    ///
-    /// A name containing only whitespace is invalid. Only an open free round can be changed.
-    #[oai(
-        path = "/runden/:runde_id/ziele/:ziel_id/name",
-        method = "put",
-        tag = "ApiTag::Runden"
-    )]
-    async fn runde_ziel_umbenennen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-        ziel_id: Path<Uuid>,
-        body: Json<ZielUmbenennenRequest>,
-    ) -> TypicalJsonResponse<Runde> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .runde_ziel_umbenennen(auth, RundeId(runde_id.0), ZielId(ziel_id.0), body.0)
-            .await
-            .into()
-    }
-
-    /// Remove one `Freies Ziel` from a free Runde.
-    ///
-    /// Removing a target also removes its recorded shots. The response contains the updated round.
-    #[oai(
-        path = "/runden/:runde_id/ziele/:ziel_id",
-        method = "delete",
-        tag = "ApiTag::Runden"
-    )]
-    async fn runde_ziel_entfernen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-        ziel_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Runde> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .runde_ziel_entfernen(auth, RundeId(runde_id.0), ZielId(ziel_id.0))
-            .await
-            .into()
-    }
-
-    /// Read one Runde with its captured route and both Wertungen.
-    ///
-    /// The Runde is visible to its owner and to a Systemadministrator.
-    #[oai(path = "/runden/:runde_id", method = "get", tag = "ApiTag::Runden")]
-    async fn runde_anzeigen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Runde> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = self.app_api.runde_anzeigen(auth, RundeId(runde_id.0)).await;
-        ergebnis.into()
-    }
-
-    /// Delete the caller's Runde and every Schuss that belongs to it.
-    ///
-    /// This removes the Runde from history and clears its per-Ziel shot records.
-    #[oai(path = "/runden/:runde_id", method = "delete", tag = "ApiTag::Runden")]
-    async fn runde_loeschen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<crate::schema::Ok> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .runde_loeschen(auth, RundeId(runde_id.0))
-            .await
-            .map(|()| crate::schema::Ok { ok: true })
-            .into()
-    }
-
-    /// Close the caller's own Runde.
-    ///
-    /// Once closed, the Runde no longer accepts Schüsse.
-    #[oai(
-        path = "/runden/:runde_id/abschluss",
-        method = "post",
-        tag = "ApiTag::Runden"
-    )]
-    async fn runde_abschliessen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<Runde> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .runde_abschliessen(auth, RundeId(runde_id.0))
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// Log one arrow at a Ziel of the caller's own open Runde.
-    ///
-    /// The target must belong to the round.
-    #[oai(
-        path = "/runden/:runde_id/schuesse",
-        method = "post",
-        tag = "ApiTag::Runden"
-    )]
-    async fn schuss_registrieren(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-        body: Json<SchussErstellungRequest>,
-    ) -> TypicalJsonResponse<Schuss> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        let ergebnis = {
-            self.app_api
-                .schuss_registrieren(auth, RundeId(runde_id.0), body.0)
-                .await
-        };
-        ergebnis.into()
-    }
-
-    /// Replace the scoring zone and position of one of the caller's shots.
-    ///
-    /// Sending `position: null` clears the saved position.
-    #[oai(
-        path = "/runden/:runde_id/schuesse/:schuss_id",
-        method = "put",
-        tag = "ApiTag::Runden"
-    )]
-    async fn schuss_aendern(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-        schuss_id: Path<Uuid>,
-        body: Json<SchussAenderungRequest>,
-    ) -> TypicalJsonResponse<Schuss> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .schuss_aendern(
-                auth,
-                RundeId(runde_id.0),
-                logandaim_core::domain::SchussId(schuss_id.0),
-                body.0,
-            )
-            .await
-            .into()
-    }
-
-    /// Delete one of the caller's shots and renumber later shots at the same Ziel.
-    ///
-    /// The scoring total is recomputed from the remaining shots.
-    #[oai(
-        path = "/runden/:runde_id/schuesse/:schuss_id",
-        method = "delete",
-        tag = "ApiTag::Runden"
-    )]
-    async fn schuss_loeschen(
-        &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
-        runde_id: Path<Uuid>,
-        schuss_id: Path<Uuid>,
-    ) -> TypicalJsonResponse<crate::schema::Ok> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .schuss_loeschen(
-                auth,
-                RundeId(runde_id.0),
-                logandaim_core::domain::SchussId(schuss_id.0),
-            )
-            .await
-            .map(|()| crate::schema::Ok { ok: true })
-            .into()
+        self.app_api.profile_upload_avatar(auth, bytes).await.into()
     }
 
     // ------------------------------------------------------------------ konto
@@ -1017,7 +567,6 @@ impl LogandaimApiSpec {
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
     ) -> EndSessionResponse<Ok> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
@@ -1067,7 +616,7 @@ impl LogandaimApiSpec {
         EndSessionResponse::from(ergebnis.map(|()| Ok { ok: true }))
     }
 
-    /// Read the authenticated caller, including its account-level role.
+    /// Read the authenticated caller, including profile summary and Gold Medals.
     ///
     /// Requires a valid sign-in.
     #[oai(path = "/benutzer", method = "get", tag = "ApiTag::Konto")]
@@ -1075,49 +624,11 @@ impl LogandaimApiSpec {
         &self,
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
     ) -> UncachedJsonResponse<AuthenticatedBenutzer> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let ergebnis: ResultReport<AuthenticatedBenutzer, StammdatenFehler> = self
-            .app_api
-            .inner_app()
-            .execute_fn(auth, async |ctx| {
-                let benutzer_id = ctx
-                    .auth()
-                    .require_benutzer_id()
-                    .change_context(StammdatenFehler::NichtAngemeldet)?;
-                let uow = ctx
-                    .enter()
-                    .await
-                    .change_context(StammdatenFehler::BenutzerLaden)?;
-                let ergebnis = async {
-                    let benutzer = uow
-                        .benutzer()
-                        .find_by_id(benutzer_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(StammdatenFehler::BenutzerLaden)?;
-                    let konten = uow
-                        .konten()
-                        .find_by_benutzer(benutzer_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(StammdatenFehler::BenutzerLaden)?;
-                    let Some(konto) = konten.into_iter().next() else {
-                        return Err(Report::new(StammdatenFehler::BenutzerLaden));
-                    };
-                    Ok((benutzer.into_data(), konto.email().clone()))
-                }
-                .await;
-                let (benutzer, email) = uow
-                    .finish(ergebnis, StammdatenFehler::BenutzerLaden)
-                    .await?;
-                Ok((benutzer, email).into())
-            })
-            .await;
-        UncachedJsonResponse::from(ergebnis)
+        UncachedJsonResponse::from(self.app_api.benutzer_anzeigen(auth).await)
     }
 
     /// Delete the caller's own Benutzer.
@@ -1129,7 +640,6 @@ impl LogandaimApiSpec {
         #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
         body: Json<BenutzerLoeschungRequest>,
     ) -> EndSessionResponse<Ok> {
-        // A missing or unusable token is anonymous here; the use case answers 401.
         let auth = self
             .auth_context(authorization.0.as_deref())
             .await
@@ -1147,17 +657,16 @@ pub fn openapi_service(
     openapi_service_from_api(LogandaimAppApi::new(app), server_urls)
 }
 
-/// The service: the spec, its servers, and a description of how to call it.
 pub fn openapi_service_from_api(
     app_api: LogandaimAppApi,
     server_urls: impl IntoIterator<Item = impl Into<ServerObject>>,
 ) -> OpenApiService<LogandaimApiSpec, ()> {
     let mut service = OpenApiService::new(
         LogandaimApiSpec::from(app_api),
-        "logandaim.at API",
+        "Friendarazzi API",
         env!("CARGO_PKG_VERSION"),
     )
-    .summary("Logbook for shooting ranges: master data, Runden, and the Wertungen.")
+    .summary("Social photo-hunting Bingo API: lobbies, drafting, captures, and galleries.")
     .description(include_str!("README.md"));
     for server_url in server_urls {
         service = service.server(server_url);

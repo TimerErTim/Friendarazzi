@@ -40,10 +40,6 @@ pub enum BenutzerLöschenFehler {
     BenutzerLaden,
     #[error("die Sitzungen konnten nicht gelöscht werden")]
     SessionLöschen,
-    #[error("die Runden konnten nicht anonymisiert werden")]
-    RundeAnonymisieren,
-    #[error("die Schüsse konnten nicht anonymisiert werden")]
-    SchussAnonymisieren,
     #[error("der Benutzer konnte nicht gelöscht werden")]
     BenutzerLöschen,
 }
@@ -139,38 +135,11 @@ impl UseCase<()> for BenutzerLöschen {
                 .map_err(IntoReport::into_report)
                 .change_context(BenutzerLöschenFehler::SessionLöschen)?;
 
-            // Retain the sporting record, drop the attribution: the domain replaces the owner
-            // with `Erfasser::Anonymisiert`, and the plain `update` writes it back. Idempotent,
-            // because an anonymised row no longer matches `find_by_benutzer`.
-            let jetzt = ctx.clock().now();
-            for mut runde in uow
-                .runden()
-                .find_by_benutzer(benutzer_id)
+            uow.profiles()
+                .delete_by_user_id(benutzer_id)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(BenutzerLöschenFehler::RundeAnonymisieren)?
-            {
-                runde.anonymisiere(jetzt);
-                uow.runden()
-                    .update(&mut runde)
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(BenutzerLöschenFehler::RundeAnonymisieren)?;
-            }
-            for mut schuss in uow
-                .schüsse()
-                .find_by_benutzer(benutzer_id)
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(BenutzerLöschenFehler::SchussAnonymisieren)?
-            {
-                schuss.anonymisiere(jetzt);
-                uow.schüsse()
-                    .update(&mut schuss)
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(BenutzerLöschenFehler::SchussAnonymisieren)?;
-            }
+                .change_context(BenutzerLöschenFehler::BenutzerLöschen)?;
 
             uow.benutzer()
                 .delete(benutzer)

@@ -6,7 +6,6 @@ import type { NavCategory, NavItem } from "@/lib/navigation";
 import { isNavItemActive } from "@/lib/navigation";
 
 type SidebarProps = {
-  /** Already filtered for the current caller; the sidebar does not know roles. */
   categories: NavCategory[];
   homeItem: NavItem;
   pathname: string;
@@ -33,9 +32,9 @@ export function Sidebar({ categories, homeItem, pathname }: SidebarProps) {
           <Link
             href={homeItem.href}
             className="inline-flex min-h-11 items-center rounded-sm font-serif text-base font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            aria-label="logandaim.at — Startseite"
+            aria-label="Friendarazzi — Startseite"
           >
-            logandaim.at
+            Friendarazzi
           </Link>
         </div>
 

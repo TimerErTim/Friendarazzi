@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "../auth-provider";
 import { useLogandaimApi } from "../provider";
@@ -23,87 +24,103 @@ export function useBenutzerQuery() {
   });
 }
 
-/**
- * The Anlagen the caller may administer. A 403 is a normal answer for an account with no
- * Verwaltung, so it is not retried.
- */
-export function useAnlagenQuery() {
+export function useDecksQuery() {
   const { api } = useLogandaimApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.anlagen.all(),
-    queryFn: () => api.anlagenAnzeigen(),
+    queryKey: logandaimKeys.decks(),
+    queryFn: () => api.decksList(),
     enabled: phase.status === "authenticated",
-    retry: false,
+    staleTime: 10 * 60_000,
   });
 }
 
-export function useBenutzerNachEmailQuery(
-  anlageId: string,
-  email: string,
-  enabled: boolean,
-) {
+export function useGamesQuery() {
   const { api } = useLogandaimApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.anlagen.benutzerSuche(anlageId, email),
-    queryFn: () => api.benutzerNachEmailSuchen(anlageId, email),
-    enabled: phase.status === "authenticated" && enabled && Boolean(email),
-    retry: false,
-  });
-}
-
-export function useAnlageQuery(id: string | null) {
-  const { api } = useLogandaimApi();
-  const phase = useAuth();
-  return useQuery({
-    queryKey: logandaimKeys.anlagen.detail(id ?? ""),
-    queryFn: () => api.anlageAnzeigen(id ?? ""),
-    enabled: phase.status === "authenticated" && Boolean(id),
-    retry: false,
-  });
-}
-
-/** AC-13: no sign-in needed, so this one runs for every visitor. */
-export function useParkourQuery() {
-  const { api } = useLogandaimApi();
-  return useQuery({
-    queryKey: logandaimKeys.parkour.all(),
-    queryFn: () => api.parkourAnzeigen(),
-  });
-}
-
-/**
- * The public Anlagen directory. Public like the Parkour list, so it deliberately has
- * no `enabled` gate on `useAuth`: a guest reads it, and a signed-in visitor does not
- * refetch it when the session changes.
- */
-export function useAnlagenVerzeichnisQuery() {
-  const { api } = useLogandaimApi();
-  return useQuery({
-    queryKey: logandaimKeys.anlagenVerzeichnis.all(),
-    queryFn: () => api.anlagenVerzeichnis(),
-  });
-}
-
-export function useRundenQuery() {
-  const { api } = useLogandaimApi();
-  const phase = useAuth();
-  return useQuery({
-    queryKey: logandaimKeys.runden.all(),
-    queryFn: () => api.rundenAnzeigen(),
+    queryKey: logandaimKeys.games.all(),
+    queryFn: () => api.gamesList(),
     enabled: phase.status === "authenticated",
+    refetchInterval: 5000,
     retry: false,
   });
 }
 
-export function useRundeQuery(id: string | null) {
+export function useGameByCodeQuery(code: string | null) {
   const { api } = useLogandaimApi();
   const phase = useAuth();
   return useQuery({
-    queryKey: logandaimKeys.runden.detail(id ?? ""),
-    queryFn: () => api.rundeAnzeigen(id ?? ""),
-    enabled: phase.status === "authenticated" && Boolean(id),
+    queryKey: logandaimKeys.games.byCode(code ?? ""),
+    queryFn: () => api.gameByInviteCode(code ?? ""),
+    enabled: phase.status === "authenticated" && Boolean(code?.trim()),
     retry: false,
   });
+}
+
+export function useGameDetailQuery(gameId: string | null) {
+  const { api } = useLogandaimApi();
+  const phase = useAuth();
+  return useQuery({
+    queryKey: logandaimKeys.games.detail(gameId ?? ""),
+    queryFn: () => api.gameDetail(gameId ?? ""),
+    enabled: phase.status === "authenticated" && Boolean(gameId),
+    refetchInterval: (query) =>
+      query.state.data?.status === "Completed" ? false : 5000,
+    retry: false,
+  });
+}
+
+export function useUserProfileQuery(userId: string | null) {
+  const { api } = useLogandaimApi();
+  const phase = useAuth();
+  return useQuery({
+    queryKey: logandaimKeys.profiles.detail(userId ?? ""),
+    queryFn: () => api.profileGet(userId ?? ""),
+    enabled: phase.status === "authenticated" && Boolean(userId),
+    retry: false,
+  });
+}
+
+export function useUserGalleryQuery(userId: string | null) {
+  const { api } = useLogandaimApi();
+  const phase = useAuth();
+  return useQuery({
+    queryKey: logandaimKeys.profiles.gallery(userId ?? ""),
+    queryFn: () => api.userGallery(userId ?? ""),
+    enabled: phase.status === "authenticated" && Boolean(userId),
+    retry: false,
+  });
+}
+
+/** Fetch an authenticated media blob and return a managed object URL. */
+export function useMediaObjectUrl(storageKey: string | null | undefined) {
+  const { api } = useLogandaimApi();
+  const phase = useAuth();
+  const query = useQuery({
+    queryKey: logandaimKeys.media(storageKey ?? ""),
+    queryFn: () => api.fetchMediaBlob(storageKey ?? ""),
+    enabled: phase.status === "authenticated" && Boolean(storageKey),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!query.data) {
+      setObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(query.data);
+    setObjectUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [query.data]);
+
+  return {
+    url: objectUrl,
+    isLoading: query.isLoading,
+    isError: query.isError,
+  };
 }

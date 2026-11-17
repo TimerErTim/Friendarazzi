@@ -1,14 +1,14 @@
 export { useAuth } from "../auth-provider";
 export { useErfolgsmeldung } from "./erfolgsmeldung";
-export { useAuthMutations, useStammdatenMutations } from "./mutations";
+export { useAuthMutations, useFriendarazziMutations } from "./mutations";
 export {
-  useAnlagenQuery,
-  useAnlagenVerzeichnisQuery,
-  useAnlageQuery,
-  useBenutzerNachEmailQuery,
   useBenutzerQuery,
+  useDecksQuery,
+  useGameByCodeQuery,
+  useGameDetailQuery,
+  useGamesQuery,
   useHealthQuery,
-  useParkourQuery,
-  useRundenQuery,
-  useRundeQuery,
+  useMediaObjectUrl,
+  useUserGalleryQuery,
+  useUserProfileQuery,
 } from "./queries";

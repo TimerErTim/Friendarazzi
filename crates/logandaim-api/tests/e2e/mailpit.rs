@@ -17,7 +17,7 @@ use serde_json::Value;
 /// The port is the daemon's, so an env variable here would only add a way to point the
 /// suite at a Mailpit the task did not start.
 fn basis_url() -> String {
-    "http://127.0.0.1:8025".to_owned()
+    "http://127.0.0.1:8034".to_owned()
 }
 
 /// Whether Mailpit answers at all.

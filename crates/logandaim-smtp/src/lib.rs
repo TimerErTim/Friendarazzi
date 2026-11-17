@@ -55,11 +55,11 @@ pub struct SmtpKonfiguration {
 
 impl SmtpKonfiguration {
     // TODO: improve ergonomics of having a hardcoded dev config in the codebase
-    /// A local Mailpit relay: port 1025, plain SMTP, no credentials.
+    /// A local Mailpit relay: port 1026, plain SMTP, no credentials.
     pub fn mailpit(absender: EmailAdresse) -> Self {
         Self {
             host: "127.0.0.1".to_owned(),
-            port: 1025,
+            port: 1026,
             verschlüsselung: Verschlüsselung::Klar,
             benutzername: None,
             passwort: None,

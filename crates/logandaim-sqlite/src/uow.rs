@@ -6,9 +6,10 @@ use libsql::Transaction;
 use logandaim_core::{
     ErrorReportExt, ResultReport,
     ports::{
-        AnlageRepository, BenutzerRepository, EmailBestätigungRepository, KontoRepository,
-        PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, RundeRepository,
-        SchussRepository, SessionRepository,
+        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
+        EmailBestätigungRepository, GameRepository, KontoRepository,
+        PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
+        UserProfileRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
 };
@@ -17,21 +18,22 @@ use crate::{
     SQLiteConnection, SQLiteInstance,
     errors::libsql_error_to_persistence_error,
     repos::{
-        SQLiteAnlageRepository, SQLiteBenutzerRepository, SQLiteEmailBestätigungRepository,
-        SQLiteKontoRepository, SQLitePasswortWiederherstellungRepository, SQLiteRundeRepository,
-        SQLiteSchussRepository, SQLiteSessionRepository,
+        SQLiteBenutzerRepository, SQLiteBoardRepository, SQLiteCaptureRepository,
+        SQLiteDeckRepository, SQLiteEmailBestätigungRepository, SQLiteGameRepository,
+        SQLiteKontoRepository, SQLitePasswortWiederherstellungRepository, SQLiteSessionRepository,
+        SQLiteUserProfileRepository,
     },
 };
 
 pub struct SQLiteUnitOfWork {
-    /// Held for the whole UoW so the connection outlives the transaction.
-    /// Dropped after repos/tx (field order). Unused after `checkpoint` was removed.
     #[allow(dead_code)]
     connection: SQLiteConnection,
     pub(crate) tx: Arc<Mutex<Option<Transaction>>>,
-    anlage_repo: SQLiteAnlageRepository,
-    runde_repo: SQLiteRundeRepository,
-    schuss_repo: SQLiteSchussRepository,
+    profile_repo: SQLiteUserProfileRepository,
+    game_repo: SQLiteGameRepository,
+    board_repo: SQLiteBoardRepository,
+    capture_repo: SQLiteCaptureRepository,
+    deck_repo: SQLiteDeckRepository,
     benutzer_repo: SQLiteBenutzerRepository,
     konto_repo: SQLiteKontoRepository,
     session_repo: SQLiteSessionRepository,
@@ -50,9 +52,11 @@ impl UnitOfWorkProvider for SQLiteInstance {
         let tx = Arc::new(Mutex::new(Some(tx)));
         Ok(Box::new(SQLiteUnitOfWork {
             connection,
-            anlage_repo: SQLiteAnlageRepository { tx: tx.clone() },
-            runde_repo: SQLiteRundeRepository { tx: tx.clone() },
-            schuss_repo: SQLiteSchussRepository { tx: tx.clone() },
+            profile_repo: SQLiteUserProfileRepository { tx: tx.clone() },
+            game_repo: SQLiteGameRepository { tx: tx.clone() },
+            board_repo: SQLiteBoardRepository { tx: tx.clone() },
+            capture_repo: SQLiteCaptureRepository { tx: tx.clone() },
+            deck_repo: SQLiteDeckRepository { tx: tx.clone() },
             benutzer_repo: SQLiteBenutzerRepository { tx: tx.clone() },
             konto_repo: SQLiteKontoRepository { tx: tx.clone() },
             session_repo: SQLiteSessionRepository { tx: tx.clone() },
@@ -68,9 +72,6 @@ impl UnitOfWorkImpl for SQLiteUnitOfWork {
     async fn commit(self: Box<Self>) -> RepositoryResult<()> {
         let mut tx_guard = self.tx.lock().await;
         let tx = tx_guard.take().ok_or(RepositoryError::Conflict)?;
-        // No incremental_vacuum here: it needs an exclusive lock and races the
-        // next connection open. auto_vacuum=INCREMENTAL still tracks free pages;
-        // vacuum can run idle/shutdown if freelist reclaim is needed later.
         tx.commit()
             .await
             .contextualize_with(libsql_error_to_persistence_error)
@@ -84,16 +85,24 @@ impl UnitOfWorkImpl for SQLiteUnitOfWork {
             .contextualize_with(libsql_error_to_persistence_error)
     }
 
-    fn anlagen(&self) -> &dyn AnlageRepository {
-        &self.anlage_repo
+    fn profiles(&self) -> &dyn UserProfileRepository {
+        &self.profile_repo
     }
 
-    fn runden(&self) -> &dyn RundeRepository {
-        &self.runde_repo
+    fn games(&self) -> &dyn GameRepository {
+        &self.game_repo
     }
 
-    fn schüsse(&self) -> &dyn SchussRepository {
-        &self.schuss_repo
+    fn boards(&self) -> &dyn BoardRepository {
+        &self.board_repo
+    }
+
+    fn captures(&self) -> &dyn CaptureRepository {
+        &self.capture_repo
+    }
+
+    fn decks(&self) -> &dyn DeckRepository {
+        &self.deck_repo
     }
 
     fn benutzer(&self) -> &dyn BenutzerRepository {

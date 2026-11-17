@@ -8,15 +8,13 @@ use std::fmt::Debug;
 
 use crate::application::ThreadSafeError;
 use crate::ports::{
-    AnlageRepository, BenutzerRepository, EmailBestätigungRepository, KontoRepository,
-    PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, RundeRepository,
-    SchussRepository, SessionRepository,
+    BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
+    EmailBestätigungRepository, GameRepository, KontoRepository,
+    PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
+    UserProfileRepository,
 };
 
 /// Active unit of work. `commit` / `rollback` consume it.
-///
-/// Drop panics if neither `commit` nor `rollback` ran (forgotten conclusion).
-/// Does **not** call [`UnitOfWorkImpl::rollback`] — that is async and fallible.
 #[must_use = "UnitOfWork must be committed or rolled back"]
 pub struct UnitOfWork<'a> {
     implementation: Option<Box<dyn UnitOfWorkImpl + 'a>>,
@@ -51,7 +49,6 @@ impl UnitOfWork<'_> {
         self.take_impl().rollback().await
     }
 
-    /// Commit on `Ok`, rollback on `Err`. Pass a function to translate a `Report<RepositoryError>` from commit into a `Report<C>`.
     #[inline]
     pub async fn finish_with<T, C, F>(
         self,
@@ -72,15 +69,10 @@ impl UnitOfWork<'_> {
             }
             Err(mut error) => {
                 if let Err(_rollback_error) = self.rollback().await {
-                    // Atach the rollback report to the outer error
                     let _ = error.frames_mut(|frame| {
                         let FrameKind::Context(_) = frame.kind() else {
                             return ControlFlow::Continue(());
                         };
-
-                        // Cannot attach right now because report does not support
-                        // TODO: Somehow fix this later (upstream feat)
-
                         ControlFlow::Break(())
                     });
                 }
@@ -89,7 +81,6 @@ impl UnitOfWork<'_> {
         }
     }
 
-    /// Commit on `Ok`, rollback on `Err`. Pass a function to translate a `Report<RepositoryError>` from commit into a `Report<C>`.
     #[inline]
     pub fn finish<T, C: ThreadSafeError>(
         self,
@@ -99,17 +90,24 @@ impl UnitOfWork<'_> {
         self.finish_with(result, |_| context)
     }
 
-    /// Repository accessor.
-    pub fn schüsse(&self) -> &dyn SchussRepository {
-        self.as_impl().schüsse()
+    pub fn profiles(&self) -> &dyn UserProfileRepository {
+        self.as_impl().profiles()
     }
 
-    pub fn anlagen(&self) -> &dyn AnlageRepository {
-        self.as_impl().anlagen()
+    pub fn games(&self) -> &dyn GameRepository {
+        self.as_impl().games()
     }
 
-    pub fn runden(&self) -> &dyn RundeRepository {
-        self.as_impl().runden()
+    pub fn boards(&self) -> &dyn BoardRepository {
+        self.as_impl().boards()
+    }
+
+    pub fn captures(&self) -> &dyn CaptureRepository {
+        self.as_impl().captures()
+    }
+
+    pub fn decks(&self) -> &dyn DeckRepository {
+        self.as_impl().decks()
     }
 
     pub fn benutzer(&self) -> &dyn BenutzerRepository {
@@ -161,16 +159,24 @@ impl UnitOfWorkImpl for LockedUnitOfWorkImpl<'_> {
         Ok(())
     }
 
-    fn schüsse(&self) -> &dyn SchussRepository {
-        self.inner.schüsse()
+    fn profiles(&self) -> &dyn UserProfileRepository {
+        self.inner.profiles()
     }
 
-    fn anlagen(&self) -> &dyn AnlageRepository {
-        self.inner.anlagen()
+    fn games(&self) -> &dyn GameRepository {
+        self.inner.games()
     }
 
-    fn runden(&self) -> &dyn RundeRepository {
-        self.inner.runden()
+    fn boards(&self) -> &dyn BoardRepository {
+        self.inner.boards()
+    }
+
+    fn captures(&self) -> &dyn CaptureRepository {
+        self.inner.captures()
+    }
+
+    fn decks(&self) -> &dyn DeckRepository {
+        self.inner.decks()
     }
 
     fn benutzer(&self) -> &dyn BenutzerRepository {
@@ -200,21 +206,16 @@ pub trait UnitOfWorkImpl: Send + Sync {
     async fn commit(self: Box<Self>) -> RepositoryResult<()>;
     async fn rollback(self: Box<Self>) -> RepositoryResult<()>;
 
-    /// One accessor per repository. Each feature slice adds exactly one.
-    fn schüsse(&self) -> &dyn SchussRepository;
-
-    fn anlagen(&self) -> &dyn AnlageRepository;
-
-    fn runden(&self) -> &dyn RundeRepository;
+    fn profiles(&self) -> &dyn UserProfileRepository;
+    fn games(&self) -> &dyn GameRepository;
+    fn boards(&self) -> &dyn BoardRepository;
+    fn captures(&self) -> &dyn CaptureRepository;
+    fn decks(&self) -> &dyn DeckRepository;
 
     fn benutzer(&self) -> &dyn BenutzerRepository;
-
     fn konten(&self) -> &dyn KontoRepository;
-
     fn sessions(&self) -> &dyn SessionRepository;
-
     fn bestätigungen(&self) -> &dyn EmailBestätigungRepository;
-
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository;
 }
 

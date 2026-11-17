@@ -47,14 +47,14 @@ ready_http = "http://127.0.0.1:4173/"
 init = ["mkdir -p target/mailpit"]
 run = """
 exec mailpit \
-  --smtp 127.0.0.1:1025 \
+  --smtp 127.0.0.1:1026 \
   --listen 127.0.0.1:$MAILPIT_PORT \
   --smtp-auth-accept-any \
   --smtp-auth-allow-insecure \
   --database target/mailpit/mailpit.db
 """
-port = 8025
-ready_http = "http://127.0.0.1:8025/api/v1/info"
+port = 8034
+ready_http = "http://127.0.0.1:8034/api/v1/info"
 
 [daemons.server]
 task = "run:server"

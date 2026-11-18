@@ -2,25 +2,48 @@
 
 import { useEffect, useState } from "react";
 
+const LOCATION_CHANGE_EVENT = "friendarazzi:locationchange";
+
+let historyHooked = false;
+
+function ensureHistoryPatched(): void {
+  if (historyHooked || typeof window === "undefined") {
+    return;
+  }
+  historyHooked = true;
+
+  for (const method of ["pushState", "replaceState"] as const) {
+    const original = window.history[method];
+    window.history[method] = function patchedHistory(...args) {
+      const result = original.apply(this, args);
+      queueMicrotask(() => {
+        window.dispatchEvent(new Event(LOCATION_CHANGE_EVENT));
+      });
+      return result;
+    };
+  }
+}
+
 /**
- * Read one query parameter on the client.
- *
- * The site is a static export, so a detail page cannot use a dynamic `[id]` segment:
- * it is `/verwaltung/anlage?id=…`. Reading `useSearchParams()` would force a Suspense
- * boundary on every such page, so this hook reads `window.location` after mount
- * instead — `null` means "not known yet", which a page renders as a loading state
- * rather than as "missing".
+ * Reads URL search parameter `name` safely under static export.
+ * Returns `null` before client mount, `""` when absent, or the param value.
  */
 export function useQueryParam(name: string): string | null {
   const [value, setValue] = useState<string | null>(null);
 
   useEffect(() => {
-    const lesen = () =>
-      setValue(new URLSearchParams(window.location.search).get(name));
+    ensureHistoryPatched();
 
-    lesen();
-    window.addEventListener("popstate", lesen);
-    return () => window.removeEventListener("popstate", lesen);
+    const read = () =>
+      setValue(new URLSearchParams(window.location.search).get(name) ?? "");
+
+    read();
+    window.addEventListener("popstate", read);
+    window.addEventListener(LOCATION_CHANGE_EVENT, read);
+    return () => {
+      window.removeEventListener("popstate", read);
+      window.removeEventListener(LOCATION_CHANGE_EVENT, read);
+    };
   }, [name]);
 
   return value;

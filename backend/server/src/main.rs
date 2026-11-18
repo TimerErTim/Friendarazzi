@@ -4,18 +4,17 @@ mod tracing_setup;
 use std::{collections::HashSet, sync::Arc};
 
 use error_stack::{Report, ResultExt};
-use logandaim_api::{errors::InternalServerError, openapi_service};
-use logandaim_core::{
+use friendarazzi_api::{errors::InternalServerError, openapi_service};
+use friendarazzi_core::{
     App,
     adapters::{InMemorySigning, InMemoryThrottle, NullMailSender},
-    application::{AuthContext, IdentityProviderConfiguration},
+    application::IdentityProviderConfiguration,
     domain::EmailAdresse,
     ports::MailSender,
-    service::{Beförderung, SystemadministratorBefördern},
 };
-use logandaim_filesystemstore::FileSystemObjectStore;
-use logandaim_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
-use logandaim_sqlite::SQLiteInstance;
+use friendarazzi_filesystemstore::FileSystemObjectStore;
+use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
+use friendarazzi_sqlite::SQLiteInstance;
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
 use poem::{EndpointExt, IntoResponse, Route, Server, listener::TcpListener};
@@ -47,7 +46,7 @@ fn build_signing_key(
     })?;
 
     let keypair =
-        logandaim_core::domain::konto::SigningKeypair::from_pkcs8_pem(&pem).map_err(|_| {
+        friendarazzi_core::domain::konto::SigningKeypair::from_pkcs8_pem(&pem).map_err(|_| {
             Report::new(BackendServerError).attach(format!(
                 "signing key `{}` is not a valid PKCS#8 Ed25519 key",
                 path.display()
@@ -96,7 +95,7 @@ fn lade_mail_sender(
         benutzername: config.smtp_benutzername.clone(),
         passwort: config.smtp_passwort.clone(),
         absender,
-        absender_name: Some("logandaim".to_owned()),
+        absender_name: Some("Friendarazzi".to_owned()),
         frontend_basis_url: config.frontend_basis_url.clone(),
     };
 
@@ -161,7 +160,7 @@ fn allowed_origins(config: &config::ServerConfig) -> Vec<poem::http::HeaderValue
         origins.insert(public_url.clone());
     }
 
-    if let Ok(extra) = std::env::var("LOGANDAIM_CORS_ORIGIN") {
+    if let Ok(extra) = std::env::var("FRIENDARAZZI_CORS_ORIGIN") {
         origins.extend(
             extra
                 .split(',')
@@ -186,6 +185,7 @@ fn cors(config: &config::ServerConfig) -> Cors {
             poem::http::Method::GET,
             poem::http::Method::POST,
             poem::http::Method::PUT,
+            poem::http::Method::PATCH,
             poem::http::Method::DELETE,
             poem::http::Method::OPTIONS,
         ])
@@ -193,41 +193,6 @@ fn cors(config: &config::ServerConfig) -> Cors {
             poem::http::header::AUTHORIZATION,
             poem::http::header::CONTENT_TYPE,
         ])
-}
-
-/// Promote the configured address to `Systemadministrator`; idempotent, and an address
-/// without a Konto yet is not an error.
-async fn bootstrap_superuser(app: &App) -> Result<(), Report<BackendServerError>> {
-    let Some(email) = std::env::var("LOGANDAIM_SUPERUSER_EMAIL")
-        .ok()
-        .filter(|wert| !wert.trim().is_empty())
-    else {
-        return Ok(());
-    };
-
-    let adresse = EmailAdresse::normalisiert(&email).map_err(|_| {
-        Report::new(BackendServerError)
-            .attach(format!("superuser address `{email}` is not an address"))
-    })?;
-
-    let ergebnis = app
-        .execute(
-            AuthContext::Anonymous,
-            SystemadministratorBefördern { email: adresse },
-        )
-        .await
-        .change_context(BackendServerError)?;
-
-    match ergebnis {
-        Beförderung::Befördert => tracing::info!("superuser befördert"),
-        Beförderung::BereitsBefördert => {
-            tracing::info!("superuser war bereits befördert")
-        }
-        Beförderung::KeinKonto => {
-            tracing::warn!("superuser-adresse hat noch kein konto; beim nächsten start erneut")
-        }
-    }
-    Ok(())
 }
 
 /// Create the directory a configured database path lives in.
@@ -286,8 +251,6 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .konto(konto)
         .build();
 
-    bootstrap_superuser(&app).await?;
-
     let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
     let api_url = config
         .public_url
@@ -338,8 +301,8 @@ mod tests {
     /// consumer's job, because the path is only known here.
     #[test_log::test]
     fn a_missing_database_directory_is_created() {
-        let root = tempdir::TempDir::new("logandaim-db-directory").unwrap();
-        let database = root.path().join("data.local").join("logandaim.db");
+        let root = tempdir::TempDir::new("friendarazzi-db-directory").unwrap();
+        let database = root.path().join("data.local").join("friendarazzi.db");
         assert!(
             !database.parent().unwrap().exists(),
             "the test needs a parent that does not exist yet"
@@ -354,7 +317,7 @@ mod tests {
     /// either; neither may fail.
     #[test_log::test]
     fn a_bare_file_name_needs_no_directory() {
-        ensure_database_directory("logandaim.db").expect("no directory to create");
+        ensure_database_directory("friendarazzi.db").expect("no directory to create");
         ensure_database_directory(":memory:").expect("no directory to create");
     }
 }

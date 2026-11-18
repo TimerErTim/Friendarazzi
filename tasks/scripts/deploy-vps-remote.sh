@@ -20,7 +20,7 @@ revision="${2:?usage: deploy-vps-remote.sh <image> <revision> <api-domain> <dir>
 api_domain="${3:?usage: deploy-vps-remote.sh <image> <revision> <api-domain> <dir>}"
 deploy_dir="${4:?usage: deploy-vps-remote.sh <image> <revision> <api-domain> <dir>}"
 
-[[ "$image" =~ ^ghcr\.io/[a-z0-9._-]+/logandaim-server:sha-[0-9a-f]{40}$ ]] ||
+[[ "$image" =~ ^ghcr\.io/[a-z0-9._-]+/friendarazzi-server:sha-[0-9a-f]{40}$ ]] ||
   { echo "Invalid image reference" >&2; exit 2; }
 [[ "$revision" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid revision" >&2; exit 2; }
 [[ "${image##*:sha-}" == "$revision" ]] ||
@@ -43,7 +43,7 @@ has_previous=false
 [[ -s "$known_good_image" ]] && has_previous=true
 
 # Persistent state and operator secrets sit beside the checkout, not inside it:
-# `/opt/logandaim/data`, `/opt/logandaim/secrets`, checkout at `/opt/logandaim/repo`.
+# `/opt/friendarazzi/data`, `/opt/friendarazzi/secrets`, checkout at `/opt/friendarazzi/repo`.
 # Compose resolves relative bind mounts against the compose file's directory (the repo),
 # so the sources are addressed through this explicit host root instead.
 host_root="$(cd "$deploy_dir/.." && pwd)"
@@ -69,17 +69,17 @@ grep -Eq '^MAIL_ABSENDER=.+' "$env_file" ||
 # so this fails here rather than at the first registration that never sends.
 mail_env="$host_root/secrets/mail.env"
 test -f "$mail_env" || { echo "Missing $mail_env with the SMTP credentials." >&2; exit 2; }
-grep -Eq '^LOGANDAIM_SMTP_BENUTZERNAME=.+' "$mail_env" ||
-  { echo "Missing LOGANDAIM_SMTP_BENUTZERNAME in $mail_env." >&2; exit 2; }
-grep -Eq '^LOGANDAIM_SMTP_PASSWORT=.+' "$mail_env" ||
-  { echo "Missing LOGANDAIM_SMTP_PASSWORT in $mail_env." >&2; exit 2; }
+grep -Eq '^FRIENDARAZZI_SMTP_BENUTZERNAME=.+' "$mail_env" ||
+  { echo "Missing FRIENDARAZZI_SMTP_BENUTZERNAME in $mail_env." >&2; exit 2; }
+grep -Eq '^FRIENDARAZZI_SMTP_PASSWORT=.+' "$mail_env" ||
+  { echo "Missing FRIENDARAZZI_SMTP_PASSWORT in $mail_env." >&2; exit 2; }
 test -d "$host_root/data/sqlite" || { echo "Missing $host_root/data/sqlite." >&2; exit 2; }
-test -d "$host_root/data/objects" || { echo "Missing $host_root/data/objects." >&2; exit 2; }
-export LOGANDAIM_HOST_ROOT="$host_root"
+test -d "$host_root/data/media" || { echo "Missing $host_root/data/media." >&2; exit 2; }
+export FRIENDARAZZI_HOST_ROOT="$host_root"
 export API_DOMAIN="$api_domain"
 # Exported so the requested reference wins over the value `.env` holds from the last
 # deployment; `persist_env` writes it back once it is running.
-export LOGANDAIM_IMAGE="$image"
+export FRIENDARAZZI_IMAGE="$image"
 curl --version >/dev/null
 
 health_check() {
@@ -111,8 +111,8 @@ apply() {
 # too, so the record always names the image that was started last.
 persist_env() {
   local tmp="$env_file.tmp"
-  grep -Ev '^(LOGANDAIM_IMAGE|LOGANDAIM_HOST_ROOT)=' "$env_file" > "$tmp" || true
-  printf 'LOGANDAIM_IMAGE=%s\nLOGANDAIM_HOST_ROOT=%s\n' "$LOGANDAIM_IMAGE" "$host_root" >> "$tmp"
+  grep -Ev '^(FRIENDARAZZI_IMAGE|FRIENDARAZZI_HOST_ROOT)=' "$env_file" > "$tmp" || true
+  printf 'FRIENDARAZZI_IMAGE=%s\nFRIENDARAZZI_HOST_ROOT=%s\n' "$FRIENDARAZZI_IMAGE" "$host_root" >> "$tmp"
   chmod --reference="$env_file" "$tmp"
   mv "$tmp" "$env_file"
   if [[ "$env_file" != .env ]]; then
@@ -170,7 +170,7 @@ rollback() {
   local previous
   previous="$(cat "$known_good_image")"
   echo "Deployment failed; starting the last known-good image ${previous}." >&2
-  export LOGANDAIM_IMAGE="$previous"
+  export FRIENDARAZZI_IMAGE="$previous"
   apply
   if ! health_check; then
     echo "Rollback also failed health check." >&2

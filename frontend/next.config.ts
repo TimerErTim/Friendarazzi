@@ -2,9 +2,9 @@ import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
 // GitHub Pages serves project sites under a path prefix. Set
-// `NEXT_PUBLIC_LOGANDAIM_BASE_PATH` when the site is not at the domain root;
-// `logandaim.at` as a custom domain serves at the root, so it stays empty.
-const basePath = process.env.NEXT_PUBLIC_LOGANDAIM_BASE_PATH ?? "";
+// `NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH` when the site is not at the domain root;
+// custom domains serve at the root, so it stays empty.
+const basePath = process.env.NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH ?? "";
 
 // Production keeps exactly the extensions the App Router shipped with. Dev adds
 // `.dev.tsx` / `.dev.ts` in front, so a route written as `page.dev.tsx` exists only

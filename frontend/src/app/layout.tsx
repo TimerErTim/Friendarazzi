@@ -43,18 +43,18 @@ const geistMono = Geist_Mono({
  * emits hand-written `metadata.icons` / `metadata.manifest` URLs verbatim. The prefix
  * therefore has to be added here, or the links 404 on the GitHub Pages project site.
  */
-const basePath = process.env.NEXT_PUBLIC_LOGANDAIM_BASE_PATH ?? "";
+const basePath = process.env.NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH ?? "";
 
 const description =
-  "Österreichweites Online-Logbuch für 3D-Bogenschießen: Runden Ziel für Ziel erfassen, den Schussabstand zwischen den Pflöcken festhalten und die eigene Treffsicherheit über die Zeit verfolgen.";
+  "Friendarazzi – das soziale Foto-Jagd-Bingo für Freundesgruppen: Lobbys erstellen, witzige Aufträge verteilen, Beweisfotos knipsen und Erinnerungen sammeln.";
 
 export const metadata: Metadata = {
   title: {
-    default: "logandaim.at",
-    template: "%s · logandaim.at",
+    default: "Friendarazzi",
+    template: "%s · Friendarazzi",
   },
   description,
-  applicationName: "logandaim.at",
+  applicationName: "Friendarazzi",
   manifest: `${basePath}/site.webmanifest`,
   icons: {
     icon: [
@@ -79,8 +79,8 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "de_AT",
-    siteName: "logandaim.at",
-    title: "logandaim.at",
+    siteName: "Friendarazzi",
+    title: "Friendarazzi",
     description,
   },
 };

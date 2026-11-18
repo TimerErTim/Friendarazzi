@@ -37,7 +37,7 @@ import { Separator } from "@/components/ui/separator";
  *
  * The workflow it serves: change a token in `globals.css`, this page reloads, and
  * both themes are judged side by side on the same specimen — no switching, no
- * memory. Decisions are then written into `.cursor/rules/design-system.mdc` and
+ * memory. Decisions are then written into `.agents/skills/design-system/SKILL.md` and
  * `specs/product/visual-identity.md`.
  */
 

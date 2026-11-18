@@ -90,7 +90,7 @@ jobs:
 
       # An artefact archive preserves no executable bit.
       - name: Make the binary executable
-        run: chmod 0755 .deploy/incoming/logandaim-server
+        run: chmod 0755 .deploy/incoming/friendarazzi-server
 
       - name: Compose the image reference
         id: reference
@@ -102,9 +102,9 @@ jobs:
         run: |
           set -eu
           owner="$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')"
-          printf 'reference=%s\n' "ghcr.io/$owner/logandaim-server:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          printf 'reference=%s\n' "ghcr.io/$owner/friendarazzi-server:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           if [ "$MOVE_MAIN_TAG" = "true" ]; then
-            printf 'main_tag=%s\n' "ghcr.io/$owner/logandaim-server:main" >> "$GITHUB_OUTPUT"
+            printf 'main_tag=%s\n' "ghcr.io/$owner/friendarazzi-server:main" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Buildx

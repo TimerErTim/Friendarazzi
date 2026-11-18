@@ -162,7 +162,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
 
   const failure = authFailure(auth.login.error, {
-    unauthorized: "E-Mail-Adresse oder Passwort ist falsch.",
+    unauthorized: "E-Mail-Adresse oder Passwort sind falsch.",
     tooManyRequests:
       "Zu viele Anmeldeversuche. Bitte warten Sie und versuchen Sie es erneut.",
     fallback:
@@ -180,7 +180,7 @@ export function LoginPage() {
   return (
     <AuthPage
       title="Anmelden"
-      description="Öffnen Sie Ihr Logbuch mit E-Mail-Adresse und Passwort."
+      description="Melden Sie sich mit Ihrer E-Mail-Adresse und Ihrem Passwort bei Friendarazzi an."
       footer={
         <>
           <p>

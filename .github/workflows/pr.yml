@@ -34,10 +34,7 @@ jobs:
           }
 
           echo "$TITLE" | grep -Eq '^(feat|fix|docs|chore|refactor|test|perf|build|ci)(\([a-z0-9._/-]+\))?!?: .+' \
-            || fail "Title must be a conventional commit message, for example 'feat(backend): add scoring'."
-
-          echo "$BODY" | grep -Eqi '(closes|fixes|resolves)[[:space:]]+#[0-9]+' \
-            || fail "Link the issue with 'Closes #N'."
+            || fail "Title must be a conventional commit message, for example 'feat(frontend): add timeline zoom'."
 
           echo "Pull request record is valid."
 

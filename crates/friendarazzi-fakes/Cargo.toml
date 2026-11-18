@@ -1,0 +1,22 @@
+[package]
+name = "friendarazzi-fakes"
+description = "In-memory fake adapters, clocks, and factories for tests, scripts, and seeding"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[dependencies]
+friendarazzi-core = { path = "../friendarazzi-core" }
+
+async-trait = { workspace = true }
+error-stack = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rustc-hash = { workspace = true }
+rand = { workspace = true }
+image = { workspace = true }
+
+[lints]
+workspace = true

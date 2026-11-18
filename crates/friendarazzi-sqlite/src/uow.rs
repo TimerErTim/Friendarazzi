@@ -1,0 +1,119 @@
+use std::sync::Arc;
+
+use async_lock::Mutex;
+use async_trait::async_trait;
+use friendarazzi_core::{
+    ErrorReportExt, ResultReport,
+    ports::{
+        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
+        EmailBestätigungRepository, GameRepository, KontoRepository,
+        PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
+    },
+    uow::{UnitOfWorkImpl, UnitOfWorkProvider},
+};
+use libsql::Transaction;
+
+use crate::{
+    SQLiteConnection, SQLiteInstance,
+    errors::libsql_error_to_persistence_error,
+    repos::{
+        SQLiteBenutzerRepository, SQLiteBoardRepository, SQLiteCaptureRepository,
+        SQLiteDeckRepository, SQLiteEmailBestätigungRepository, SQLiteGameRepository,
+        SQLiteKontoRepository, SQLitePasswortWiederherstellungRepository, SQLiteSessionRepository,
+    },
+};
+
+pub struct SQLiteUnitOfWork {
+    #[allow(dead_code)]
+    connection: SQLiteConnection,
+    pub(crate) tx: Arc<Mutex<Option<Transaction>>>,
+    game_repo: SQLiteGameRepository,
+    board_repo: SQLiteBoardRepository,
+    capture_repo: SQLiteCaptureRepository,
+    deck_repo: SQLiteDeckRepository,
+    benutzer_repo: SQLiteBenutzerRepository,
+    konto_repo: SQLiteKontoRepository,
+    session_repo: SQLiteSessionRepository,
+    bestätigung_repo: SQLiteEmailBestätigungRepository,
+    wiederherstellung_repo: SQLitePasswortWiederherstellungRepository,
+}
+
+#[async_trait]
+impl UnitOfWorkProvider for SQLiteInstance {
+    async fn begin(&self) -> ResultReport<Box<dyn UnitOfWorkImpl>, RepositoryError> {
+        let connection: SQLiteConnection = self.create_connection().await?;
+        let tx = connection
+            .transaction_with_behavior(libsql::TransactionBehavior::Deferred)
+            .await
+            .contextualize_with(libsql_error_to_persistence_error)?;
+        let tx = Arc::new(Mutex::new(Some(tx)));
+        Ok(Box::new(SQLiteUnitOfWork {
+            connection,
+            game_repo: SQLiteGameRepository { tx: tx.clone() },
+            board_repo: SQLiteBoardRepository { tx: tx.clone() },
+            capture_repo: SQLiteCaptureRepository { tx: tx.clone() },
+            deck_repo: SQLiteDeckRepository { tx: tx.clone() },
+            benutzer_repo: SQLiteBenutzerRepository { tx: tx.clone() },
+            konto_repo: SQLiteKontoRepository { tx: tx.clone() },
+            session_repo: SQLiteSessionRepository { tx: tx.clone() },
+            bestätigung_repo: SQLiteEmailBestätigungRepository { tx: tx.clone() },
+            wiederherstellung_repo: SQLitePasswortWiederherstellungRepository { tx: tx.clone() },
+            tx,
+        }))
+    }
+}
+
+#[async_trait]
+impl UnitOfWorkImpl for SQLiteUnitOfWork {
+    async fn commit(self: Box<Self>) -> RepositoryResult<()> {
+        let mut tx_guard = self.tx.lock().await;
+        let tx = tx_guard.take().ok_or(RepositoryError::Conflict)?;
+        tx.commit()
+            .await
+            .contextualize_with(libsql_error_to_persistence_error)
+    }
+
+    async fn rollback(self: Box<Self>) -> RepositoryResult<()> {
+        let mut tx_guard = self.tx.lock().await;
+        let tx = tx_guard.take().ok_or(RepositoryError::Conflict)?;
+        tx.rollback()
+            .await
+            .contextualize_with(libsql_error_to_persistence_error)
+    }
+
+    fn games(&self) -> &dyn GameRepository {
+        &self.game_repo
+    }
+
+    fn boards(&self) -> &dyn BoardRepository {
+        &self.board_repo
+    }
+
+    fn captures(&self) -> &dyn CaptureRepository {
+        &self.capture_repo
+    }
+
+    fn decks(&self) -> &dyn DeckRepository {
+        &self.deck_repo
+    }
+
+    fn benutzer(&self) -> &dyn BenutzerRepository {
+        &self.benutzer_repo
+    }
+
+    fn konten(&self) -> &dyn KontoRepository {
+        &self.konto_repo
+    }
+
+    fn sessions(&self) -> &dyn SessionRepository {
+        &self.session_repo
+    }
+
+    fn bestätigungen(&self) -> &dyn EmailBestätigungRepository {
+        &self.bestätigung_repo
+    }
+
+    fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository {
+        &self.wiederherstellung_repo
+    }
+}

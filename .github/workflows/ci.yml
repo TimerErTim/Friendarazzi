@@ -37,12 +37,12 @@ jobs:
 
       - name: Check the deployment configuration
         env:
-          NEXT_PUBLIC_LOGANDAIM_API_URL: ${{ vars.LOGANDAIM_API_URL }}
+          NEXT_PUBLIC_FRIENDARAZZI_API_URL: ${{ vars.FRIENDARAZZI_API_URL }}
           PAGES_OUTCOME: ${{ steps.configure-pages.outcome }}
         run: |
           set -eu
-          if [ -z "${NEXT_PUBLIC_LOGANDAIM_API_URL:-}" ]; then
-            echo "::error::Repository variable LOGANDAIM_API_URL is not set. The deployed frontend would call the API on its own origin."
+          if [ -z "${NEXT_PUBLIC_FRIENDARAZZI_API_URL:-}" ]; then
+            echo "::error::Repository variable FRIENDARAZZI_API_URL is not set. The deployed frontend would call the API on its own origin."
             exit 1
           fi
           if [ "$PAGES_OUTCOME" != "success" ]; then
@@ -63,9 +63,9 @@ jobs:
 
       - name: Run the full gate
         env:
-          NEXT_PUBLIC_LOGANDAIM_API_URL: ${{ vars.LOGANDAIM_API_URL }}
-          NEXT_PUBLIC_LOGANDAIM_BASE_PATH: ${{ steps.configure-pages.outputs.base_path }}
-          LOGANDAIM_BUILD_RELEASE: true
+          NEXT_PUBLIC_FRIENDARAZZI_API_URL: ${{ vars.FRIENDARAZZI_API_URL }}
+          NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH: ${{ steps.configure-pages.outputs.base_path }}
+          FRIENDARAZZI_BUILD_RELEASE: true
         run: mise run ci
 
       - name: Publish the test report
@@ -85,7 +85,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: server
-          path: target/release/logandaim-server
+          path: target/release/friendarazzi-server
           if-no-files-found: error
           retention-days: 1
 

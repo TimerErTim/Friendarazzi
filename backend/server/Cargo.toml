@@ -1,5 +1,5 @@
 [package]
-name = "logandaim-server"
+name = "friendarazzi-server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,11 +7,11 @@ license-file.workspace = true
 repository.workspace = true
 
 [dependencies]
-logandaim-core = { path = "../../crates/logandaim-core" }
-logandaim-sqlite = { path = "../../crates/logandaim-sqlite" }
-logandaim-api = { path = "../../crates/logandaim-api" }
-logandaim-filesystemstore = { path = "../../crates/logandaim-filesystemstore" }
-logandaim-smtp = { path = "../../crates/logandaim-smtp" }
+friendarazzi-core = { path = "../../crates/friendarazzi-core" }
+friendarazzi-sqlite = { path = "../../crates/friendarazzi-sqlite" }
+friendarazzi-api = { path = "../../crates/friendarazzi-api" }
+friendarazzi-filesystemstore = { path = "../../crates/friendarazzi-filesystemstore" }
+friendarazzi-smtp = { path = "../../crates/friendarazzi-smtp" }
 
 thiserror = { workspace = true }
 error-stack = { workspace = true }

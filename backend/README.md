@@ -26,17 +26,16 @@ mise run dev:server
 
 Resolution order: **config path → file → env → CLI**.
 
-Default file: `logandaim-server.json` in the current working directory. Override with `LOGANDAIM_CONFIG_PATH` or `--config-path`. Missing default file falls back to built-in defaults. An explicit path that is missing or malformed is an error.
+Default file: `friendarazzi-server.json` in the current working directory. Override with `FRIENDARAZZI_CONFIG_PATH` or `--config-path`. Missing default file falls back to built-in defaults. An explicit path that is missing or malformed is an error.
 
 mise sets environment variables for the server suitable for a dev environment automatically. `SUBPATH` (default `/`) sets the API mount prefix; routes are served below `<SUBPATH>/api`.
 
 | Source | Keys |
 |--------|------|
 | File (camelCase JSON) | `bindAddress`, `bindPort`, `subpath`, `databaseUrl`, `objectStoreDir`, `logDir`, `signingKeyPath`, `tokenIssuer`, `tokenAudience`, `frontendBasisUrl`, `smtpHost`, `smtpPort`, `smtpVerschlüsselung`, `smtpBenutzername`, `smtpPasswort`, `smtpAbsender` |
-| Env / CLI | `LOGANDAIM_BIND_ADDRESS` / `--bind-address`, `LOGANDAIM_BIND_PORT` / `--bind-port`, `SUBPATH` / `--subpath`, `LOGANDAIM_DATABASE_URL` / `--database-url`, `LOGANDAIM_OBJECT_STORE_DIR` / `--object-store-dir`, `LOGANDAIM_LOG_DIR` / `--log-dir`, `LOGANDAIM_SIGNING_KEY_PATH` / `--signing-key-path`, `LOGANDAIM_TOKEN_ISSUER` / `--token-issuer`, `LOGANDAIM_TOKEN_AUDIENCE` / `--token-audience`, `LOGANDAIM_FRONTEND_BASIS_URL` / `--frontend-basis-url`, `LOGANDAIM_SMTP_HOST` / `--smtp-host`, `LOGANDAIM_SMTP_PORT` / `--smtp-port`, `LOGANDAIM_SMTP_VERSCHLUESSELUNG` / `--smtp-verschlüsselung`, `LOGANDAIM_SMTP_BENUTZERNAME` / `--smtp-benutzername`, `LOGANDAIM_SMTP_PASSWORT` / `--smtp-passwort`, `LOGANDAIM_SMTP_ABSENDER` / `--smtp-absender` |
-| Accounts (env only) | `LOGANDAIM_SUPERUSER_EMAIL` — the address promoted to `Systemadministrator` at startup |
-| CORS (env only) | `LOGANDAIM_CORS_ORIGIN` — optional comma-separated extra allowed origins; the configured frontend origin and documented loopback dev origins are allowed by default |
-| Tracing | `LOGANDAIM_LOG_LEVEL` (default `info`) |
+| Env / CLI | `FRIENDARAZZI_BIND_ADDRESS` / `--bind-address`, `FRIENDARAZZI_BIND_PORT` / `--bind-port`, `SUBPATH` / `--subpath`, `FRIENDARAZZI_DATABASE_URL` / `--database-url`, `FRIENDARAZZI_OBJECT_STORE_DIR` / `--object-store-dir`, `FRIENDARAZZI_LOG_DIR` / `--log-dir`, `FRIENDARAZZI_SIGNING_KEY_PATH` / `--signing-key-path`, `FRIENDARAZZI_TOKEN_ISSUER` / `--token-issuer`, `FRIENDARAZZI_TOKEN_AUDIENCE` / `--token-audience`, `FRIENDARAZZI_FRONTEND_BASIS_URL` / `--frontend-basis-url`, `FRIENDARAZZI_SMTP_HOST` / `--smtp-host`, `FRIENDARAZZI_SMTP_PORT` / `--smtp-port`, `FRIENDARAZZI_SMTP_VERSCHLUESSELUNG` / `--smtp-verschlüsselung`, `FRIENDARAZZI_SMTP_BENUTZERNAME` / `--smtp-benutzername`, `FRIENDARAZZI_SMTP_PASSWORT` / `--smtp-passwort`, `FRIENDARAZZI_SMTP_ABSENDER` / `--smtp-absender` |
+| CORS (env only) | `FRIENDARAZZI_CORS_ORIGIN` — optional comma-separated extra allowed origins; the configured frontend origin and documented loopback dev origins are allowed by default |
+| Tracing | `FRIENDARAZZI_LOG_LEVEL` (default `info`) |
 
 Notes on the account keys:
 
@@ -63,9 +62,6 @@ Notes on the account keys:
   the relay and records the result. The route never waits on it, so a broken relay never slows or
   fails a request (NFR-5). `GET /api/health` stays the literal `OK` and does
   not depend on mail; the Compose healthcheck requires both.
-- `LOGANDAIM_SUPERUSER_EMAIL` is the only way a `Systemadministrator` is created — there is no
-  self-service elevation (rule 9). Promotion is idempotent and tolerates an address that has not
-  registered yet; it is retried on the next start.
 
 ### Transactional mail in development
 
@@ -73,7 +69,7 @@ Development and tests use [Mailpit](https://mailpit.axllent.org), a local SMTP c
 UI, so no real address receives anything:
 
 ```bash
-mise daemons start mailpit   # SMTP 127.0.0.1:1025, web UI http://127.0.0.1:8025
+mise daemons start mailpit   # SMTP 127.0.0.1:1026, web UI http://127.0.0.1:8034
 ```
 
 The e2e suite does the same through the mise `mailpit` daemon. Confirmation and recovery mails open

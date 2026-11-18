@@ -15,34 +15,34 @@ ubiquitous-language term of the slice); never invent vocabulary that the specs d
 
 | Layer | File | What it contributes |
 |-------|------|---------------------|
-| Domain | `crates/logandaim-core/src/domain/<begriff>.rs` | Identity newtypes, the aggregate, its `Neues…` creation input, the `<Begriff>Fehler` enum, domain services, `#[cfg(test)]` unit tests. |
-| Domain exports | `crates/logandaim-core/src/domain/mod.rs` | `pub mod <begriff>;` plus re-exports, so callers use `crate::domain::<Begriff>`. |
-| Port | `crates/logandaim-core/src/application/ports/repos.rs` | The repository trait for the aggregate. Repositories only store and load. |
-| Use case | `crates/logandaim-core/src/service/use_cases/<begriff>.rs` | One struct per write implementing `UseCase`, plus its error enum. Reads run as one-off `execute_fn` closures in the API facade, with their error enum in `crates/logandaim-api/src/api/errors.rs`. |
-| Use case exports | `crates/logandaim-core/src/service/use_cases/mod.rs` | `mod <begriff>; pub use <begriff>::*;`. |
-| UoW facade | `crates/logandaim-core/src/application/uow.rs` | Accessor on `UnitOfWork`, on `UnitOfWorkImpl`, and on `LockedUnitOfWorkImpl`. |
-| Instrumented UoW | `crates/logandaim-core/src/application/instrumented.rs` | Accessor delegating to the instrumented wrapper. |
-| Instrumented repo | `crates/logandaim-core/src/application/instrumented_repos.rs` | One `impl_instrumented_repo!` invocation plus a `RepoStorage` field. |
-| Fake | `crates/logandaim-fakes/src/repository.rs` | A datastore map and the repository implementation over it. |
-| Fake UoW | `crates/logandaim-fakes/src/uow.rs` | Datastore snapshot, write back on `commit`, accessor. |
-| Migration | `crates/logandaim-sqlite/src/migrations/vNNNN_<begriff>.rs` | `UpMigration` with the table, registered in `MIGRATIONS`. |
-| SQLite repo | `crates/logandaim-sqlite/src/repos/<begriff>.rs` | Row parsing and saving, using the helpers in `repos/common.rs`. |
-| SQLite UoW | `crates/logandaim-sqlite/src/uow.rs` | Repository field plus accessor. |
-| API schema | `crates/logandaim-api/src/schema/<begriff>.rs` | OpenAPI DTOs and `From` conversions from the domain. |
-| API requests | `crates/logandaim-api/src/api/requests/<begriff>.rs` | Inbound DTOs and conversion into use-case inputs. Requests for the `konto` domain live in `requests/konto.rs`. |
-| API facade | `crates/logandaim-api/src/api/mod.rs` | One thin `LogandaimAppApi` method per operation. |
-| HTTP routes | `crates/logandaim-api/src/http/mod.rs` | The `#[oai]` route methods; HTTP auth, JWT, cookie, extractors, and responses live in `http/auth.rs`, `http/jwt.rs`, `http/cookie.rs`, `http/extractors.rs`, and `http/responses/`. |
-| Status mapping | `crates/logandaim-api/src/errors/http_status.rs` | `HttpStatusMapping` impls for the new error types. |
-| Shared cases | `crates/logandaim-core/tests/cases/<begriff>.rs` | Cases reused by the fake and SQLite harnesses. |
-| API e2e | `crates/logandaim-api/tests/e2e/<begriff>.rs` | HTTP-level assertions including status codes. |
-| Frontend contract | `frontend/src/api/logandaim-api.ts` | The interface method plus its types. |
+| Domain | `crates/friendarazzi-core/src/domain/<begriff>.rs` | Identity newtypes, the aggregate, its `Neues…` creation input, the `<Begriff>Fehler` enum, domain services, `#[cfg(test)]` unit tests. |
+| Domain exports | `crates/friendarazzi-core/src/domain/mod.rs` | `pub mod <begriff>;` plus re-exports, so callers use `crate::domain::<Begriff>`. |
+| Port | `crates/friendarazzi-core/src/application/ports/repos.rs` | The repository trait for the aggregate. Repositories only store and load. |
+| Use case | `crates/friendarazzi-core/src/service/use_cases/<begriff>.rs` | One struct per write implementing `UseCase`, plus its error enum. Reads run as one-off `execute_fn` closures in the API facade, with their error enum in `crates/friendarazzi-api/src/api/errors.rs`. |
+| Use case exports | `crates/friendarazzi-core/src/service/use_cases/mod.rs` | `mod <begriff>; pub use <begriff>::*;`. |
+| UoW facade | `crates/friendarazzi-core/src/application/uow.rs` | Accessor on `UnitOfWork`, on `UnitOfWorkImpl`, and on `LockedUnitOfWorkImpl`. |
+| Instrumented UoW | `crates/friendarazzi-core/src/application/instrumented.rs` | Accessor delegating to the instrumented wrapper. |
+| Instrumented repo | `crates/friendarazzi-core/src/application/instrumented_repos.rs` | One `impl_instrumented_repo!` invocation plus a `RepoStorage` field. |
+| Fake | `crates/friendarazzi-fakes/src/repository.rs` | A datastore map and the repository implementation over it. |
+| Fake UoW | `crates/friendarazzi-fakes/src/uow.rs` | Datastore snapshot, write back on `commit`, accessor. |
+| Migration | `crates/friendarazzi-sqlite/src/migrations/vNNNN_<begriff>.rs` | `UpMigration` with the table, registered in `MIGRATIONS`. |
+| SQLite repo | `crates/friendarazzi-sqlite/src/repos/<begriff>.rs` | Row parsing and saving, using the helpers in `repos/common.rs`. |
+| SQLite UoW | `crates/friendarazzi-sqlite/src/uow.rs` | Repository field plus accessor. |
+| API schema | `crates/friendarazzi-api/src/schema/<begriff>.rs` | OpenAPI DTOs and `From` conversions from the domain. |
+| API requests | `crates/friendarazzi-api/src/api/requests/<begriff>.rs` | Inbound DTOs and conversion into use-case inputs. Requests for the `konto` domain live in `requests/konto.rs`. |
+| API facade | `crates/friendarazzi-api/src/api/mod.rs` | One thin `FriendarazziAppApi` method per operation. |
+| HTTP routes | `crates/friendarazzi-api/src/http/mod.rs` | The `#[oai]` route methods; HTTP auth, JWT, cookie, extractors, and responses live in `http/auth.rs`, `http/jwt.rs`, `http/cookie.rs`, `http/extractors.rs`, and `http/responses/`. |
+| Status mapping | `crates/friendarazzi-api/src/errors/http_status.rs` | `HttpStatusMapping` impls for the new error types. |
+| Shared cases | `crates/friendarazzi-core/tests/cases/<begriff>.rs` | Cases reused by the fake and SQLite harnesses. |
+| API e2e | `crates/friendarazzi-api/tests/e2e/<begriff>.rs` | HTTP-level assertions including status codes. |
+| Frontend contract | `frontend/src/api/friendarazzi-api.ts` | The interface method plus its types. |
 | Frontend transport | `frontend/src/api/http-client.ts` | The `openapi-fetch` implementation. |
 | Frontend hooks | `frontend/src/api/hooks/mutations.ts` | Query/mutation hooks for the operation. |
 | Frontend page | `frontend/src/app/<begriff>/page.tsx` | The UI. |
 | Frontend nav | `frontend/src/lib/navigation.ts` | Path, sidebar item, breadcrumb label. |
 
 Module boundaries follow the **domain concept**, not the increment that introduced it.
-`schuss.rs` keeps growing as long as new code is about Schüsse, no matter which slice it
+`game.rs` keeps growing as long as new code is about Games, no matter which slice it
 ships in. Migrations are the exception: they are append-only and ordered by version.
 
 ## Order to work in
@@ -63,9 +63,9 @@ ships in. Migrations are the exception: they are append-only and ordered by vers
 6. **Migration + SQLite repo** — table first, then row parsing via `repos/common.rs`.
 7. **API** — schema DTOs (separate from the domain), request DTOs with `From`/`TryFrom`,
    facade methods, routes, status mapping.
-8. **Tests** — shared cases in `crates/logandaim-core/tests/cases/` (they run against the
+8. **Tests** — shared cases in `crates/friendarazzi-core/tests/cases/` (they run against the
    fakes *and* SQLite automatically), plus e2e for the HTTP surface.
-9. **Frontend** — interface method, `HttpLogandaimApi` implementation, hooks, page,
+9. **Frontend** — interface method, `HttpFriendarazziApi` implementation, hooks, page,
    navigation, then `mise run sync:openapi`.
 
 ## Why `RepoStorage` has that pointer wiring
@@ -96,10 +96,10 @@ Keep the deliberate layering: an orchestration error variant returns `None` from
 
 ## Frontend API seam
 
-`LogandaimApi` is an interface; `HttpLogandaimApi` is one implementation and
-`createLogandaimApi()` in `frontend/src/api/index.ts` is the only place that chooses it.
+`FriendarazziApi` is an interface; `HttpFriendarazziApi` is one implementation and
+`createFriendarazziApi()` in `frontend/src/api/index.ts` is the only place that chooses it.
 To run the core domain in the browser later (wasm), write a second class implementing
-`LogandaimApi` and change that one line. Do not add a second provider, a loading gate, or
+`FriendarazziApi` and change that one line. Do not add a second provider, a loading gate, or
 async config — `config` is static and carries the complete API base URL, prefix included.
 
 ## Frontend state rules

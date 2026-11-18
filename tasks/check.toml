@@ -2,7 +2,7 @@
 
 ["check:format"]
 description = "Check the formatting of the code"
-depends = ["LOGANDAIM_FMT_CHECK=true fmt:?*"]
+depends = ["FRIENDARAZZI_FMT_CHECK=true fmt:?*"]
 
 ["check:lint"]
 description = "Check the linting of the code"

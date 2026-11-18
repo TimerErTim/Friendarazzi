@@ -1,0 +1,1146 @@
+//! Typed facade between HTTP and use cases.
+
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use error_stack::{IntoReport, Report, ResultExt};
+use friendarazzi_core::{
+    App, ResultReport,
+    application::AuthContext,
+    domain::{
+        self, BenutzerId, BoardTileId, Capture, Game, GameAwards, GameId, InviteCode,
+        can_view_blurred_capture, can_view_full_capture, compute_game_awards,
+        target_quotas_for_author,
+    },
+    ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
+    service::{
+        Abmeldung, AbmeldungFehler, Anmeldung, AnmeldungFehler, BenutzerLöschen,
+        BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
+        LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
+        PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
+        RegistrierungAbschließen, RegistrierungStarten, RegistrierungStartenFehler,
+        SessionAusgestellt, StartDrafting, SubmitCapture, UploadAvatar,
+    },
+};
+use tracing::warn;
+
+pub mod errors;
+pub mod requests;
+
+use self::errors::{GameReadError, MediaReadError, ProfileReadError};
+use crate::schema::{
+    AuthenticatedBenutzer, BoardTileView, BoardView, CaptureFeedItem, CaptureOutcome,
+    DraftTargetQuota, GalleryGameGroup, GameDetail, GameSummary, GridCoordinate, PlayerBadge,
+    PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView, UserGallery, UserProfile,
+};
+
+#[derive(Clone)]
+pub struct FriendarazziAppApi {
+    app: Arc<App>,
+}
+
+impl FriendarazziAppApi {
+    pub fn new(app: App) -> Self {
+        Self::from_arc(Arc::new(app))
+    }
+
+    pub fn from_arc(app: Arc<App>) -> Self {
+        Self { app }
+    }
+
+    pub fn inner_app(&self) -> Arc<App> {
+        self.app.clone()
+    }
+
+    // ---------------------------------------------------------------- Decks
+
+    pub async fn decks_list(
+        &self,
+        auth: AuthContext,
+    ) -> ResultReport<Vec<StarterDeck>, GameReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let _user_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let decks = uow
+                        .decks()
+                        .find_all()
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameReadError::Persistence)?;
+                    Ok::<_, Report<GameReadError>>(
+                        decks
+                            .into_iter()
+                            .map(|d| StarterDeck {
+                                id: d.id.0,
+                                slug: d.slug,
+                                name: d.name,
+                                description: d.description,
+                                prompts: d.prompts,
+                            })
+                            .collect(),
+                    )
+                }
+                .await;
+                uow.finish(res, GameReadError::Persistence).await
+            })
+            .await
+    }
+
+    // ---------------------------------------------------------------- Games
+
+    pub async fn games_list(
+        &self,
+        auth: AuthContext,
+    ) -> ResultReport<Vec<GameSummary>, GameReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let user_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let games = uow
+                        .games()
+                        .find_by_participating_user(user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameReadError::Persistence)?;
+
+                    let mut summaries = Vec::with_capacity(games.len());
+                    for game in games {
+                        let game = game.into_data();
+                        let winner = match &game {
+                            Game::Completed(c) => {
+                                let winner_id = c.winner_user_id();
+                                uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
+                                    badge_from_benutzer(
+                                        &b.into_data(),
+                                        false,
+                                        game.host_user_id() == winner_id,
+                                    )
+                                })
+                            }
+                            Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
+                        };
+                        summaries.push(game_to_summary(&game, winner));
+                    }
+                    Ok::<_, Report<GameReadError>>(summaries)
+                }
+                .await;
+                uow.finish(res, GameReadError::Persistence).await
+            })
+            .await
+    }
+
+    pub async fn game_by_invite_code(
+        &self,
+        auth: AuthContext,
+        code: String,
+    ) -> ResultReport<GameSummary, GameReadError> {
+        let invite_code = InviteCode::new(code).change_context(GameReadError::BadRequest)?;
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let _user_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let game = match uow.games().find_by_invite_code(&invite_code).await {
+                        Ok(g) => g.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(GameReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
+                    };
+                    let winner = match &game {
+                        Game::Completed(c) => {
+                            let winner_id = c.winner_user_id();
+                            uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
+                                badge_from_benutzer(
+                                    &b.into_data(),
+                                    false,
+                                    game.host_user_id() == winner_id,
+                                )
+                            })
+                        }
+                        Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
+                    };
+                    Ok::<_, Report<GameReadError>>(game_to_summary(&game, winner))
+                }
+                .await;
+                uow.finish(res, GameReadError::Persistence).await
+            })
+            .await
+    }
+
+    pub async fn game_create(
+        &self,
+        auth: AuthContext,
+        req: requests::CreateGameRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case()?;
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_join(
+        &self,
+        auth: AuthContext,
+        req: requests::JoinGameRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case()?;
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_update_settings(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::UpdateGameSettingsRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case(game_id)?;
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_start_drafting(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let game = self.app.execute(auth, StartDrafting { game_id }).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_save_prompts(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::SaveDraftPromptsRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case(game_id)?;
+        self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game_id, GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_lock_prompts(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let game = self.app.execute(auth, LockDraftPrompts { game_id }).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    async fn load_game_detail_after_write<E: friendarazzi_core::ThreadSafeError>(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        fallback_err: E,
+    ) -> ResultReport<GameDetail, E> {
+        self.game_detail(auth, game_id)
+            .await
+            .map_err(|err| err.change_context(fallback_err))
+    }
+
+    pub async fn game_detail(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let game = match uow.games().find_by_id(game_id).await {
+                        Ok(g) => g.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(GameReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
+                    };
+
+                    if !game.has_player(viewer_id) {
+                        return Err(Report::new(GameReadError::Forbidden));
+                    }
+
+                    let player_ids = game.sorted_player_ids();
+                    let users = uow
+                        .benutzer()
+                        .find_by_ids(&player_ids)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameReadError::Persistence)?;
+
+                    let badges = build_badge_map(&game, users.into_iter().map(|b| b.into_data()));
+                    let player_badges: Vec<PlayerBadge> = player_ids
+                        .iter()
+                        .filter_map(|pid| badges.get(pid).cloned())
+                        .collect();
+
+                    let (started_at, ended_at, winner) = match &game {
+                        Game::Lobby(_) | Game::Drafting(_) => (None, None, None),
+                        Game::Active(a) => (Some(a.started_at()), None, None),
+                        Game::Completed(c) => (
+                            Some(c.started_at()),
+                            Some(c.ended_at()),
+                            badges.get(&c.winner_user_id()).cloned(),
+                        ),
+                    };
+
+                    // Drafting quotas & caller's saved drafts
+                    let (my_quotas, my_drafts) = if let Game::Drafting(drafting) = &game {
+                        let quotas = target_quotas_for_author(
+                            &player_ids,
+                            viewer_id,
+                            drafting.playable_tile_count(),
+                        )
+                        .map_err(|e| e.change_context(GameReadError::Persistence))?;
+                        let quota_views = quotas
+                            .into_iter()
+                            .filter_map(|(target_id, count)| {
+                                badges
+                                    .get(&target_id)
+                                    .cloned()
+                                    .map(|badge| DraftTargetQuota {
+                                        target_user: badge,
+                                        required_count: count as u32,
+                                    })
+                            })
+                            .collect();
+                        let drafts = drafting
+                            .prompts_by_author(viewer_id)
+                            .into_iter()
+                            .map(|p| PromptSubmissionView {
+                                id: p.id.0,
+                                target_user_id: p.target_user_id.0,
+                                text: p.text.as_str().to_owned(),
+                                source: p.source.into(),
+                            })
+                            .collect();
+                        (quota_views, drafts)
+                    } else {
+                        (Vec::new(), Vec::new())
+                    };
+
+                    // Boards & Captures
+                    let mut my_board = None;
+                    let mut all_boards = Vec::new();
+                    let mut feed = Vec::new();
+                    let mut superlatives = Vec::new();
+
+                    if matches!(&game, Game::Active(_) | Game::Completed(_)) {
+                        let is_completed = matches!(&game, Game::Completed(_));
+                        let boards = uow
+                            .boards()
+                            .find_by_game(game_id)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(GameReadError::Persistence)?;
+                        let captures: Vec<Capture> = uow
+                            .captures()
+                            .find_by_game(game_id)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(GameReadError::Persistence)?
+                            .into_iter()
+                            .map(|c| c.into_data())
+                            .collect();
+
+                        let capture_by_id: HashMap<_, _> =
+                            captures.iter().map(|c| (c.id(), c)).collect();
+
+                        for b in boards {
+                            let b = b.into_data();
+                            let owner_id = b.owner_user_id();
+                            let is_mine = owner_id == viewer_id;
+                            if !is_mine && !is_completed {
+                                continue;
+                            }
+                            let Some(owner_badge) = badges.get(&owner_id).cloned() else {
+                                continue;
+                            };
+
+                            let tile_views = b
+                                .tiles()
+                                .iter()
+                                .filter_map(|t| {
+                                    let target_user = badges.get(&t.target_user_id())?.clone();
+                                    let cap =
+                                        t.capture_id().and_then(|cid| capture_by_id.get(&cid));
+                                    let show_photo = cap.is_some_and(|c| {
+                                        can_view_full_capture(&game, c, viewer_id)
+                                    });
+                                    Some(BoardTileView {
+                                        id: t.id().0,
+                                        row: t.row(),
+                                        col: t.col(),
+                                        prompt_text: t.prompt_text().as_str().to_owned(),
+                                        target_user,
+                                        is_captured: t.capture_id().is_some(),
+                                        capture_id: t.capture_id().map(|c| c.0),
+                                        image_storage_key: if show_photo {
+                                            cap.map(|c| c.image_storage_key().to_owned())
+                                        } else {
+                                            None
+                                        },
+                                        captured_at: cap.map(|c| c.captured_at()),
+                                    })
+                                })
+                                .collect();
+
+                            let view = BoardView {
+                                id: b.id().0,
+                                owner: owner_badge,
+                                has_bingo: b.has_bingo(),
+                                tiles: tile_views,
+                            };
+                            if is_mine {
+                                my_board = Some(view.clone());
+                            }
+                            if is_completed {
+                                all_boards.push(view);
+                            }
+                        }
+
+                        for cap in &captures {
+                            if let Some(item) = capture_to_feed_item(&game, &badges, cap, viewer_id)
+                            {
+                                feed.push(item);
+                            }
+                        }
+
+                        if let Game::Completed(completed) = &game
+                            && let Some(awards) =
+                                compute_game_awards(&player_ids, &captures, completed.started_at())
+                        {
+                            superlatives = awards_to_superlatives(awards, &badges);
+                        }
+                    }
+
+                    Ok::<_, Report<GameReadError>>(GameDetail {
+                        id: game.id().0,
+                        invite_code: game.invite_code().as_str().to_owned(),
+                        host_user_id: game.host_user_id().0,
+                        title: game.title().as_str().to_owned(),
+                        grid_size: game.grid_size() as u8,
+                        visibility_mode: game.visibility_mode().into(),
+                        status: (&game).into(),
+                        playable_tile_count: game.playable_tile_count() as u32,
+                        started_at,
+                        ended_at,
+                        winner,
+                        created_at: game.created_at(),
+                        players: player_badges,
+                        my_quotas,
+                        my_drafts,
+                        my_board,
+                        all_boards,
+                        feed,
+                        superlatives,
+                    })
+                }
+                .await;
+                uow.finish(res, GameReadError::Persistence).await
+            })
+            .await
+    }
+
+    // ---------------------------------------------------------------- Captures
+
+    pub async fn capture_submit(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        tile_id: BoardTileId,
+        image_bytes: Vec<u8>,
+    ) -> ResultReport<CaptureOutcome, CaptureUseCaseError> {
+        let outcome = self
+            .app
+            .execute(
+                auth,
+                SubmitCapture {
+                    game_id,
+                    tile_id,
+                    image_bytes,
+                },
+            )
+            .await?;
+
+        let viewer_id = auth
+            .require_benutzer_id()
+            .change_context(CaptureUseCaseError::Unauthorized)?;
+
+        // Load badges for the returned capture item
+        let item = self
+            .app
+            .execute_fn(auth, async |ctx| {
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(CaptureUseCaseError::Persistence)?;
+                let res = async {
+                    let game = uow
+                        .games()
+                        .find_by_id(game_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(CaptureUseCaseError::Persistence)?
+                        .into_data();
+                    let ids = game.sorted_player_ids();
+                    let users = uow
+                        .benutzer()
+                        .find_by_ids(&ids)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(CaptureUseCaseError::Persistence)?;
+                    let badges = build_badge_map(&game, users.into_iter().map(|b| b.into_data()));
+                    let item = capture_to_feed_item(&game, &badges, &outcome.capture, viewer_id)
+                        .ok_or_else(|| Report::new(CaptureUseCaseError::Persistence))?;
+                    Ok::<_, Report<CaptureUseCaseError>>(item)
+                }
+                .await;
+                uow.finish(res, CaptureUseCaseError::Persistence).await
+            })
+            .await?;
+
+        Ok(CaptureOutcome {
+            capture: item,
+            winning_line: outcome
+                .winning_line
+                .map(|line| line.into_iter().map(GridCoordinate::from).collect()),
+        })
+    }
+
+    // ---------------------------------------------------------------- Profiles & Galleries
+
+    pub async fn profile_get(
+        &self,
+        auth: AuthContext,
+        target_user_id: BenutzerId,
+    ) -> ResultReport<UserProfile, ProfileReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let _viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(ProfileReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(ProfileReadError::Persistence)?;
+                let res = async {
+                    let benutzer = match uow.benutzer().find_by_id(target_user_id).await {
+                        Ok(p) => p.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(ProfileReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(ProfileReadError::Persistence),
+                    };
+
+                    let games = uow
+                        .games()
+                        .find_by_participating_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let caught = uow
+                        .captures()
+                        .find_by_target_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let captured = uow
+                        .captures()
+                        .find_by_catcher_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+
+                    Ok::<_, Report<ProfileReadError>>(profile_to_schema(
+                        &benutzer,
+                        games.len() as u32,
+                        captured.len() as u32,
+                        caught.len() as u32,
+                    ))
+                }
+                .await;
+                uow.finish(res, ProfileReadError::Persistence).await
+            })
+            .await
+    }
+
+    pub async fn profile_update(
+        &self,
+        auth: AuthContext,
+        req: requests::UpdateProfileRequest,
+    ) -> ResultReport<UserProfile, ProfileUseCaseError> {
+        let uc = req.into_use_case()?;
+        let updated = self.app.execute(auth, uc).await?;
+        self.profile_get(auth, updated.id())
+            .await
+            .map_err(|e| e.change_context(ProfileUseCaseError::Persistence))
+    }
+
+    pub async fn profile_upload_avatar(
+        &self,
+        auth: AuthContext,
+        image_bytes: Vec<u8>,
+    ) -> ResultReport<UserProfile, ProfileUseCaseError> {
+        let updated = self.app.execute(auth, UploadAvatar { image_bytes }).await?;
+        self.profile_get(auth, updated.id())
+            .await
+            .map_err(|e| e.change_context(ProfileUseCaseError::Persistence))
+    }
+
+    pub async fn user_gallery(
+        &self,
+        auth: AuthContext,
+        target_user_id: BenutzerId,
+    ) -> ResultReport<UserGallery, ProfileReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(ProfileReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(ProfileReadError::Persistence)?;
+                let res = async {
+                    let target_benutzer = match uow.benutzer().find_by_id(target_user_id).await {
+                        Ok(p) => p.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(ProfileReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(ProfileReadError::Persistence),
+                    };
+
+                    let games = uow
+                        .games()
+                        .find_by_participating_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let caught_all: Vec<Capture> = uow
+                        .captures()
+                        .find_by_target_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?
+                        .into_iter()
+                        .map(|c| c.into_data())
+                        .collect();
+                    let captured_all: Vec<Capture> = uow
+                        .captures()
+                        .find_by_catcher_user(target_user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?
+                        .into_iter()
+                        .map(|c| c.into_data())
+                        .collect();
+
+                    type CachedGame = (Game, HashMap<BenutzerId, PlayerBadge>);
+                    let mut game_cache: HashMap<GameId, CachedGame> = HashMap::new();
+                    let mut all_game_ids: HashSet<GameId> = HashSet::new();
+                    for c in caught_all.iter().chain(captured_all.iter()) {
+                        all_game_ids.insert(c.game_id());
+                    }
+
+                    for gid in all_game_ids {
+                        let Ok(game) = uow.games().find_by_id(gid).await else {
+                            continue;
+                        };
+                        let game = game.into_data();
+                        let ids = game.sorted_player_ids();
+                        let users = uow
+                            .benutzer()
+                            .find_by_ids(&ids)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(ProfileReadError::Persistence)?;
+                        let badges =
+                            build_badge_map(&game, users.into_iter().map(|b| b.into_data()));
+                        game_cache.insert(gid, (game, badges));
+                    }
+
+                    let group_captures = |list: &[Capture]| -> Vec<GalleryGameGroup> {
+                        let mut by_game: HashMap<GameId, Vec<CaptureFeedItem>> = HashMap::new();
+                        for cap in list {
+                            let Some((game, badges)) = game_cache.get(&cap.game_id()) else {
+                                continue;
+                            };
+                            // Only show full-resolution unredacted memories in galleries once visible!
+                            if !can_view_full_capture(game, cap, viewer_id) {
+                                continue;
+                            }
+                            if let Some(item) = capture_to_feed_item(game, badges, cap, viewer_id) {
+                                by_game.entry(game.id()).or_default().push(item);
+                            }
+                        }
+
+                        let mut groups: Vec<GalleryGameGroup> = by_game
+                            .into_iter()
+                            .filter_map(|(gid, mut photos)| {
+                                let (game, badges) = game_cache.get(&gid)?;
+                                photos.sort_by_key(|p| std::cmp::Reverse(p.captured_at));
+                                let (started_at, ended_at, winner) = match game {
+                                    Game::Lobby(_) | Game::Drafting(_) => (None, None, None),
+                                    Game::Active(a) => (Some(a.started_at()), None, None),
+                                    Game::Completed(c) => (
+                                        Some(c.started_at()),
+                                        Some(c.ended_at()),
+                                        badges.get(&c.winner_user_id()).cloned(),
+                                    ),
+                                };
+                                Some(GalleryGameGroup {
+                                    game_id: game.id().0,
+                                    game_title: game.title().as_str().to_owned(),
+                                    started_at,
+                                    ended_at,
+                                    winner,
+                                    photos,
+                                })
+                            })
+                            .collect();
+                        groups.sort_by_key(|g| std::cmp::Reverse(g.ended_at.or(g.started_at)));
+                        groups
+                    };
+
+                    let caught_groups = group_captures(&caught_all);
+                    let captured_groups = group_captures(&captured_all);
+
+                    Ok::<_, Report<ProfileReadError>>(UserGallery {
+                        user: profile_to_schema(
+                            &target_benutzer,
+                            games.len() as u32,
+                            captured_all.len() as u32,
+                            caught_all.len() as u32,
+                        ),
+                        caught: caught_groups,
+                        captured: captured_groups,
+                    })
+                }
+                .await;
+                uow.finish(res, ProfileReadError::Persistence).await
+            })
+            .await
+    }
+
+    // ---------------------------------------------------------------- Media
+
+    pub async fn media_get(
+        &self,
+        auth: AuthContext,
+        storage_key: String,
+    ) -> ResultReport<ObjectStream, MediaReadError> {
+        if storage_key.is_empty()
+            || storage_key.contains('/')
+            || storage_key.contains("..")
+            || storage_key.contains('\\')
+        {
+            return Err(Report::new(MediaReadError::NotFound));
+        }
+
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(MediaReadError::Unauthorized)?;
+
+                if !storage_key.starts_with("avatar_") {
+                    let uow = ctx.enter().await.change_context(MediaReadError::Storage)?;
+                    let allowed = async {
+                        let capture = match uow.captures().find_by_storage_key(&storage_key).await {
+                            Ok(c) => c.into_data(),
+                            Err(err)
+                                if matches!(err.current_context(), RepositoryError::NotFound) =>
+                            {
+                                return Err(Report::new(MediaReadError::NotFound));
+                            }
+                            Err(err) => return Err(err).change_context(MediaReadError::Storage),
+                        };
+                        let game = uow
+                            .games()
+                            .find_by_id(capture.game_id())
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .change_context(MediaReadError::Storage)?
+                            .into_data();
+
+                        let permitted = if storage_key == capture.thumbnail_storage_key() {
+                            can_view_blurred_capture(&game, &capture, viewer_id)
+                        } else {
+                            can_view_full_capture(&game, &capture, viewer_id)
+                        };
+                        if !permitted {
+                            return Err(Report::new(MediaReadError::Forbidden));
+                        }
+                        Ok::<_, Report<MediaReadError>>(())
+                    }
+                    .await;
+                    uow.finish(allowed, MediaReadError::Storage).await?;
+                }
+
+                let stream = ctx
+                    .object_store()
+                    .get(&storage_key)
+                    .await
+                    .change_context(MediaReadError::Storage)?
+                    .ok_or_else(|| Report::new(MediaReadError::NotFound))?;
+                Ok(stream)
+            })
+            .await
+    }
+
+    // ---------------------------------------------------------------- Registration & Login
+
+    pub async fn registrierung_starten(
+        &self,
+        anfrage: requests::RegistrierungStartRequest,
+        client_key: ClientKey,
+    ) -> ResultReport<(), RegistrierungStartenFehler> {
+        let use_case: RegistrierungStarten = anfrage.in_use_case(client_key)?;
+        self.app.execute(AuthContext::Anonymous, use_case).await
+    }
+
+    pub async fn registrierung_abschließen(
+        &self,
+        anfrage: requests::RegistrierungAbschlussRequest,
+        client_key: ClientKey,
+    ) -> ResultReport<SessionAusgestellt, RegistrierungAbschliessenFehler> {
+        let use_case: RegistrierungAbschließen = anfrage.in_use_case(client_key)?;
+        let ausgestellt = self.app.execute(AuthContext::Anonymous, use_case).await?;
+        Ok(ausgestellt)
+    }
+
+    pub async fn anmelden(
+        &self,
+        anfrage: requests::AnmeldungRequest,
+        client_key: ClientKey,
+    ) -> ResultReport<SessionAusgestellt, AnmeldungFehler> {
+        let use_case: Anmeldung = anfrage.in_use_case(client_key)?;
+        let ausgestellt = self.app.execute(AuthContext::Anonymous, use_case).await?;
+        Ok(ausgestellt)
+    }
+
+    pub async fn session_erneuern(
+        &self,
+        refresh_token: String,
+        client_key: ClientKey,
+    ) -> ResultReport<SessionAusgestellt, ErneuerungFehler> {
+        let jetzt = self.app.clock.now();
+        self.app
+            .throttle
+            .check(&client_key, ThrottleAction::Erneuerung, jetzt)
+            .await
+            .change_context(ErneuerungFehler::Gedrosselt)?;
+
+        let refresh_token = match friendarazzi_core::domain::konto::RefreshToken::try_from(
+            refresh_token,
+        ) {
+            Ok(token) => token,
+            Err(err) => {
+                if let Err(fehler) = self
+                    .app
+                    .throttle
+                    .increment(&client_key, ThrottleAction::Erneuerung, jetzt)
+                    .await
+                {
+                    warn!(fehler = %fehler, "der Erneuerungsversuch konnte nicht gezählt werden");
+                }
+                return Err(Report::new(err).change_context(ErneuerungFehler::SessionUngültig));
+            }
+        };
+
+        let ausgestellt = self
+            .app
+            .execute(
+                AuthContext::Anonymous,
+                Erneuerung {
+                    refresh_token,
+                    client_key,
+                },
+            )
+            .await?;
+        Ok(ausgestellt)
+    }
+
+    pub async fn abmelden(&self, auth: AuthContext) -> ResultReport<(), AbmeldungFehler> {
+        self.app.execute(auth, Abmeldung).await
+    }
+
+    pub async fn passwort_vergessen(
+        &self,
+        anfrage: requests::PasswortVergessenRequest,
+        client_key: ClientKey,
+    ) -> ResultReport<(), PasswortVergessenFehler> {
+        let use_case: PasswortVergessen = anfrage.in_use_case(client_key)?;
+        self.app.execute(AuthContext::Anonymous, use_case).await
+    }
+
+    pub async fn passwort_wiederherstellen(
+        &self,
+        anfrage: requests::PasswortWiederherstellenRequest,
+    ) -> ResultReport<(), PasswortWiederherstellenFehler> {
+        let use_case: PasswortWiederherstellen = anfrage.in_use_case()?;
+        self.app.execute(AuthContext::Anonymous, use_case).await
+    }
+
+    pub async fn benutzer_anzeigen(
+        &self,
+        auth: AuthContext,
+    ) -> ResultReport<AuthenticatedBenutzer, ProfileReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let benutzer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(ProfileReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(ProfileReadError::Persistence)?;
+                let ergebnis = async {
+                    let benutzer = match uow.benutzer().find_by_id(benutzer_id).await {
+                        Ok(b) => b.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(ProfileReadError::NotFound));
+                        }
+                        Err(err) => {
+                            return Err(err).change_context(ProfileReadError::Persistence);
+                        }
+                    };
+                    Ok(benutzer)
+                }
+                .await;
+                let benutzer = uow.finish(ergebnis, ProfileReadError::Persistence).await?;
+                Ok(benutzer.into())
+            })
+            .await
+    }
+
+    pub async fn benutzer_löschen(
+        &self,
+        auth: AuthContext,
+        anfrage: requests::BenutzerLoeschungRequest,
+    ) -> ResultReport<(), BenutzerLöschenFehler> {
+        let use_case: BenutzerLöschen = anfrage.in_use_case()?;
+        self.app.execute(auth, use_case).await
+    }
+}
+
+fn game_to_summary(game: &Game, winner: Option<PlayerBadge>) -> GameSummary {
+    let (started_at, ended_at) = match game {
+        Game::Lobby(_) | Game::Drafting(_) => (None, None),
+        Game::Active(a) => (Some(a.started_at()), None),
+        Game::Completed(c) => (Some(c.started_at()), Some(c.ended_at())),
+    };
+    GameSummary {
+        id: game.id().0,
+        invite_code: game.invite_code().as_str().to_owned(),
+        title: game.title().as_str().to_owned(),
+        grid_size: game.grid_size() as u8,
+        visibility_mode: game.visibility_mode().into(),
+        status: game.into(),
+        player_count: game.players().len() as u32,
+        winner,
+        started_at,
+        ended_at,
+        created_at: game.created_at(),
+    }
+}
+
+fn awards_to_superlatives(
+    awards: GameAwards,
+    badges: &HashMap<BenutzerId, PlayerBadge>,
+) -> Vec<SuperlativeView> {
+    let entries = [
+        (
+            SuperlativeKind::MostWanted,
+            awards.most_wanted.user_id,
+            awards.most_wanted.metric_value,
+            None,
+        ),
+        (
+            SuperlativeKind::Ghost,
+            awards.ghost.user_id,
+            awards.ghost.metric_value,
+            None,
+        ),
+        (
+            SuperlativeKind::QuickestDraw,
+            awards.quickest_draw.user_id,
+            awards.quickest_draw.metric_value,
+            Some(awards.quickest_draw.capture_id.0),
+        ),
+        (
+            SuperlativeKind::Sniper,
+            awards.sniper.user_id,
+            awards.sniper.metric_value,
+            None,
+        ),
+    ];
+    entries
+        .into_iter()
+        .filter_map(|(kind, user_id, metric_value, capture_id)| {
+            badges.get(&user_id).cloned().map(|user| SuperlativeView {
+                kind,
+                user,
+                metric_value,
+                capture_id,
+            })
+        })
+        .collect()
+}
+
+fn badge_from_benutzer(
+    benutzer: &domain::Benutzer,
+    draft_locked: bool,
+    is_host: bool,
+) -> PlayerBadge {
+    let effective_title = benutzer.effective_title().to_owned();
+    PlayerBadge {
+        id: benutzer.id().0,
+        display_name: benutzer.display_name().as_str().to_owned(),
+        avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
+        gold_medal_count: benutzer.gold_medal_count(),
+        effective_title,
+        draft_locked,
+        is_host,
+    }
+}
+
+fn build_badge_map(
+    game: &Game,
+    users: impl Iterator<Item = domain::Benutzer>,
+) -> HashMap<BenutzerId, PlayerBadge> {
+    let user_map: HashMap<BenutzerId, domain::Benutzer> = users.map(|b| (b.id(), b)).collect();
+    let draft_locked = match game {
+        Game::Drafting(d) => Some(d.draft_locked()),
+        Game::Lobby(_) | Game::Active(_) | Game::Completed(_) => None,
+    };
+    let mut out = HashMap::new();
+    for player in game.players() {
+        let is_locked = draft_locked.is_some_and(|set| set.contains(&player.user_id));
+        if let Some(b) = user_map.get(&player.user_id) {
+            out.insert(
+                player.user_id,
+                badge_from_benutzer(b, is_locked, game.host_user_id() == player.user_id),
+            );
+        } else {
+            out.insert(
+                player.user_id,
+                PlayerBadge {
+                    id: player.user_id.0,
+                    display_name: "Spieler".to_owned(),
+                    avatar_storage_key: None,
+                    gold_medal_count: 0,
+                    effective_title: "Neuling".to_owned(),
+                    draft_locked: is_locked,
+                    is_host: game.host_user_id() == player.user_id,
+                },
+            );
+        }
+    }
+    out
+}
+
+fn capture_to_feed_item(
+    game: &Game,
+    badges: &HashMap<BenutzerId, PlayerBadge>,
+    cap: &Capture,
+    viewer_id: BenutzerId,
+) -> Option<CaptureFeedItem> {
+    let can_full = can_view_full_capture(game, cap, viewer_id);
+    let can_blurred = can_view_blurred_capture(game, cap, viewer_id);
+
+    if !can_blurred {
+        return None;
+    }
+
+    let catcher = badges.get(&cap.catcher_user_id())?.clone();
+    if can_full {
+        Some(CaptureFeedItem {
+            id: cap.id().0,
+            tile_id: cap.tile_id().0,
+            catcher,
+            target: badges.get(&cap.target_user_id()).cloned(),
+            prompt_text: Some(cap.prompt_text().as_str().to_owned()),
+            image_storage_key: Some(cap.image_storage_key().to_owned()),
+            thumbnail_storage_key: cap.thumbnail_storage_key().to_owned(),
+            captured_at: cap.captured_at(),
+            is_blurred: false,
+        })
+    } else {
+        // BlurredTeaser mode during active play: reveal teaser thumbnail & timestamp without target/prompt!
+        Some(CaptureFeedItem {
+            id: cap.id().0,
+            tile_id: cap.tile_id().0,
+            catcher,
+            target: None,
+            prompt_text: None,
+            image_storage_key: None,
+            thumbnail_storage_key: cap.thumbnail_storage_key().to_owned(),
+            captured_at: cap.captured_at(),
+            is_blurred: true,
+        })
+    }
+}
+
+fn profile_to_schema(
+    benutzer: &domain::Benutzer,
+    games_played: u32,
+    captures_made: u32,
+    times_caught: u32,
+) -> UserProfile {
+    UserProfile {
+        id: benutzer.id().0,
+        display_name: benutzer.display_name().as_str().to_owned(),
+        avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
+        gold_medal_count: benutzer.gold_medal_count(),
+        equipped_title: benutzer.equipped_title().map(str::to_owned),
+        effective_title: benutzer.effective_title().to_owned(),
+        unlocked_titles: benutzer
+            .unlocked_titles()
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        games_played,
+        captures_made,
+        times_caught,
+    }
+}

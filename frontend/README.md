@@ -1,6 +1,6 @@
 # Frontend
 
-The user interface is a TypeScript React app built with [Next.js](https://nextjs.org/). It runs as a web application and talks to `logandaim-server` over HTTP.
+The user interface is a TypeScript React app built with [Next.js](https://nextjs.org/). It runs as a web application and talks to `friendarazzi-server` over HTTP.
 
 ## Development
 
@@ -11,7 +11,7 @@ mise run dev:server
 mise run dev:frontend
 ```
 
-The server task starts Mailpit. Open its web UI at `http://127.0.0.1:8025` to read registration and password-recovery mail. For local authentication, keep the browser app and API on the same hostname (`localhost`): the refresh token is an API-host-only cookie, while the access token stays in frontend memory. The defaults use `http://localhost:3001` for the app and `http://localhost:3000/api` for the API.
+The server task starts Mailpit. Open its web UI at `http://127.0.0.1:8034` to read registration and password-recovery mail. For local authentication, keep the browser app and API on the same hostname (`localhost`): the refresh token is an API-host-only cookie, while the access token stays in frontend memory. The defaults use `http://localhost:3001` for the app and `http://localhost:3000/api` for the API.
 
 ## Building
 
@@ -25,7 +25,7 @@ static export.
 
 ## Design system
 
-**Read [`.cursor/rules/design-system.mdc`](../.cursor/rules/design-system.mdc) before changing UI.**
+**Read [`.agents/skills/design-system/SKILL.md`](../.agents/skills/design-system/SKILL.md) before changing UI.**
 It is the operative rulebook — tokens, components, accessibility, screen composition. Rationale and
 history are in [`specs/product/visual-identity.md`](../specs/product/visual-identity.md); do not
 restate either document here.
@@ -47,7 +47,7 @@ The favicon set and the web manifest are the single copy in `public/`
 brand assets are one set, not a second file-convention copy.
 
 `src/app/layout.tsx` links them explicitly and prefixes every URL with
-`NEXT_PUBLIC_LOGANDAIM_BASE_PATH`. Next applies the base path to file-convention metadata it
+`NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH`. Next applies the base path to file-convention metadata it
 generates itself, but not to hand-written `metadata.icons` / `metadata.manifest` URLs, so the
 prefix has to be added by hand. Manifest icon and `start_url` entries are relative on purpose:
 they resolve against the manifest's own URL and follow the deployment prefix without help.
@@ -61,9 +61,9 @@ There is no runtime configuration file: every value is a `NEXT_PUBLIC_*` variabl
 
 | Variable | Purpose |
 | --- | --- |
-| `NEXT_PUBLIC_LOGANDAIM_API_URL` | Base URL the browser sends requests to. Required; the Pages deploy fails without it, `mise run dev:frontend` sets `http://127.0.0.1:3000/api`. |
-| `NEXT_PUBLIC_LOGANDAIM_DEV` | `true` enables TanStack Query devtools outside development. |
-| `NEXT_PUBLIC_LOGANDAIM_BASE_PATH` | Base path of the deployment (`/logandaim.at` for the project site, empty at a custom domain). |
+| `NEXT_PUBLIC_FRIENDARAZZI_API_URL` | Base URL the browser sends requests to. Required; the Pages deploy fails without it, `mise run dev:frontend` sets `http://127.0.0.1:3000/api`. |
+| `NEXT_PUBLIC_FRIENDARAZZI_DEV` | `true` enables TanStack Query devtools outside development. |
+| `NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH` | Base path of the deployment (`/Friendarazzi` for the project site, empty at a custom domain). |
 
 Because these are baked into the export, changing one needs a rebuild; `mise run --force build:frontend` skips the task cache.
 

@@ -6,7 +6,7 @@ import { contentLines, readChangelog, sectionContent } from "./changelog.mjs";
 import { gh } from "./gh.mjs";
 
 export const resolveRepo = () => {
-  const explicit = process.env.LOGANDAIM_REPO || process.env.GITHUB_REPOSITORY;
+  const explicit = process.env.FRIENDARAZZI_REPO || process.env.GITHUB_REPOSITORY;
   if (explicit) return explicit;
 
   // CI checks out `origin`; a jj workspace may name it `github`. Never guess a
@@ -26,7 +26,7 @@ export const resolveRepo = () => {
     .replace(/^https:\/\/github\.com\//, "")
     .replace(/\.git$/, "");
 
-  if (!repo) throw new Error("cannot determine the GitHub repository; set LOGANDAIM_REPO");
+  if (!repo) throw new Error("cannot determine the GitHub repository; set FRIENDARAZZI_REPO");
   return repo;
 };
 

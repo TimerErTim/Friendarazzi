@@ -1,28 +1,20 @@
 /** Hierarchical keys for TanStack Query — invalidate at the right granularity. */
-export const logandaimKeys = {
-  root: ["logandaim.at"] as const,
-  health: () => [...logandaimKeys.root, "health"] as const,
-  benutzer: () => [...logandaimKeys.root, "benutzer"] as const,
-  anlagen: {
-    all: () => [...logandaimKeys.root, "anlagen"] as const,
-    detail: (id: string) => [...logandaimKeys.anlagen.all(), id] as const,
-    benutzerSuche: (anlageId: string, email: string) =>
-      [
-        ...logandaimKeys.anlagen.detail(anlageId),
-        "benutzer-suche",
-        email,
-      ] as const,
+export const friendarazziKeys = {
+  root: ["friendarazzi"] as const,
+  health: () => [...friendarazziKeys.root, "health"] as const,
+  benutzer: () => [...friendarazziKeys.root, "benutzer"] as const,
+  decks: () => [...friendarazziKeys.root, "decks"] as const,
+  games: {
+    all: () => [...friendarazziKeys.root, "games"] as const,
+    detail: (id: string) => [...friendarazziKeys.games.all(), id] as const,
+    byCode: (code: string) =>
+      [...friendarazziKeys.games.all(), "by-code", code] as const,
   },
-  parkour: {
-    /** The public list (AC-13). */
-    all: () => [...logandaimKeys.root, "parkour"] as const,
+  profiles: {
+    all: () => [...friendarazziKeys.root, "profiles"] as const,
+    detail: (id: string) => [...friendarazziKeys.profiles.all(), id] as const,
+    gallery: (id: string) =>
+      [...friendarazziKeys.profiles.all(), id, "gallery"] as const,
   },
-  anlagenVerzeichnis: {
-    /** The public Anlagen directory: readable without a session. */
-    all: () => [...logandaimKeys.root, "anlagen-verzeichnis"] as const,
-  },
-  runden: {
-    all: () => [...logandaimKeys.root, "runden"] as const,
-    detail: (id: string) => [...logandaimKeys.runden.all(), id] as const,
-  },
+  media: (key: string) => [...friendarazziKeys.root, "media", key] as const,
 };

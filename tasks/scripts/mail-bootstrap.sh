@@ -16,7 +16,7 @@
 set -Eeuo pipefail
 
 # The checkout holds `compose.yaml`; `data/` and `secrets/` sit beside it.
-deploy_dir="${VPS_DEPLOY_DIR:-/opt/logandaim/repo}"
+deploy_dir="${VPS_DEPLOY_DIR:-/opt/friendarazzi/repo}"
 host_root="$(cd "$deploy_dir/.." && pwd)"
 env_file="$host_root/.env"
 mail_env="$host_root/secrets/mail.env"
@@ -38,15 +38,15 @@ api_domain="$(read_value API_DOMAIN "$env_file")"
 # derives it. Keeping one hostname only works because both agree on this.
 mail_domain="${api_domain#*.}"
 sender="${MAIL_ABSENDER:-$(read_value MAIL_ABSENDER "$env_file")}"
-user="$(read_value LOGANDAIM_SMTP_BENUTZERNAME "$mail_env")"
-password="$(read_value LOGANDAIM_SMTP_PASSWORT "$mail_env")"
-[[ -n "$user" ]] || { echo "Missing LOGANDAIM_SMTP_BENUTZERNAME in $mail_env" >&2; exit 2; }
-[[ -n "$password" ]] || { echo "Missing LOGANDAIM_SMTP_PASSWORT in $mail_env" >&2; exit 2; }
+user="$(read_value FRIENDARAZZI_SMTP_BENUTZERNAME "$mail_env")"
+password="$(read_value FRIENDARAZZI_SMTP_PASSWORT "$mail_env")"
+[[ -n "$user" ]] || { echo "Missing FRIENDARAZZI_SMTP_BENUTZERNAME in $mail_env" >&2; exit 2; }
+[[ -n "$password" ]] || { echo "Missing FRIENDARAZZI_SMTP_PASSWORT in $mail_env" >&2; exit 2; }
 
 cd "$deploy_dir"
 # `--env-file` only feeds interpolation; the backend reads `mail.env` through its own
 # `env_file`, which resolves against the host root.
-export LOGANDAIM_HOST_ROOT="$host_root"
+export FRIENDARAZZI_HOST_ROOT="$host_root"
 compose=(docker compose --env-file "$env_file")
 
 echo "== Hostnames"

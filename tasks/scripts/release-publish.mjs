@@ -44,7 +44,7 @@ if (!pullRequest) {
 }
 if (!pullRequest) fail(`no pull request found for ${sha}`);
 
-const dir = mkdtempSync(join(tmpdir(), "logandaim-release-"));
+const dir = mkdtempSync(join(tmpdir(), "friendarazzi-release-"));
 const notesFile = join(dir, "notes.md");
 
 try {

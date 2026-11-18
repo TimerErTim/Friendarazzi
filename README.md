@@ -1,4 +1,4 @@
-![Friendarazzi](assets/logo_raw.jpg)
+![Friendarazzi](assets/logo-rasterized-2452x664.webp)
 
 # Friendarazzi
 

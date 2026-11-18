@@ -4,10 +4,10 @@ use tracing::instrument;
 
 use crate::adapters::{
     BlankPdfRenderer, InMemoryObjectStore, InMemorySigning, InMemoryThrottle, NullMailSender,
-    SystemClock,
+    SystemClock, SystemRng,
 };
 use crate::application::context::ContextPorts;
-use crate::ports::{Clock, MailSender, ObjectStore, PdfRenderer, Signing, Throttle};
+use crate::ports::{Clock, MailSender, ObjectStore, PdfRenderer, RngPort, Signing, Throttle};
 use crate::service::UseCase;
 use crate::uow::UnitOfWorkProvider;
 
@@ -51,6 +51,8 @@ pub struct App {
     pub konto: IdentityProviderConfiguration,
     #[builder(default = Arc::new(SystemClock))]
     pub clock: Arc<dyn Clock>,
+    #[builder(default = Arc::new(SystemRng))]
+    pub rng: Arc<dyn RngPort>,
     #[builder(default = Arc::new(InMemoryObjectStore::new()))]
     pub object_store: Arc<dyn ObjectStore>,
     #[builder(default = Arc::new(BlankPdfRenderer))]
@@ -92,6 +94,7 @@ impl App {
                 auth,
                 signing: Arc::clone(&self.signing),
                 clock: Arc::clone(&self.clock),
+                rng: Arc::clone(&self.rng),
                 object_store: Arc::clone(&self.object_store),
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),

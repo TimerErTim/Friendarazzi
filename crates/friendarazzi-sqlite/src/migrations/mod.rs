@@ -7,16 +7,16 @@ use molting::{AppliableMigration, MigrationRegistry, MigrationTarget, UpMigratio
 
 use crate::SQLiteConnection;
 
-mod v0002_konto;
-mod v0003_friendarazzi;
+mod v0001_konto;
+mod v0002_mvp;
 
 type Registry = MigrationRegistry<dyn UpMigration<libsql::Transaction, libsql::Error>>;
 
 /// Baseline plus one migration per schema change, registered in ascending version order.
 pub static MIGRATIONS: LazyLock<Registry> = LazyLock::new(|| {
     let mut registry: Registry = MigrationRegistry::new();
-    registry.add(v0002_konto::Migration);
-    registry.add(v0003_friendarazzi::Migration);
+    registry.add(v0001_konto::Migration);
+    registry.add(v0002_mvp::Migration);
     registry
 });
 

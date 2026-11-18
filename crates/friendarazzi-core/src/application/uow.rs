@@ -11,7 +11,6 @@ use crate::ports::{
     BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
     EmailBestätigungRepository, GameRepository, KontoRepository,
     PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
-    UserProfileRepository,
 };
 
 /// Active unit of work. `commit` / `rollback` consume it.
@@ -90,10 +89,6 @@ impl UnitOfWork<'_> {
         self.finish_with(result, |_| context)
     }
 
-    pub fn profiles(&self) -> &dyn UserProfileRepository {
-        self.as_impl().profiles()
-    }
-
     pub fn games(&self) -> &dyn GameRepository {
         self.as_impl().games()
     }
@@ -159,10 +154,6 @@ impl UnitOfWorkImpl for LockedUnitOfWorkImpl<'_> {
         Ok(())
     }
 
-    fn profiles(&self) -> &dyn UserProfileRepository {
-        self.inner.profiles()
-    }
-
     fn games(&self) -> &dyn GameRepository {
         self.inner.games()
     }
@@ -206,7 +197,6 @@ pub trait UnitOfWorkImpl: Send + Sync {
     async fn commit(self: Box<Self>) -> RepositoryResult<()>;
     async fn rollback(self: Box<Self>) -> RepositoryResult<()>;
 
-    fn profiles(&self) -> &dyn UserProfileRepository;
     fn games(&self) -> &dyn GameRepository;
     fn boards(&self) -> &dyn BoardRepository;
     fn captures(&self) -> &dyn CaptureRepository;

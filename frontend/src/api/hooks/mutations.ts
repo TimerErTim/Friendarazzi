@@ -65,7 +65,7 @@ export function useFriendarazziMutations() {
       ...SITE_HANDLED,
       onSuccess: (outcome, vars) => {
         invalidateGame(vars.gameId);
-        if (outcome.gameCompleted) {
+        if (outcome.winningLine) {
           void queryClient.invalidateQueries({
             queryKey: friendarazziKeys.benutzer(),
           });
@@ -122,12 +122,12 @@ export function useAuthMutations() {
   return {
     login: useMutation({
       mutationFn: ({
-        eMailAdresse,
+        identifier,
         passwort,
       }: {
-        eMailAdresse: string;
+        identifier: string;
         passwort: string;
-      }) => api.anmelden(eMailAdresse, passwort),
+      }) => api.anmelden(identifier, passwort),
       ...SITE_HANDLED,
       onSuccess: loggedIn,
     }),

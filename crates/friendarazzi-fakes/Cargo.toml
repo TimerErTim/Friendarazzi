@@ -15,6 +15,7 @@ error-stack = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
 rustc-hash = { workspace = true }
+rand = { workspace = true }
 
 [lints]
 workspace = true

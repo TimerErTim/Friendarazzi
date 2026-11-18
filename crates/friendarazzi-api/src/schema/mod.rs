@@ -1,14 +1,22 @@
 //! OpenAPI schemas.
 
-mod friendarazzi;
+mod board;
+mod capture;
+mod deck;
+mod game;
 mod health;
 mod kontakt;
 mod konto;
+mod profile;
 
-pub use friendarazzi::*;
+pub use board::*;
+pub use capture::*;
+pub use deck::*;
+pub use game::*;
 pub use health::*;
 pub use kontakt::*;
 pub use konto::*;
+pub use profile::*;
 
 /// Acknowledgement of a request that has nothing to return.
 #[derive(Debug, Clone)]

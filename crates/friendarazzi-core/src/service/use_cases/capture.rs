@@ -2,15 +2,12 @@
 
 use async_trait::async_trait;
 use error_stack::{IntoReport, Report, ResultExt};
-use tracing::instrument;
+use tracing::{instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    application::ExecutionContext,
-    domain::{
-        BoardTileId, Capture, CaptureId, GameId, GameStatus, NewCapture, evaluate_bingo,
-        process_capture_photo,
-    },
+    application::{ExecutionContext, uow::Versioned},
+    domain::{BoardCoordinates, BoardTileId, Capture, CaptureId, Game, GameId, NewCapture},
     ports::RepositoryError,
     service::UseCase,
 };
@@ -41,15 +38,14 @@ pub struct SubmitCapture {
 #[derive(Debug, Clone)]
 pub struct SubmitCaptureOutcome {
     pub capture: Capture,
-    pub game_completed: bool,
-    pub winning_line: Option<Vec<(u8, u8)>>,
+    pub winning_line: Option<Vec<BoardCoordinates>>,
 }
 
 #[async_trait]
 impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
     type Error = Report<CaptureUseCaseError>;
 
-    #[instrument(skip_all, err(Debug))]
+    #[instrument(skip_all, fields(game_id = ?self.game_id, tile_id = ?self.tile_id), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<SubmitCaptureOutcome, Self::Error> {
         let user_id = ctx
             .auth()
@@ -57,12 +53,12 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
             .change_context(CaptureUseCaseError::Unauthorized)?;
         let now = ctx.clock().now();
 
-        let processed = process_capture_photo(&self.image_bytes)
+        let processed = Capture::process_photo(&self.image_bytes)
             .change_context(CaptureUseCaseError::InvalidImage)?;
 
         let capture_uuid = Uuid::new_v4();
-        let full_key = format!("capture_{capture_uuid}.jpg");
-        let thumb_key = format!("thumb_{capture_uuid}.jpg");
+        let full_key = format!("capture_{capture_uuid}.webp");
+        let thumb_key = format!("thumb_{capture_uuid}.webp");
 
         let uow = ctx
             .enter()
@@ -70,7 +66,7 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
             .change_context(CaptureUseCaseError::Persistence)?;
 
         let result = async {
-            let mut game = match uow.games().find_by_id(self.game_id).await {
+            let game = match uow.games().find_by_id(self.game_id).await {
                 Ok(g) => g,
                 Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                     return Err(Report::new(CaptureUseCaseError::NotFound));
@@ -78,13 +74,14 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 Err(err) => return Err(err).change_context(CaptureUseCaseError::Persistence),
             };
 
-            if game.status() != GameStatus::Active {
+            let game_version = game.v();
+            let Game::Active(active_game) = game.into_data() else {
                 return Err(Report::new(CaptureUseCaseError::Conflict));
-            }
+            };
 
             let mut board = match uow
                 .boards()
-                .find_board_by_game_and_owner(self.game_id, user_id)
+                .find_by_game_and_owner(self.game_id, user_id)
                 .await
             {
                 Ok(b) => b,
@@ -94,30 +91,13 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 Err(err) => return Err(err).change_context(CaptureUseCaseError::Persistence),
             };
 
-            let mut tiles = uow
-                .boards()
-                .find_tiles_by_board(board.id())
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(CaptureUseCaseError::Persistence)?;
-
-            let Some(tile) = tiles.iter_mut().find(|t| t.id() == self.tile_id) else {
+            let Some(tile) = board.tile_by_id(self.tile_id).cloned() else {
                 return Err(Report::new(CaptureUseCaseError::NotFound));
             };
 
             if tile.capture_id().is_some() {
                 return Err(Report::new(CaptureUseCaseError::Conflict));
             }
-
-            // Persist media blobs before committing DB rows.
-            ctx.object_store()
-                .put(&full_key, &processed.full_jpeg)
-                .await
-                .change_context(CaptureUseCaseError::Persistence)?;
-            ctx.object_store()
-                .put(&thumb_key, &processed.blurred_jpeg)
-                .await
-                .change_context(CaptureUseCaseError::Persistence)?;
 
             let capture = uow
                 .captures()
@@ -136,56 +116,66 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 .change_context(CaptureUseCaseError::Persistence)?;
 
             let capture_id: CaptureId = capture.id();
-            tile.attach_capture(capture_id);
+            let winning_line = board
+                .record_capture(self.tile_id, capture_id)
+                .change_context(CaptureUseCaseError::Conflict)?;
 
             uow.boards()
-                .attach_tile_capture(self.tile_id, capture_id)
+                .update(&mut board)
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(CaptureUseCaseError::Persistence)?;
 
-            let winning_line = evaluate_bingo(game.grid_size(), &tiles);
-            let game_completed = if winning_line.is_some() {
-                board.mark_bingo();
-                uow.boards()
-                    .update_board(&mut board)
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(CaptureUseCaseError::Persistence)?;
-
-                game.complete(user_id, now)
+            if winning_line.is_some() {
+                let completed = active_game
+                    .complete(&board, now)
                     .change_context(CaptureUseCaseError::Conflict)?;
+                let mut updated_game = Versioned::new(game_version, Game::Completed(completed));
                 uow.games()
-                    .update(&mut game)
+                    .update(&mut updated_game)
                     .await
                     .map_err(IntoReport::into_report)
                     .change_context(CaptureUseCaseError::Persistence)?;
 
-                let mut winner_profile = uow
-                    .profiles()
-                    .find_by_user_id(user_id)
+                let mut winner = uow
+                    .benutzer()
+                    .find_by_id(user_id)
                     .await
                     .map_err(IntoReport::into_report)
                     .change_context(CaptureUseCaseError::Persistence)?;
-                winner_profile.award_gold_medal();
-                uow.profiles()
-                    .update(&mut winner_profile)
+                winner.award_gold_medal();
+                uow.benutzer()
+                    .update(&mut winner)
                     .await
                     .map_err(IntoReport::into_report)
                     .change_context(CaptureUseCaseError::Persistence)?;
-                true
-            } else {
-                false
-            };
+            }
+
+            // Upload media right before committing so a rollback only needs to clean up on commit failure.
+            ctx.object_store()
+                .put(&full_key, &processed.full_webp)
+                .await
+                .change_context(CaptureUseCaseError::Persistence)?;
+            ctx.object_store()
+                .put(&thumb_key, &processed.blurred_webp)
+                .await
+                .change_context(CaptureUseCaseError::Persistence)?;
 
             Ok::<_, Report<CaptureUseCaseError>>(SubmitCaptureOutcome {
                 capture: capture.into_data(),
-                game_completed,
                 winning_line,
             })
         }
         .await;
 
-        uow.finish(result, CaptureUseCaseError::Persistence).await
+        let committed = uow.finish(result, CaptureUseCaseError::Persistence).await;
+        if committed.is_err() {
+            for key in [&full_key, &thumb_key] {
+                if let Err(err) = ctx.object_store().ensure_deleted(key).await {
+                    warn!(%key, fehler = %err, "failed to roll back uploaded capture media");
+                }
+            }
+        }
+        committed
     }
 }

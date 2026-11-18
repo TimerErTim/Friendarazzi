@@ -6,7 +6,7 @@ use error_stack::ResultExt;
 use friendarazzi_core::{
     ErrorReportExt,
     application::uow::Versioned,
-    domain::{BoardTileId, Capture, CaptureId, GameId, NewCapture, konto::BenutzerId},
+    domain::{BenutzerId, BoardTileId, Capture, CaptureId, GameId, NewCapture},
     ports::{CaptureRepository, RepositoryError, RepositoryResult},
 };
 use libsql::{Row, Transaction};
@@ -17,14 +17,18 @@ use crate::{
     repos::common::{format_datetime, parse_datetime, parse_uuid, parse_version},
 };
 
-const SELECT: &str = r#"SELECT id, game_id, tile_id, catcher_user_id, target_user_id, prompt_text, image_storage_key, thumbnail_storage_key, captured_at, _version FROM "captures""#;
+const SELECT: &str = r#"SELECT c.id, b.game_id, c.tile_id, b.owner_user_id, bt.target_user_id, ps.text, c.image_storage_key, c.thumbnail_storage_key, c.captured_at, c._version
+    FROM "capture" c
+    INNER JOIN "board_tile" bt ON bt.id = c.tile_id
+    INNER JOIN "board" b ON b.id = bt.board_id
+    INNER JOIN "prompt_submission" ps ON ps.id = bt.prompt_submission_id"#;
 
 fn capture_from_row(row: &Row) -> RepositoryResult<Versioned<Capture>> {
     let id_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
     let game_id_raw: String = row.get(1).contextualize(RepositoryError::Data)?;
     let tile_id_raw: String = row.get(2).contextualize(RepositoryError::Data)?;
     let catcher_raw: String = row.get(3).contextualize(RepositoryError::Data)?;
-    let target_raw: Option<String> = row.get(4).contextualize(RepositoryError::Data)?;
+    let target_raw: String = row.get(4).contextualize(RepositoryError::Data)?;
     let prompt_text: String = row.get(5).contextualize(RepositoryError::Data)?;
     let image_storage_key: String = row.get(6).contextualize(RepositoryError::Data)?;
     let thumbnail_storage_key: String = row.get(7).contextualize(RepositoryError::Data)?;
@@ -36,10 +40,7 @@ fn capture_from_row(row: &Row) -> RepositoryResult<Versioned<Capture>> {
         GameId(parse_uuid(&game_id_raw)?),
         BoardTileId(parse_uuid(&tile_id_raw)?),
         BenutzerId(parse_uuid(&catcher_raw)?),
-        target_raw
-            .map(|s| parse_uuid(&s))
-            .transpose()?
-            .map(BenutzerId),
+        BenutzerId(parse_uuid(&target_raw)?),
         prompt_text,
         image_storage_key,
         thumbnail_storage_key,
@@ -63,15 +64,11 @@ impl CaptureRepository for SQLiteCaptureRepository {
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"INSERT INTO "captures" (id, game_id, tile_id, catcher_user_id, target_user_id, prompt_text, image_storage_key, thumbnail_storage_key, captured_at, _version)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0)"#,
+            r#"INSERT INTO "capture" (id, tile_id, image_storage_key, thumbnail_storage_key, captured_at, _version)
+               VALUES (?1, ?2, ?3, ?4, ?5, 0)"#,
             (
                 id.0.to_string(),
-                domain.game_id().0.to_string(),
                 domain.tile_id().0.to_string(),
-                domain.catcher_user_id().0.to_string(),
-                domain.target_user_id().map(|u| u.0.to_string()),
-                domain.prompt_text().as_str(),
                 domain.image_storage_key(),
                 domain.thumbnail_storage_key(),
                 format_datetime(domain.captured_at()),
@@ -88,7 +85,7 @@ impl CaptureRepository for SQLiteCaptureRepository {
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         let mut rows = tx
-            .query(&format!(r#"{SELECT} WHERE id = ?1"#), [id.0.to_string()])
+            .query(&format!(r#"{SELECT} WHERE c.id = ?1"#), [id.0.to_string()])
             .await
             .contextualize_with(libsql_error_to_persistence_error)?;
 
@@ -108,7 +105,7 @@ impl CaptureRepository for SQLiteCaptureRepository {
 
         let mut rows = tx
             .query(
-                &format!(r#"{SELECT} WHERE game_id = ?1 ORDER BY captured_at ASC"#),
+                &format!(r#"{SELECT} WHERE b.game_id = ?1 ORDER BY c.captured_at ASC"#),
                 [game_id.0.to_string()],
             )
             .await
@@ -134,7 +131,7 @@ impl CaptureRepository for SQLiteCaptureRepository {
 
         let mut rows = tx
             .query(
-                &format!(r#"{SELECT} WHERE target_user_id = ?1 ORDER BY captured_at DESC"#),
+                &format!(r#"{SELECT} WHERE bt.target_user_id = ?1 ORDER BY c.captured_at DESC"#),
                 [user_id.0.to_string()],
             )
             .await
@@ -160,7 +157,7 @@ impl CaptureRepository for SQLiteCaptureRepository {
 
         let mut rows = tx
             .query(
-                &format!(r#"{SELECT} WHERE catcher_user_id = ?1 ORDER BY captured_at DESC"#),
+                &format!(r#"{SELECT} WHERE b.owner_user_id = ?1 ORDER BY c.captured_at DESC"#),
                 [user_id.0.to_string()],
             )
             .await
@@ -184,7 +181,7 @@ impl CaptureRepository for SQLiteCaptureRepository {
         let mut rows = tx
             .query(
                 &format!(
-                    r#"{SELECT} WHERE image_storage_key = ?1 OR thumbnail_storage_key = ?1 LIMIT 1"#
+                    r#"{SELECT} WHERE c.image_storage_key = ?1 OR c.thumbnail_storage_key = ?1 LIMIT 1"#
                 ),
                 [key],
             )

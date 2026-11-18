@@ -34,7 +34,7 @@ impl From<DomainBenutzerRolle> for BenutzerRolle {
 pub struct AuthenticatedBenutzer {
     /// Identity of the Benutzer.
     pub id: Uuid,
-    /// Its e-mail address, which is also the sign-in name.
+    /// Its e-mail address.
     pub e_mail_adresse: EmailAdresse,
     /// Its role on the whole instance.
     pub rolle: BenutzerRolle,
@@ -63,38 +63,27 @@ pub struct Benutzer {
     pub e_mail_adresse: EmailAdresse,
 }
 
-impl From<(domain::konto::Benutzer, domain::EmailAdresse)> for Benutzer {
-    fn from((benutzer, email): (domain::konto::Benutzer, domain::EmailAdresse)) -> Self {
+impl From<domain::Benutzer> for Benutzer {
+    fn from(benutzer: domain::Benutzer) -> Self {
         Self {
             id: benutzer.id().0,
-            e_mail_adresse: email.into(),
+            e_mail_adresse: benutzer.email_address().clone().into(),
         }
     }
 }
 
-impl
-    From<(
-        domain::konto::Benutzer,
-        domain::EmailAdresse,
-        domain::UserProfile,
-    )> for AuthenticatedBenutzer
-{
-    fn from(
-        (benutzer, email, profile): (
-            domain::konto::Benutzer,
-            domain::EmailAdresse,
-            domain::UserProfile,
-        ),
-    ) -> Self {
+impl From<domain::Benutzer> for AuthenticatedBenutzer {
+    fn from(benutzer: domain::Benutzer) -> Self {
+        let effective_title = benutzer.effective_title().to_owned();
         Self {
             id: benutzer.id().0,
-            e_mail_adresse: email.into(),
+            e_mail_adresse: benutzer.email_address().clone().into(),
             rolle: benutzer.rolle().into(),
-            username: profile.username().as_str().to_owned(),
-            display_name: profile.display_name().as_str().to_owned(),
-            avatar_storage_key: profile.avatar_storage_key().map(str::to_owned),
-            gold_medal_count: profile.gold_medal_count(),
-            effective_title: profile.effective_title().to_owned(),
+            username: benutzer.username().as_str().to_owned(),
+            display_name: benutzer.display_name().as_str().to_owned(),
+            avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
+            gold_medal_count: benutzer.gold_medal_count(),
+            effective_title,
         }
     }
 }

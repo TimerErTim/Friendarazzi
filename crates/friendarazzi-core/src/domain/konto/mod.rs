@@ -35,7 +35,6 @@
 
 use chrono::Duration;
 
-mod benutzer;
 mod bestaetigung;
 mod claims;
 mod konto;
@@ -45,7 +44,7 @@ mod session;
 mod signing;
 mod token;
 
-pub use benutzer::{Benutzer, BenutzerId, NeuerBenutzer, Rolle};
+pub use crate::domain::benutzer::{Benutzer, BenutzerId, NeuerBenutzer, Rolle};
 pub use bestaetigung::{BestätigungId, EmailBestätigung, NeueBestätigung};
 pub use claims::{AccessTokenClaims, TokenId};
 pub use konto::{Konto, KontoId, NeuesKonto};

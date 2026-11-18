@@ -1,13 +1,13 @@
-//! Player profile updates and avatar upload.
+//! Player profile updates and avatar upload on `Benutzer`.
 
 use async_trait::async_trait;
 use error_stack::{IntoReport, Report, ResultExt};
-use tracing::instrument;
+use tracing::{instrument, warn};
 use uuid::Uuid;
 
 use crate::{
     application::ExecutionContext,
-    domain::{ProfileError, UserProfile, process_avatar_photo},
+    domain::{Benutzer, NonEmptyString, ProfileError},
     ports::RepositoryError,
     service::UseCase,
 };
@@ -30,17 +30,25 @@ pub enum ProfileUseCaseError {
 
 #[derive(Debug, Clone)]
 pub struct UpdateProfile {
-    pub username: String,
-    pub display_name: String,
-    pub equipped_title: Option<String>,
+    pub username: NonEmptyString,
+    pub display_name: NonEmptyString,
+    pub equipped_title: Option<NonEmptyString>,
 }
 
 #[async_trait]
-impl UseCase<UserProfile> for UpdateProfile {
+impl UseCase<Benutzer> for UpdateProfile {
     type Error = Report<ProfileUseCaseError>;
 
-    #[instrument(skip_all, err(Debug))]
-    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<UserProfile, Self::Error> {
+    #[instrument(
+        skip_all,
+        fields(
+            username = %self.username,
+            display_name = %self.display_name,
+            equipped_title = ?self.equipped_title
+        ),
+        err(Debug)
+    )]
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Benutzer, Self::Error> {
         let user_id = ctx
             .auth()
             .require_benutzer_id()
@@ -51,7 +59,7 @@ impl UseCase<UserProfile> for UpdateProfile {
             .change_context(ProfileUseCaseError::Persistence)?;
 
         let result = async {
-            let mut profile = match uow.profiles().find_by_user_id(user_id).await {
+            let mut benutzer = match uow.benutzer().find_by_id(user_id).await {
                 Ok(p) => p,
                 Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                     return Err(Report::new(ProfileUseCaseError::NotFound));
@@ -59,33 +67,35 @@ impl UseCase<UserProfile> for UpdateProfile {
                 Err(err) => return Err(err).change_context(ProfileUseCaseError::Persistence),
             };
 
-            let trimmed = self.username.trim();
-            if trimmed != profile.username().as_str()
-                && let Ok(other) = uow.profiles().find_by_username(trimmed).await
-                && other.user_id() != user_id
+            if self.username.as_str() != benutzer.username().as_str()
+                && let Ok(other) = uow
+                    .benutzer()
+                    .find_by_username(self.username.as_str())
+                    .await
+                && other.id() != user_id
             {
                 return Err(Report::new(ProfileUseCaseError::UsernameTaken));
             }
 
-            profile
+            benutzer
                 .update_details(self.username, self.display_name, self.equipped_title)
                 .map_err(|e| {
                     let mapped = match e.current_context() {
                         ProfileError::TitleLocked => ProfileUseCaseError::TitleLocked,
-                        ProfileError::EmptyField | ProfileError::InvalidUsername => {
-                            ProfileUseCaseError::BadRequest
-                        }
+                        ProfileError::EmptyField
+                        | ProfileError::InvalidUsername
+                        | ProfileError::InvalidAvatar => ProfileUseCaseError::BadRequest,
                     };
                     e.change_context(mapped)
                 })?;
 
-            uow.profiles()
-                .update(&mut profile)
+            uow.benutzer()
+                .update(&mut benutzer)
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(ProfileUseCaseError::Persistence)?;
 
-            Ok::<_, Report<ProfileUseCaseError>>(profile.into_data())
+            Ok::<_, Report<ProfileUseCaseError>>(benutzer.into_data())
         }
         .await;
 
@@ -99,18 +109,18 @@ pub struct UploadAvatar {
 }
 
 #[async_trait]
-impl UseCase<UserProfile> for UploadAvatar {
+impl UseCase<Benutzer> for UploadAvatar {
     type Error = Report<ProfileUseCaseError>;
 
-    #[instrument(skip_all, err(Debug))]
-    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<UserProfile, Self::Error> {
+    #[instrument(skip_all, fields(bytes_len = self.image_bytes.len()), err(Debug))]
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Benutzer, Self::Error> {
         let user_id = ctx
             .auth()
             .require_benutzer_id()
             .change_context(ProfileUseCaseError::Unauthorized)?;
-        let jpeg = process_avatar_photo(&self.image_bytes)
+        let webp = Benutzer::process_avatar_photo(&self.image_bytes)
             .change_context(ProfileUseCaseError::BadRequest)?;
-        let avatar_key = format!("avatar_{}.jpg", Uuid::new_v4());
+        let avatar_key = format!("avatar_{}.webp", Uuid::new_v4());
 
         let uow = ctx
             .enter()
@@ -118,7 +128,7 @@ impl UseCase<UserProfile> for UploadAvatar {
             .change_context(ProfileUseCaseError::Persistence)?;
 
         let result = async {
-            let mut profile = match uow.profiles().find_by_user_id(user_id).await {
+            let mut benutzer = match uow.benutzer().find_by_id(user_id).await {
                 Ok(p) => p,
                 Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                     return Err(Report::new(ProfileUseCaseError::NotFound));
@@ -126,27 +136,39 @@ impl UseCase<UserProfile> for UploadAvatar {
                 Err(err) => return Err(err).change_context(ProfileUseCaseError::Persistence),
             };
 
-            let old_key = profile.avatar_storage_key().map(str::to_owned);
-            ctx.object_store()
-                .put(&avatar_key, &jpeg)
-                .await
-                .change_context(ProfileUseCaseError::Persistence)?;
-
-            profile.set_avatar(Some(avatar_key));
-            uow.profiles()
-                .update(&mut profile)
+            let old_key = benutzer.avatar_storage_key().map(str::to_owned);
+            benutzer.set_avatar(Some(avatar_key.clone()));
+            uow.benutzer()
+                .update(&mut benutzer)
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(ProfileUseCaseError::Persistence)?;
 
-            if let Some(prev) = old_key {
-                let _ = ctx.object_store().ensure_deleted(&prev).await;
-            }
+            // Upload last inside the UoW block so only the commit remains afterward.
+            ctx.object_store()
+                .put(&avatar_key, &webp)
+                .await
+                .change_context(ProfileUseCaseError::Persistence)?;
 
-            Ok::<_, Report<ProfileUseCaseError>>(profile.into_data())
+            Ok::<_, Report<ProfileUseCaseError>>((benutzer.into_data(), old_key))
         }
         .await;
 
-        uow.finish(result, ProfileUseCaseError::Persistence).await
+        match uow.finish(result, ProfileUseCaseError::Persistence).await {
+            Ok((updated, old_key)) => {
+                if let Some(prev) = old_key
+                    && let Err(err) = ctx.object_store().ensure_deleted(&prev).await
+                {
+                    warn!(key = %prev, fehler = %err, "failed to remove superseded avatar");
+                }
+                Ok(updated)
+            }
+            Err(err) => {
+                if let Err(cleanup_err) = ctx.object_store().ensure_deleted(&avatar_key).await {
+                    warn!(key = %avatar_key, fehler = %cleanup_err, "failed to roll back uploaded avatar");
+                }
+                Err(err)
+            }
+        }
     }
 }

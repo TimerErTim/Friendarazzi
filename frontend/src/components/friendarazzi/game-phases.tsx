@@ -58,9 +58,8 @@ import {
   SheetNumber,
 } from "@/components/ui/paper-rule";
 import { Select } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cn";
-import { joinHref } from "@/lib/navigation";
+import { absoluteUrl, joinHref } from "@/lib/navigation";
 
 import { GameTimeline } from "./game-timeline";
 import { AuthenticatedImage } from "./media-image";
@@ -91,22 +90,15 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
   const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>(
     game.visibilityMode,
   );
-  const [includeFreeSpace, setIncludeFreeSpace] = useState(
-    game.includeFreeSpace,
-  );
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     setTitle(game.title);
     setGridSize(String(game.gridSize));
     setVisibilityMode(game.visibilityMode);
-    setIncludeFreeSpace(game.includeFreeSpace);
-  }, [game.title, game.gridSize, game.visibilityMode, game.includeFreeSpace]);
+  }, [game.title, game.gridSize, game.visibilityMode]);
 
-  const inviteUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}${joinHref(game.inviteCode)}`
-      : joinHref(game.inviteCode);
+  const inviteUrl = absoluteUrl(joinHref(game.inviteCode));
 
   const canStart = game.players.length >= 3;
 
@@ -203,7 +195,6 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                       title,
                       gridSize: Number(gridSize),
                       visibilityMode,
-                      includeFreeSpace,
                     },
                   },
                   {
@@ -252,24 +243,6 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                 </Select>
               </Field>
 
-              {gridSize !== "4" ? (
-                <div className="flex items-center justify-between gap-4 rounded-md border border-subtle p-3">
-                  <div>
-                    <p className="text-sm font-medium text-ink">
-                      Mittleres „Free Space“-Feld
-                    </p>
-                    <p className="text-xs text-secondary">
-                      Schenkt allen das zentrale Feld auf ungeraden Brettern.
-                    </p>
-                  </div>
-                  <Switch
-                    checked={includeFreeSpace}
-                    onCheckedChange={setIncludeFreeSpace}
-                    aria-label="Mittleres Free-Space-Feld aktivieren"
-                  />
-                </div>
-              ) : null}
-
               {mutations.updateSettings.isError ? (
                 <Alert variant="error">
                   {apiErrorMessage(mutations.updateSettings.error, {
@@ -307,7 +280,7 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
             </form>
           ) : (
             <div className="space-y-3">
-              <dl className="grid gap-3 text-sm sm:grid-cols-3">
+              <dl className="grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-xs text-secondary uppercase">Raster</dt>
                   <dd className="font-semibold text-ink">
@@ -318,16 +291,6 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                   <dt className="text-xs text-secondary uppercase">Modus</dt>
                   <dd className="font-semibold text-ink">
                     {visibilityLabel(game.visibilityMode)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-secondary uppercase">
-                    Free Space
-                  </dt>
-                  <dd className="font-semibold text-ink">
-                    {game.includeFreeSpace && game.gridSize !== 4
-                      ? "Ja"
-                      : "Nein"}
                   </dd>
                 </div>
               </dl>
@@ -757,7 +720,7 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
           </Badge>
         </div>
         <span className="text-xs text-secondary tabular-nums">
-          {board.tiles.filter((t) => t.isCaptured || t.isFreeSpace).length} /{" "}
+          {board.tiles.filter((t) => t.isCaptured).length} /{" "}
           {board.tiles.length} Felder
         </span>
       </div>
@@ -765,7 +728,6 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
       {/* Bingo Grid */}
       <div className={cn("grid gap-2", gridColsClass)}>
         {board.tiles.map((tile) => {
-          const filled = tile.isFreeSpace || tile.isCaptured;
           return (
             <button
               key={tile.id}
@@ -783,9 +745,7 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
                 "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
                 tile.isCaptured
                   ? "border-success/50 bg-success/10"
-                  : tile.isFreeSpace
-                    ? "border-primary/40 bg-primary-subtle"
-                    : "border-control bg-surface hover:bg-surface-muted",
+                  : "border-control bg-surface hover:bg-surface-muted",
               )}
             >
               {tile.imageStorageKey ? (
@@ -799,16 +759,10 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
               ) : null}
 
               <div className="relative z-10 flex items-start justify-between gap-1">
-                {tile.targetUser ? (
-                  <span className="inline-flex items-center gap-1 rounded-sm bg-elevated/90 px-1.5 py-0.5 text-[10px] font-semibold text-ink">
-                    {tile.targetUser.displayName}
-                  </span>
-                ) : (
-                  <Badge variant="primary" className="text-[9px]">
-                    Free Space
-                  </Badge>
-                )}
-                {filled ? (
+                <span className="inline-flex items-center gap-1 rounded-sm bg-elevated/90 px-1.5 py-0.5 text-[10px] font-semibold text-ink">
+                  {tile.targetUser.displayName}
+                </span>
+                {tile.isCaptured ? (
                   <CheckCircle2
                     className="size-4 shrink-0 text-success"
                     aria-hidden="true"
@@ -1211,9 +1165,7 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                         "relative flex min-h-16 flex-col justify-between overflow-hidden rounded-sm border p-1.5 text-[11px]",
                         tile.isCaptured
                           ? "border-success/50 bg-success/10"
-                          : tile.isFreeSpace
-                            ? "border-primary/40 bg-primary-subtle"
-                            : "border-subtle bg-surface-muted",
+                          : "border-subtle bg-surface-muted",
                       )}
                     >
                       {tile.imageStorageKey ? (

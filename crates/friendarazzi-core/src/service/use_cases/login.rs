@@ -11,7 +11,7 @@ use tracing::instrument;
 use crate::{
     application::ExecutionContext,
     domain::{
-        EmailAdresse,
+        EmailAdresse, NonEmptyString,
         konto::{KlartextPasswort, RefreshToken, dummy_verify, verify_password},
     },
     ports::{ClientKey, RepositoryError, ThrottleAction},
@@ -39,14 +39,14 @@ pub enum AnmeldungFehler {
     SessionSpeichern,
 }
 
-/// Log in with address and Passwort.
+/// Log in with email address or username and Passwort.
 ///
-/// Unknown address and wrong Passwort answer identically, and the unknown-address path
+/// Unknown address/username and wrong Passwort answer identically, and the unknown path
 /// still pays for one argon2 verification (`dummy_verify`), so the response time does not
 /// disclose existence (rule 4, AC-6).
 #[derive(Debug)]
 pub struct Anmeldung {
-    pub email: EmailAdresse,
+    pub identifier: NonEmptyString,
     pub passwort: KlartextPasswort,
     /// Throttle key. Never the address: that would let anybody lock an owner out.
     pub client_key: ClientKey,
@@ -56,7 +56,7 @@ pub struct Anmeldung {
 impl UseCase<SessionAusgestellt> for Anmeldung {
     type Error = Report<AnmeldungFehler>;
 
-    #[instrument(skip_all, fields(email = ?self.email), err(Debug))]
+    #[instrument(skip_all, fields(identifier = %self.identifier), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<SessionAusgestellt, Self::Error> {
         let jetzt = ctx.clock().now();
 
@@ -71,16 +71,36 @@ impl UseCase<SessionAusgestellt> for Anmeldung {
             .change_context(AnmeldungFehler::KontoLaden)?;
 
         let ergebnis = async {
-            let konto = match uow.konten().find_by_email(&self.email).await {
-                Ok(konto) => konto,
+            let benutzer_res =
+                if let Ok(email) = EmailAdresse::normalisiert(self.identifier.as_str()) {
+                    uow.benutzer().find_by_email(&email).await
+                } else {
+                    uow.benutzer()
+                        .find_by_username(self.identifier.as_str())
+                        .await
+                };
+
+            let benutzer = match benutzer_res {
+                Ok(b) => b,
                 Err(fehler) if matches!(fehler.current_context(), RepositoryError::NotFound) => {
                     // Same work as the wrong-Passwort path (rule 4).
                     dummy_verify(&self.passwort).change_context(AnmeldungFehler::PasswortPrüfen)?;
                     return Err(Report::new(AnmeldungFehler::ZugangsdatenFalsch));
                 }
                 Err(fehler) => {
-                    return Err(fehler).change_context(AnmeldungFehler::KontoLaden);
+                    return Err(fehler).change_context(AnmeldungFehler::BenutzerLaden);
                 }
+            };
+
+            let konten = uow
+                .konten()
+                .find_by_benutzer(benutzer.id())
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(AnmeldungFehler::KontoLaden)?;
+            let Some(konto) = konten.into_iter().next() else {
+                dummy_verify(&self.passwort).change_context(AnmeldungFehler::PasswortPrüfen)?;
+                return Err(Report::new(AnmeldungFehler::ZugangsdatenFalsch));
             };
 
             let stimmt = verify_password(&self.passwort, konto.password_hash())
@@ -88,13 +108,6 @@ impl UseCase<SessionAusgestellt> for Anmeldung {
             if !stimmt {
                 return Err(Report::new(AnmeldungFehler::ZugangsdatenFalsch));
             }
-
-            let benutzer = uow
-                .benutzer()
-                .find_by_id(konto.benutzer_id())
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(AnmeldungFehler::BenutzerLaden)?;
 
             let refresh_token =
                 RefreshToken::random().change_context(AnmeldungFehler::TokenErzeugen)?;

@@ -1,11 +1,11 @@
 //! Inbound request DTOs for Friendarazzi games, drafting, and user profiles.
 
-use error_stack::Report;
+use error_stack::{Report, ResultExt};
 use friendarazzi_core::{
-    domain::{GameId, GridSize, InviteCode, NonEmptyString, konto::BenutzerId},
+    domain::{BenutzerId, GameId, GridSize, InviteCode, NonEmptyString},
     service::{
-        CreateGame, DraftPromptInput, GameUseCaseError, JoinGame, SaveDraftPrompts,
-        UpdateGameSettings, UpdateProfile,
+        CreateGame, DraftPromptInput, GameUseCaseError, JoinGame, ProfileUseCaseError,
+        SaveDraftPrompts, UpdateGameSettings, UpdateProfile,
     },
 };
 use uuid::Uuid;
@@ -25,21 +25,17 @@ pub struct CreateGameRequest {
     pub grid_size: u8,
     /// Proof visibility mode.
     pub visibility_mode: VisibilityMode,
-    /// Whether odd-sized boards include a central Free Space tile.
-    pub include_free_space: bool,
 }
 
 impl CreateGameRequest {
     pub fn into_use_case(self) -> Result<CreateGame, Report<GameUseCaseError>> {
-        let title = NonEmptyString::neu(self.title)
-            .map_err(|_| Report::new(GameUseCaseError::BadRequest))?;
-        let grid_size = GridSize::from_u8(self.grid_size)
-            .map_err(|_| Report::new(GameUseCaseError::BadRequest))?;
+        let title = NonEmptyString::neu(self.title).change_context(GameUseCaseError::BadRequest)?;
+        let grid_size =
+            GridSize::from_u8(self.grid_size).change_context(GameUseCaseError::BadRequest)?;
         Ok(CreateGame {
             title,
             grid_size,
             visibility_mode: self.visibility_mode.into(),
-            include_free_space: self.include_free_space,
         })
     }
 }
@@ -57,8 +53,6 @@ pub struct UpdateGameSettingsRequest {
     pub grid_size: u8,
     /// Proof visibility mode.
     pub visibility_mode: VisibilityMode,
-    /// Whether odd-sized boards include a central Free Space tile.
-    pub include_free_space: bool,
 }
 
 impl UpdateGameSettingsRequest {
@@ -66,16 +60,14 @@ impl UpdateGameSettingsRequest {
         self,
         game_id: GameId,
     ) -> Result<UpdateGameSettings, Report<GameUseCaseError>> {
-        let title = NonEmptyString::neu(self.title)
-            .map_err(|_| Report::new(GameUseCaseError::BadRequest))?;
-        let grid_size = GridSize::from_u8(self.grid_size)
-            .map_err(|_| Report::new(GameUseCaseError::BadRequest))?;
+        let title = NonEmptyString::neu(self.title).change_context(GameUseCaseError::BadRequest)?;
+        let grid_size =
+            GridSize::from_u8(self.grid_size).change_context(GameUseCaseError::BadRequest)?;
         Ok(UpdateGameSettings {
             game_id,
             title,
             grid_size,
             visibility_mode: self.visibility_mode.into(),
-            include_free_space: self.include_free_space,
         })
     }
 }
@@ -93,8 +85,8 @@ pub struct JoinGameRequest {
 
 impl JoinGameRequest {
     pub fn into_use_case(self) -> Result<JoinGame, Report<GameUseCaseError>> {
-        let invite_code = InviteCode::new(self.invite_code)
-            .map_err(|_| Report::new(GameUseCaseError::BadRequest))?;
+        let invite_code =
+            InviteCode::new(self.invite_code).change_context(GameUseCaseError::BadRequest)?;
         Ok(JoinGame { invite_code })
     }
 }
@@ -132,8 +124,8 @@ impl SaveDraftPromptsRequest {
     ) -> Result<SaveDraftPrompts, Report<GameUseCaseError>> {
         let mut prompts = Vec::with_capacity(self.prompts.len());
         for item in self.prompts {
-            let text = NonEmptyString::neu(item.text)
-                .map_err(|_| Report::new(GameUseCaseError::BadRequest))?;
+            let text =
+                NonEmptyString::neu(item.text).change_context(GameUseCaseError::BadRequest)?;
             prompts.push(DraftPromptInput {
                 target_user_id: BenutzerId(item.target_user_id),
                 text,
@@ -159,12 +151,19 @@ pub struct UpdateProfileRequest {
     pub equipped_title: Option<String>,
 }
 
-impl From<UpdateProfileRequest> for UpdateProfile {
-    fn from(req: UpdateProfileRequest) -> Self {
-        Self {
-            username: req.username,
-            display_name: req.display_name,
-            equipped_title: req.equipped_title,
-        }
+impl UpdateProfileRequest {
+    pub fn into_use_case(self) -> Result<UpdateProfile, Report<ProfileUseCaseError>> {
+        let username =
+            NonEmptyString::neu(self.username).change_context(ProfileUseCaseError::BadRequest)?;
+        let display_name = NonEmptyString::neu(self.display_name)
+            .change_context(ProfileUseCaseError::BadRequest)?;
+        let equipped_title = self
+            .equipped_title
+            .and_then(|t| NonEmptyString::neu(t).ok());
+        Ok(UpdateProfile {
+            username,
+            display_name,
+            equipped_title,
+        })
     }
 }

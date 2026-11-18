@@ -2,5 +2,7 @@
 
 pub mod helpers;
 
-mod friendarazzi;
+mod capture;
+mod game;
 mod konto;
+mod profile;

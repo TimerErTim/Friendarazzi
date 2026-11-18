@@ -1,5 +1,6 @@
 #![doc = include_str!("README.md")]
 
+pub mod benutzer;
 pub mod board;
 pub mod capture;
 pub mod common;
@@ -7,21 +8,27 @@ pub mod deck;
 pub mod game;
 pub mod kontakt;
 pub mod konto;
-pub mod medal;
 pub mod media;
 
+pub use benutzer::{
+    Benutzer, BenutzerId, NeuerBenutzer, ProfileError, RANK_TIERS, Rolle,
+    default_username_from_email,
+};
 pub use board::{
-    Board, BoardError, BoardId, BoardTile, BoardTileId, NewBoard, NewBoardTile, evaluate_bingo,
+    Board, BoardCoordinates, BoardError, BoardId, BoardTile, BoardTileAssignment, BoardTileId,
+    NewBoard,
 };
 pub use capture::{
-    Capture, CaptureError, CaptureId, NewCapture, Superlative, SuperlativeKind,
-    compute_superlatives,
+    Capture, CaptureError, CaptureId, GameAwards, GhostAward, MostWantedAward, NewCapture,
+    ProcessedCaptureMedia, QuickestDrawAward, SniperAward, Superlative, SuperlativeKind,
+    can_view_blurred_capture, can_view_full_capture, compute_game_awards,
 };
 pub use common::NonEmptyString;
 pub use deck::{DeckId, StarterDeck, builtin_starter_decks};
 pub use game::{
-    Game, GameError, GameId, GamePlayer, GameStatus, GridSize, InviteCode, MIN_PLAYERS, NewGame,
-    PromptSource, PromptSubmission, PromptSubmissionId, VisibilityMode, assemble_boards,
+    ActiveGame, CompletedGame, DraftLockOutcome, DraftingGame, Game, GameError, GameId, GameIn,
+    GamePlayer, GameStatus, GridSize, InviteCode, LobbyGame, MIN_PLAYERS, NewGame, PromptSource,
+    PromptSubmission, PromptSubmissionId, VisibilityMode, assemble_boards, state as GameState,
     target_quotas_for_author, validate_author_prompts,
 };
 pub use kontakt::EmailAdresse;
@@ -29,10 +36,4 @@ pub use kontakt::Mobilnummer;
 pub use konto::Konto;
 pub use konto::KontoFehler;
 pub use konto::KontoId;
-pub use konto::Rolle;
-pub use medal::{
-    NewUserProfile, ProfileError, RANK_TIERS, UserProfile, default_username_from_email,
-};
-pub use media::{
-    MediaProcessingError, ProcessedCaptureMedia, process_avatar_photo, process_capture_photo,
-};
+pub use media::MediaProcessingError;

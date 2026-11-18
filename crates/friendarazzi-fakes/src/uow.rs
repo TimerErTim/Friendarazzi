@@ -6,7 +6,6 @@ use friendarazzi_core::{
         BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
         EmailBestätigungRepository, GameRepository, KontoRepository,
         PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
-        UserProfileRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
 };
@@ -14,7 +13,7 @@ use friendarazzi_core::{
 use crate::repository::{
     FakeBenutzerRepository, FakeBoardRepository, FakeCaptureRepository, FakeDatastore,
     FakeDeckRepository, FakeEmailBestätigungRepository, FakeGameRepository, FakeKontoRepository,
-    FakePasswortWiederherstellungRepository, FakeSessionRepository, FakeUserProfileRepository,
+    FakePasswortWiederherstellungRepository, FakeSessionRepository,
 };
 
 pub struct FakeUnitOfWorkProvider {
@@ -56,7 +55,6 @@ pub struct FakeUnitOfWork {
     log: Arc<Mutex<Vec<UoWEvent>>>,
     backing_datastore: Arc<FakeDatastore>,
     transaction_datastore: Arc<FakeDatastore>,
-    profiles: FakeUserProfileRepository,
     games: FakeGameRepository,
     boards: FakeBoardRepository,
     captures: FakeCaptureRepository,
@@ -74,7 +72,6 @@ impl FakeUnitOfWork {
         Self {
             log,
             backing_datastore: datastore,
-            profiles: FakeUserProfileRepository::new(Arc::clone(&transaction_datastore)),
             games: FakeGameRepository::new(Arc::clone(&transaction_datastore)),
             boards: FakeBoardRepository::new(Arc::clone(&transaction_datastore)),
             captures: FakeCaptureRepository::new(Arc::clone(&transaction_datastore)),
@@ -105,10 +102,6 @@ impl UnitOfWorkImpl for FakeUnitOfWork {
     async fn rollback(self: Box<Self>) -> RepositoryResult<()> {
         self.log.lock().unwrap().push(UoWEvent::Rollback);
         Ok(())
-    }
-
-    fn profiles(&self) -> &dyn UserProfileRepository {
-        &self.profiles
     }
 
     fn games(&self) -> &dyn GameRepository {

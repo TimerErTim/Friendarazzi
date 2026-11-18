@@ -9,10 +9,9 @@ use tracing::instrument;
 use crate::{
     application::ExecutionContext,
     domain::{
-        EmailAdresse, NewUserProfile, NonEmptyString,
+        EmailAdresse, NeuerBenutzer, NonEmptyString, default_username_from_email,
         konto::{
-            KlartextPasswort, NeueBestätigung, NeuerBenutzer, NeuesKonto, RefreshToken,
-            SecretToken, hash_password,
+            KlartextPasswort, NeueBestätigung, NeuesKonto, RefreshToken, SecretToken, hash_password,
         },
     },
     ports::{ClientKey, Mail, RepositoryError, ThrottleAction},
@@ -66,10 +65,10 @@ impl UseCase<()> for RegistrierungStarten {
             .await
             .change_context(RegistrierungStartenFehler::KontoPrüfen)?;
 
-        let konto = uow.konten().find_by_email(&self.email).await;
+        let benutzer = uow.benutzer().find_by_email(&self.email).await;
         uow.finish(Ok(()), RegistrierungStartenFehler::KontoPrüfen)
             .await?;
-        match konto {
+        match benutzer {
             Ok(_) => {
                 // Taken: same answer as free, and the owner is not mailed either (AC-2).
                 tracing::info!("registrierung gestartet für eine bereits vergebene adresse");
@@ -183,7 +182,7 @@ pub struct RegistrierungAbschließen {
 impl UseCase<SessionAusgestellt> for RegistrierungAbschließen {
     type Error = Report<RegistrierungAbschliessenFehler>;
 
-    #[instrument(skip_all, err(Debug))]
+    #[instrument(skip_all, fields(client_ip = %self.client_key.ip), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<SessionAusgestellt, Self::Error> {
         let jetzt = ctx.clock().now();
 
@@ -241,8 +240,8 @@ impl UseCase<SessionAusgestellt> for RegistrierungAbschließen {
                 .change_context(RegistrierungAbschliessenFehler::BestätigungSpeichern)?;
 
             let email = bestätigung.email().clone();
-            // The address gained a Konto while this token was outstanding (rule 4).
-            match uow.konten().find_by_email(&email).await {
+            // The address gained a Benutzer while this token was outstanding (rule 4).
+            match uow.benutzer().find_by_email(&email).await {
                 Ok(_) => {
                     return Err(Report::new(
                         RegistrierungAbschliessenFehler::UngültigeAnfrage,
@@ -255,41 +254,33 @@ impl UseCase<SessionAusgestellt> for RegistrierungAbschließen {
                 _ => {}
             };
 
+            let mut neuer_benutzer = NeuerBenutzer::registrierung(email.clone(), jetzt);
+            let base_username = default_username_from_email(&email);
+            if uow
+                .benutzer()
+                .find_by_username(base_username.as_str())
+                .await
+                .is_ok()
+            {
+                let suffix = &uuid::Uuid::new_v4().simple().to_string()[..4];
+                let unique = format!("{}_{}", base_username.as_str(), suffix);
+                neuer_benutzer = neuer_benutzer.with_username(
+                    NonEmptyString::neu(unique).expect("non-empty suffixed username"),
+                );
+            }
+
             let benutzer = uow
                 .benutzer()
-                .create(NeuerBenutzer::registrierung(jetzt))
+                .create(neuer_benutzer)
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(RegistrierungAbschliessenFehler::BenutzerAnlegen)?;
 
             uow.konten()
-                .create(NeuesKonto::neu(
-                    benutzer.id(),
-                    email.clone(),
-                    hashed_passwort,
-                    jetzt,
-                ))
+                .create(NeuesKonto::neu(benutzer.id(), hashed_passwort, jetzt))
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(RegistrierungAbschliessenFehler::KontoAnlegen)?;
-
-            let mut profile_input = NewUserProfile::from_email(benutzer.id(), &email, jetzt);
-            if uow
-                .profiles()
-                .find_by_username(profile_input.username.as_str())
-                .await
-                .is_ok()
-            {
-                let suffix = &benutzer.id().0.simple().to_string()[..4];
-                let unique = format!("{}_{}", profile_input.username.as_str(), suffix);
-                profile_input.username =
-                    NonEmptyString::neu(unique).expect("non-empty suffixed username");
-            }
-            uow.profiles()
-                .create(profile_input)
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(RegistrierungAbschliessenFehler::BenutzerAnlegen)?;
 
             uow.bestätigungen()
                 .delete_by_email(&email)

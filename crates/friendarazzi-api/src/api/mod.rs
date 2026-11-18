@@ -8,8 +8,8 @@ use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
     domain::{
-        BoardTile, BoardTileId, Capture, Game, GameId, GamePlayer, GameStatus, InviteCode,
-        UserProfile as DomainUserProfile, compute_superlatives, konto::BenutzerId,
+        Benutzer as DomainBenutzer, BenutzerId, BoardTileId, Capture, Game, GameId, GameStatus,
+        InviteCode, can_view_blurred_capture, can_view_full_capture, compute_game_awards,
         target_quotas_for_author,
     },
     ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
@@ -19,8 +19,7 @@ use friendarazzi_core::{
         LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
         PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
         RegistrierungAbschließen, RegistrierungStarten, RegistrierungStartenFehler,
-        SessionAusgestellt, StartDrafting, SubmitCapture, UploadAvatar, can_view_blurred_capture,
-        can_view_full_capture, is_player_in_game,
+        SessionAusgestellt, StartDrafting, SubmitCapture, UploadAvatar,
     },
 };
 use tracing::warn;
@@ -72,7 +71,7 @@ impl FriendarazziAppApi {
                 let res = async {
                     let decks = uow
                         .decks()
-                        .list_all()
+                        .find_all()
                         .await
                         .map_err(IntoReport::into_report)
                         .change_context(GameReadError::Persistence)?;
@@ -114,25 +113,20 @@ impl FriendarazziAppApi {
                 let res = async {
                     let games = uow
                         .games()
-                        .find_for_user(user_id)
+                        .find_by_participating_user(user_id)
                         .await
                         .map_err(IntoReport::into_report)
                         .change_context(GameReadError::Persistence)?;
 
                     let mut summaries = Vec::with_capacity(games.len());
                     for game in games {
-                        let players = uow
-                            .games()
-                            .find_players(game.id())
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(GameReadError::Persistence)?;
+                        let players = game.players();
                         let mut winner = None;
                         if let Some(winner_id) = game.winner_user_id()
-                            && let Ok(profile) = uow.profiles().find_by_user_id(winner_id).await
+                            && let Ok(benutzer) = uow.benutzer().find_by_id(winner_id).await
                         {
-                            winner = Some(badge_from_profile(
-                                profile.into_data(),
+                            winner = Some(badge_from_benutzer(
+                                &benutzer.into_data(),
                                 players
                                     .iter()
                                     .find(|p| p.user_id == winner_id)
@@ -146,7 +140,6 @@ impl FriendarazziAppApi {
                             title: game.title().as_str().to_owned(),
                             grid_size: game.grid_size() as u8,
                             visibility_mode: game.visibility_mode().into(),
-                            include_free_space: game.include_free_space(),
                             status: game.status().into(),
                             player_count: players.len() as u32,
                             winner,
@@ -168,8 +161,7 @@ impl FriendarazziAppApi {
         auth: AuthContext,
         code: String,
     ) -> ResultReport<GameSummary, GameReadError> {
-        let invite_code =
-            InviteCode::new(code).map_err(|_| Report::new(GameReadError::BadRequest))?;
+        let invite_code = InviteCode::new(code).change_context(GameReadError::BadRequest)?;
         self.app
             .execute_fn(auth, async |ctx| {
                 let _user_id = ctx
@@ -188,18 +180,12 @@ impl FriendarazziAppApi {
                         }
                         Err(err) => return Err(err).change_context(GameReadError::Persistence),
                     };
-                    let players = uow
-                        .games()
-                        .find_players(game.id())
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(GameReadError::Persistence)?;
                     let mut winner = None;
                     if let Some(winner_id) = game.winner_user_id()
-                        && let Ok(profile) = uow.profiles().find_by_user_id(winner_id).await
+                        && let Ok(benutzer) = uow.benutzer().find_by_id(winner_id).await
                     {
-                        winner = Some(badge_from_profile(
-                            profile.into_data(),
+                        winner = Some(badge_from_benutzer(
+                            &benutzer.into_data(),
                             false,
                             game.host_user_id() == winner_id,
                         ));
@@ -210,9 +196,8 @@ impl FriendarazziAppApi {
                         title: game.title().as_str().to_owned(),
                         grid_size: game.grid_size() as u8,
                         visibility_mode: game.visibility_mode().into(),
-                        include_free_space: game.include_free_space(),
                         status: game.status().into(),
-                        player_count: players.len() as u32,
+                        player_count: game.players().len() as u32,
                         winner,
                         started_at: game.started_at(),
                         ended_at: game.ended_at(),
@@ -326,38 +311,22 @@ impl FriendarazziAppApi {
                         Err(err) => return Err(err).change_context(GameReadError::Persistence),
                     };
 
-                    let mut players = uow
-                        .games()
-                        .find_players(game_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(GameReadError::Persistence)?;
-                    players.sort_by(|a, b| {
-                        a.joined_at
-                            .cmp(&b.joined_at)
-                            .then(a.user_id.cmp(&b.user_id))
-                    });
-
-                    if !is_player_in_game(&players, viewer_id) {
+                    if !game.has_player(viewer_id) {
                         return Err(Report::new(GameReadError::Forbidden));
                     }
 
-                    let player_ids: Vec<_> = players.iter().map(|p| p.user_id).collect();
-                    let profiles = uow
-                        .profiles()
-                        .find_by_user_ids(&player_ids)
+                    let player_ids = game.sorted_player_ids();
+                    let users = uow
+                        .benutzer()
+                        .find_by_ids(&player_ids)
                         .await
                         .map_err(IntoReport::into_report)
                         .change_context(GameReadError::Persistence)?;
 
-                    let badges = build_badge_map(
-                        &game,
-                        &players,
-                        profiles.into_iter().map(|p| p.into_data()),
-                    );
-                    let player_badges: Vec<PlayerBadge> = players
+                    let badges = build_badge_map(&game, users.into_iter().map(|b| b.into_data()));
+                    let player_badges: Vec<PlayerBadge> = player_ids
                         .iter()
-                        .filter_map(|p| badges.get(&p.user_id).cloned())
+                        .filter_map(|pid| badges.get(pid).cloned())
                         .collect();
 
                     let winner = game
@@ -384,17 +353,13 @@ impl FriendarazziAppApi {
                                     })
                             })
                             .collect();
-                        let drafts = uow
-                            .games()
-                            .find_prompts_by_author(game_id, viewer_id)
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(GameReadError::Persistence)?
+                        let drafts = game
+                            .prompts_by_author(viewer_id)
                             .into_iter()
                             .map(|p| PromptSubmissionView {
                                 id: p.id.0,
                                 target_user_id: p.target_user_id.0,
-                                text: p.text.into_string(),
+                                text: p.text.as_str().to_owned(),
                                 source: p.source.into(),
                             })
                             .collect();
@@ -413,13 +378,7 @@ impl FriendarazziAppApi {
                     {
                         let boards = uow
                             .boards()
-                            .find_boards_by_game(game_id)
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(GameReadError::Persistence)?;
-                        let tiles = uow
-                            .boards()
-                            .find_tiles_by_game(game_id)
+                            .find_by_game(game_id)
                             .await
                             .map_err(IntoReport::into_report)
                             .change_context(GameReadError::Persistence)?;
@@ -435,13 +394,6 @@ impl FriendarazziAppApi {
 
                         let capture_by_id: HashMap<_, _> =
                             captures.iter().map(|c| (c.id(), c)).collect();
-                        let mut tiles_by_board: HashMap<_, Vec<BoardTile>> = HashMap::new();
-                        for tile in tiles {
-                            tiles_by_board
-                                .entry(tile.board_id())
-                                .or_default()
-                                .push(tile);
-                        }
 
                         for b in boards {
                             let b = b.into_data();
@@ -453,27 +405,23 @@ impl FriendarazziAppApi {
                             let Some(owner_badge) = badges.get(&owner_id).cloned() else {
                                 continue;
                             };
-                            let mut board_tiles =
-                                tiles_by_board.remove(&b.id()).unwrap_or_default();
-                            board_tiles.sort_by_key(|t| (t.row(), t.col()));
 
-                            let tile_views = board_tiles
-                                .into_iter()
-                                .map(|t| {
+                            let tile_views = b
+                                .tiles()
+                                .iter()
+                                .filter_map(|t| {
+                                    let target_user = badges.get(&t.target_user_id())?.clone();
                                     let cap =
                                         t.capture_id().and_then(|cid| capture_by_id.get(&cid));
                                     let show_photo = cap.is_some_and(|c| {
-                                        can_view_full_capture(&game, &players, c, viewer_id)
+                                        can_view_full_capture(&game, c, viewer_id)
                                     });
-                                    BoardTileView {
+                                    Some(BoardTileView {
                                         id: t.id().0,
                                         row: t.row(),
                                         col: t.col(),
                                         prompt_text: t.prompt_text().as_str().to_owned(),
-                                        target_user: t
-                                            .target_user_id()
-                                            .and_then(|tid| badges.get(&tid).cloned()),
-                                        is_free_space: t.is_free_space(),
+                                        target_user,
                                         is_captured: t.capture_id().is_some(),
                                         capture_id: t.capture_id().map(|c| c.0),
                                         image_storage_key: if show_photo {
@@ -482,7 +430,7 @@ impl FriendarazziAppApi {
                                             None
                                         },
                                         captured_at: cap.map(|c| c.captured_at()),
-                                    }
+                                    })
                                 })
                                 .collect();
 
@@ -501,17 +449,16 @@ impl FriendarazziAppApi {
                         }
 
                         for cap in &captures {
-                            if let Some(item) =
-                                capture_to_feed_item(&game, &players, &badges, cap, viewer_id)
+                            if let Some(item) = capture_to_feed_item(&game, &badges, cap, viewer_id)
                             {
                                 feed.push(item);
                             }
                         }
 
                         if game.status() == GameStatus::Completed {
-                            for sup in
-                                compute_superlatives(&player_ids, &captures, game.started_at())
-                            {
+                            let awards =
+                                compute_game_awards(&player_ids, &captures, game.started_at());
+                            for sup in awards.into_superlatives() {
                                 if let Some(user) = badges.get(&sup.user_id).cloned() {
                                     superlatives.push(SuperlativeView {
                                         kind: sup.kind.into(),
@@ -531,7 +478,6 @@ impl FriendarazziAppApi {
                         title: game.title().as_str().to_owned(),
                         grid_size: game.grid_size() as u8,
                         visibility_mode: game.visibility_mode().into(),
-                        include_free_space: game.include_free_space(),
                         status: game.status().into(),
                         playable_tile_count: game.playable_tile_count() as u32,
                         started_at: game.started_at(),
@@ -594,27 +540,16 @@ impl FriendarazziAppApi {
                         .map_err(IntoReport::into_report)
                         .change_context(CaptureUseCaseError::Persistence)?
                         .into_data();
-                    let players = uow
-                        .games()
-                        .find_players(game_id)
+                    let ids = game.sorted_player_ids();
+                    let users = uow
+                        .benutzer()
+                        .find_by_ids(&ids)
                         .await
                         .map_err(IntoReport::into_report)
                         .change_context(CaptureUseCaseError::Persistence)?;
-                    let ids: Vec<_> = players.iter().map(|p| p.user_id).collect();
-                    let profiles = uow
-                        .profiles()
-                        .find_by_user_ids(&ids)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(CaptureUseCaseError::Persistence)?;
-                    let badges = build_badge_map(
-                        &game,
-                        &players,
-                        profiles.into_iter().map(|p| p.into_data()),
-                    );
-                    let item =
-                        capture_to_feed_item(&game, &players, &badges, &outcome.capture, viewer_id)
-                            .ok_or_else(|| Report::new(CaptureUseCaseError::Persistence))?;
+                    let badges = build_badge_map(&game, users.into_iter().map(|b| b.into_data()));
+                    let item = capture_to_feed_item(&game, &badges, &outcome.capture, viewer_id)
+                        .ok_or_else(|| Report::new(CaptureUseCaseError::Persistence))?;
                     Ok::<_, Report<CaptureUseCaseError>>(item)
                 }
                 .await;
@@ -624,13 +559,9 @@ impl FriendarazziAppApi {
 
         Ok(CaptureOutcome {
             capture: item,
-            game_completed: outcome.game_completed,
             winning_line: outcome
                 .winning_line
-                .unwrap_or_default()
-                .into_iter()
-                .map(|(row, col)| GridCoordinate { row, col })
-                .collect(),
+                .map(|line| line.into_iter().map(GridCoordinate::from).collect()),
         })
     }
 
@@ -652,7 +583,7 @@ impl FriendarazziAppApi {
                     .await
                     .change_context(ProfileReadError::Persistence)?;
                 let res = async {
-                    let profile = match uow.profiles().find_by_user_id(target_user_id).await {
+                    let benutzer = match uow.benutzer().find_by_id(target_user_id).await {
                         Ok(p) => p.into_data(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                             return Err(Report::new(ProfileReadError::NotFound));
@@ -662,7 +593,7 @@ impl FriendarazziAppApi {
 
                     let games = uow
                         .games()
-                        .find_for_user(target_user_id)
+                        .find_by_participating_user(target_user_id)
                         .await
                         .map_err(IntoReport::into_report)
                         .change_context(ProfileReadError::Persistence)?;
@@ -680,7 +611,7 @@ impl FriendarazziAppApi {
                         .change_context(ProfileReadError::Persistence)?;
 
                     Ok::<_, Report<ProfileReadError>>(profile_to_schema(
-                        &profile,
+                        &benutzer,
                         games.len() as u32,
                         captured.len() as u32,
                         caught.len() as u32,
@@ -697,11 +628,9 @@ impl FriendarazziAppApi {
         auth: AuthContext,
         req: requests::UpdateProfileRequest,
     ) -> ResultReport<UserProfile, ProfileUseCaseError> {
-        let updated = self
-            .app
-            .execute(auth, friendarazzi_core::service::UpdateProfile::from(req))
-            .await?;
-        self.profile_get(auth, updated.user_id())
+        let uc = req.into_use_case()?;
+        let updated = self.app.execute(auth, uc).await?;
+        self.profile_get(auth, updated.id())
             .await
             .map_err(|e| e.change_context(ProfileUseCaseError::Persistence))
     }
@@ -712,7 +641,7 @@ impl FriendarazziAppApi {
         image_bytes: Vec<u8>,
     ) -> ResultReport<UserProfile, ProfileUseCaseError> {
         let updated = self.app.execute(auth, UploadAvatar { image_bytes }).await?;
-        self.profile_get(auth, updated.user_id())
+        self.profile_get(auth, updated.id())
             .await
             .map_err(|e| e.change_context(ProfileUseCaseError::Persistence))
     }
@@ -733,8 +662,7 @@ impl FriendarazziAppApi {
                     .await
                     .change_context(ProfileReadError::Persistence)?;
                 let res = async {
-                    let target_profile = match uow.profiles().find_by_user_id(target_user_id).await
-                    {
+                    let target_benutzer = match uow.benutzer().find_by_id(target_user_id).await {
                         Ok(p) => p.into_data(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                             return Err(Report::new(ProfileReadError::NotFound));
@@ -744,7 +672,7 @@ impl FriendarazziAppApi {
 
                     let games = uow
                         .games()
-                        .find_for_user(target_user_id)
+                        .find_by_participating_user(target_user_id)
                         .await
                         .map_err(IntoReport::into_report)
                         .change_context(ProfileReadError::Persistence)?;
@@ -767,7 +695,7 @@ impl FriendarazziAppApi {
                         .map(|c| c.into_data())
                         .collect();
 
-                    type CachedGame = (Game, Vec<GamePlayer>, HashMap<BenutzerId, PlayerBadge>);
+                    type CachedGame = (Game, HashMap<BenutzerId, PlayerBadge>);
                     let mut game_cache: HashMap<GameId, CachedGame> = HashMap::new();
                     let mut all_game_ids: HashSet<GameId> = HashSet::new();
                     for c in caught_all.iter().chain(captured_all.iter()) {
@@ -779,41 +707,29 @@ impl FriendarazziAppApi {
                             continue;
                         };
                         let game = game.into_data();
-                        let players = uow
-                            .games()
-                            .find_players(gid)
+                        let ids = game.sorted_player_ids();
+                        let users = uow
+                            .benutzer()
+                            .find_by_ids(&ids)
                             .await
                             .map_err(IntoReport::into_report)
                             .change_context(ProfileReadError::Persistence)?;
-                        let ids: Vec<_> = players.iter().map(|p| p.user_id).collect();
-                        let profiles = uow
-                            .profiles()
-                            .find_by_user_ids(&ids)
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(ProfileReadError::Persistence)?;
-                        let badges = build_badge_map(
-                            &game,
-                            &players,
-                            profiles.into_iter().map(|p| p.into_data()),
-                        );
-                        game_cache.insert(gid, (game, players, badges));
+                        let badges =
+                            build_badge_map(&game, users.into_iter().map(|b| b.into_data()));
+                        game_cache.insert(gid, (game, badges));
                     }
 
                     let group_captures = |list: &[Capture]| -> Vec<GalleryGameGroup> {
                         let mut by_game: HashMap<GameId, Vec<CaptureFeedItem>> = HashMap::new();
                         for cap in list {
-                            let Some((game, players, badges)) = game_cache.get(&cap.game_id())
-                            else {
+                            let Some((game, badges)) = game_cache.get(&cap.game_id()) else {
                                 continue;
                             };
                             // Only show full-resolution unredacted memories in galleries once visible!
-                            if !can_view_full_capture(game, players, cap, viewer_id) {
+                            if !can_view_full_capture(game, cap, viewer_id) {
                                 continue;
                             }
-                            if let Some(item) =
-                                capture_to_feed_item(game, players, badges, cap, viewer_id)
-                            {
+                            if let Some(item) = capture_to_feed_item(game, badges, cap, viewer_id) {
                                 by_game.entry(game.id()).or_default().push(item);
                             }
                         }
@@ -821,7 +737,7 @@ impl FriendarazziAppApi {
                         let mut groups: Vec<GalleryGameGroup> = by_game
                             .into_iter()
                             .filter_map(|(gid, mut photos)| {
-                                let (game, _, badges) = game_cache.get(&gid)?;
+                                let (game, badges) = game_cache.get(&gid)?;
                                 photos.sort_by_key(|p| std::cmp::Reverse(p.captured_at));
                                 Some(GalleryGameGroup {
                                     game_id: game.id().0,
@@ -844,7 +760,7 @@ impl FriendarazziAppApi {
 
                     Ok::<_, Report<ProfileReadError>>(UserGallery {
                         user: profile_to_schema(
-                            &target_profile,
+                            &target_benutzer,
                             games.len() as u32,
                             captured_all.len() as u32,
                             caught_all.len() as u32,
@@ -900,17 +816,11 @@ impl FriendarazziAppApi {
                             .map_err(IntoReport::into_report)
                             .change_context(MediaReadError::Storage)?
                             .into_data();
-                        let players = uow
-                            .games()
-                            .find_players(game.id())
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(MediaReadError::Storage)?;
 
                         let permitted = if storage_key == capture.thumbnail_storage_key() {
-                            can_view_blurred_capture(&game, &players, &capture, viewer_id)
+                            can_view_blurred_capture(&game, &capture, viewer_id)
                         } else {
-                            can_view_full_capture(&game, &players, &capture, viewer_id)
+                            can_view_full_capture(&game, &capture, viewer_id)
                         };
                         if !permitted {
                             return Err(Report::new(MediaReadError::Forbidden));
@@ -979,7 +889,7 @@ impl FriendarazziAppApi {
             refresh_token,
         ) {
             Ok(token) => token,
-            Err(_) => {
+            Err(err) => {
                 if let Err(fehler) = self
                     .app
                     .throttle
@@ -988,7 +898,7 @@ impl FriendarazziAppApi {
                 {
                     warn!(fehler = %fehler, "der Erneuerungsversuch konnte nicht gezählt werden");
                 }
-                return Err(Report::new(ErneuerungFehler::SessionUngültig));
+                return Err(Report::new(err).change_context(ErneuerungFehler::SessionUngültig));
             }
         };
 
@@ -1041,44 +951,20 @@ impl FriendarazziAppApi {
                     .await
                     .change_context(ProfileReadError::Persistence)?;
                 let ergebnis = async {
-                    let benutzer = uow
-                        .benutzer()
-                        .find_by_id(benutzer_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(ProfileReadError::Persistence)?;
-                    let konten = uow
-                        .konten()
-                        .find_by_benutzer(benutzer_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(ProfileReadError::Persistence)?;
-                    let Some(konto) = konten.into_iter().next() else {
-                        return Err(Report::new(ProfileReadError::NotFound));
-                    };
-                    let profile = match uow.profiles().find_by_user_id(benutzer_id).await {
-                        Ok(p) => p.into_data(),
+                    let benutzer = match uow.benutzer().find_by_id(benutzer_id).await {
+                        Ok(b) => b.into_data(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
-                            let new_prof = friendarazzi_core::domain::NewUserProfile::from_email(
-                                benutzer_id,
-                                konto.email(),
-                                benutzer.created_at(),
-                            );
-                            uow.profiles()
-                                .create(new_prof)
-                                .await
-                                .map_err(IntoReport::into_report)
-                                .change_context(ProfileReadError::Persistence)?
-                                .into_data()
+                            return Err(Report::new(ProfileReadError::NotFound));
                         }
-                        Err(err) => return Err(err).change_context(ProfileReadError::Persistence),
+                        Err(err) => {
+                            return Err(err).change_context(ProfileReadError::Persistence);
+                        }
                     };
-                    Ok((benutzer.into_data(), konto.email().clone(), profile))
+                    Ok(benutzer)
                 }
                 .await;
-                let (benutzer, email, profile) =
-                    uow.finish(ergebnis, ProfileReadError::Persistence).await?;
-                Ok((benutzer, email, profile).into())
+                let benutzer = uow.finish(ergebnis, ProfileReadError::Persistence).await?;
+                Ok(benutzer.into())
             })
             .await
     }
@@ -1093,18 +979,18 @@ impl FriendarazziAppApi {
     }
 }
 
-fn badge_from_profile(
-    profile: DomainUserProfile,
+fn badge_from_benutzer(
+    benutzer: &DomainBenutzer,
     draft_locked: bool,
     is_host: bool,
 ) -> PlayerBadge {
-    let effective_title = profile.effective_title().to_owned();
+    let effective_title = benutzer.effective_title().to_owned();
     PlayerBadge {
-        id: profile.user_id().0,
-        username: profile.username().as_str().to_owned(),
-        display_name: profile.display_name().as_str().to_owned(),
-        avatar_storage_key: profile.avatar_storage_key().map(str::to_owned),
-        gold_medal_count: profile.gold_medal_count(),
+        id: benutzer.id().0,
+        username: benutzer.username().as_str().to_owned(),
+        display_name: benutzer.display_name().as_str().to_owned(),
+        avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
+        gold_medal_count: benutzer.gold_medal_count(),
         effective_title,
         draft_locked,
         is_host,
@@ -1113,18 +999,16 @@ fn badge_from_profile(
 
 fn build_badge_map(
     game: &Game,
-    players: &[GamePlayer],
-    profiles: impl Iterator<Item = DomainUserProfile>,
+    users: impl Iterator<Item = DomainBenutzer>,
 ) -> HashMap<BenutzerId, PlayerBadge> {
-    let profile_map: HashMap<BenutzerId, DomainUserProfile> =
-        profiles.map(|p| (p.user_id(), p)).collect();
+    let user_map: HashMap<BenutzerId, DomainBenutzer> = users.map(|b| (b.id(), b)).collect();
     let mut out = HashMap::new();
-    for player in players {
-        if let Some(p) = profile_map.get(&player.user_id) {
+    for player in game.players() {
+        if let Some(b) = user_map.get(&player.user_id) {
             out.insert(
                 player.user_id,
-                badge_from_profile(
-                    p.clone(),
+                badge_from_benutzer(
+                    b,
                     player.draft_locked,
                     game.host_user_id() == player.user_id,
                 ),
@@ -1150,13 +1034,12 @@ fn build_badge_map(
 
 fn capture_to_feed_item(
     game: &Game,
-    players: &[GamePlayer],
     badges: &HashMap<BenutzerId, PlayerBadge>,
     cap: &Capture,
     viewer_id: BenutzerId,
 ) -> Option<CaptureFeedItem> {
-    let can_full = can_view_full_capture(game, players, cap, viewer_id);
-    let can_blurred = can_view_blurred_capture(game, players, cap, viewer_id);
+    let can_full = can_view_full_capture(game, cap, viewer_id);
+    let can_blurred = can_view_blurred_capture(game, cap, viewer_id);
 
     if !can_blurred {
         return None;
@@ -1168,9 +1051,7 @@ fn capture_to_feed_item(
             id: cap.id().0,
             tile_id: cap.tile_id().0,
             catcher,
-            target: cap
-                .target_user_id()
-                .and_then(|tid| badges.get(&tid).cloned()),
+            target: badges.get(&cap.target_user_id()).cloned(),
             prompt_text: Some(cap.prompt_text().as_str().to_owned()),
             image_storage_key: Some(cap.image_storage_key().to_owned()),
             thumbnail_storage_key: cap.thumbnail_storage_key().to_owned(),
@@ -1194,20 +1075,20 @@ fn capture_to_feed_item(
 }
 
 fn profile_to_schema(
-    profile: &DomainUserProfile,
+    benutzer: &DomainBenutzer,
     games_played: u32,
     captures_made: u32,
     times_caught: u32,
 ) -> UserProfile {
     UserProfile {
-        id: profile.user_id().0,
-        username: profile.username().as_str().to_owned(),
-        display_name: profile.display_name().as_str().to_owned(),
-        avatar_storage_key: profile.avatar_storage_key().map(str::to_owned),
-        gold_medal_count: profile.gold_medal_count(),
-        equipped_title: profile.equipped_title().map(str::to_owned),
-        effective_title: profile.effective_title().to_owned(),
-        unlocked_titles: profile
+        id: benutzer.id().0,
+        username: benutzer.username().as_str().to_owned(),
+        display_name: benutzer.display_name().as_str().to_owned(),
+        avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
+        gold_medal_count: benutzer.gold_medal_count(),
+        equipped_title: benutzer.equipped_title().map(str::to_owned),
+        effective_title: benutzer.effective_title().to_owned(),
+        unlocked_titles: benutzer
             .unlocked_titles()
             .into_iter()
             .map(str::to_owned)

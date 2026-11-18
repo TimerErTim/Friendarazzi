@@ -2,7 +2,7 @@
 //!
 //! `libsql::Builder::new_local(":memory:")` gives every connection its own private
 //! database. Migrations run on one connection and queries later run on another, so the
-//! schema appeared to vanish and the server died with `no such table: sessions` at
+//! schema appeared to vanish and the server died with `no such table: session` at
 //! startup. The URL has to route through the shared-cache in-memory instance instead.
 
 use friendarazzi_sqlite::SQLiteInstance;
@@ -16,7 +16,7 @@ async fn memory_url_shares_one_database_across_connections() {
     let connection = instance.create_connection().await.unwrap();
     let mut rows = connection
         .query(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sessions'",
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'",
             (),
         )
         .await

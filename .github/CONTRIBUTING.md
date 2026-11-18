@@ -19,6 +19,16 @@ mise run dev:server     # API on http://localhost:3000, Mailpit UI on http://127
 mise run dev:frontend   # Frontend on http://localhost:3001
 ```
 
+### Running with Docker Compose
+
+```bash
+cp .env.example .env
+# Configure API_DOMAIN, FRONTEND_ORIGIN, MAIL_ABSENDER, and secrets/mail.env
+docker compose up -d
+```
+
+Database state (`/data/sqlite`) and uploaded photos (`/data/media`) persist via host-mounted volumes. See [`docs/deployment.md`](../docs/deployment.md) for the full production setup.
+
 ## Checks & Tests
 
 Before opening a pull request, run the full check and test suites:
@@ -32,6 +42,7 @@ mise run verify  # Starts built backend & frontend and runs smoke tests
 
 ## Architecture & Pull Requests
 
+- **Stack:** Hexagonal Rust backend (`poem` + `poem-openapi`, `libsql`/SQLite with `molting` migrations, local filesystem media store, automatic WebP resizing/blurring via `image`) paired with a statically exported Next.js App Router + Tailwind + TanStack Query frontend. See [`specs/README.md`](../specs/README.md).
 - Target `dev` for feature and bugfix pull requests (`main` receives releases from `dev`).
 - Keep domain logic and invariants inside `crates/friendarazzi-core` with matching tests in `crates/friendarazzi-core/tests/cases/` (which execute against both in-memory fakes and SQLite) and HTTP assertions in `crates/friendarazzi-api/tests/e2e/`.
 - If an API route or schema DTO changes, sync the TypeScript client types via `mise run sync:openapi`.

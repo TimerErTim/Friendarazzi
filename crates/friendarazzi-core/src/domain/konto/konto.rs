@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use super::{BenutzerId, HashedPasswort};
-use crate::domain::EmailAdresse;
 
 /// Identity of one Konto.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -12,7 +11,6 @@ pub struct KontoId(pub Uuid);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NeuesKonto {
     benutzer_id: BenutzerId,
-    email: EmailAdresse,
     password_hash: HashedPasswort,
     bestätigt_am: DateTime<Utc>,
     created_at: DateTime<Utc>,
@@ -23,13 +21,11 @@ impl NeuesKonto {
     /// timestamp is not optional: it is the moment registration completed.
     pub fn neu(
         benutzer_id: BenutzerId,
-        email: EmailAdresse,
         password_hash: HashedPasswort,
         created_at: DateTime<Utc>,
     ) -> Self {
         Self {
             benutzer_id,
-            email,
             password_hash,
             bestätigt_am: created_at,
             created_at,
@@ -38,10 +34,6 @@ impl NeuesKonto {
 
     pub fn benutzer_id(&self) -> BenutzerId {
         self.benutzer_id
-    }
-
-    pub fn email(&self) -> &EmailAdresse {
-        &self.email
     }
 
     pub fn password_hash(&self) -> &HashedPasswort {
@@ -57,12 +49,11 @@ impl NeuesKonto {
     }
 }
 
-/// One way to authenticate a Benutzer. MVP: a normalized E-Mail-Adresse plus a Passwort.
+/// Authentication credential of a Benutzer (email/username lives on `Benutzer`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Konto {
     id: KontoId,
     benutzer_id: BenutzerId,
-    email: EmailAdresse,
     password_hash: HashedPasswort,
     bestätigt_am: DateTime<Utc>,
     created_at: DateTime<Utc>,
@@ -73,7 +64,6 @@ impl Konto {
         Self {
             id,
             benutzer_id: neu.benutzer_id,
-            email: neu.email,
             password_hash: neu.password_hash,
             bestätigt_am: neu.bestätigt_am,
             created_at: neu.created_at,
@@ -83,7 +73,6 @@ impl Konto {
     pub fn from_parts(
         id: KontoId,
         benutzer_id: BenutzerId,
-        email: EmailAdresse,
         password_hash: HashedPasswort,
         bestätigt_am: DateTime<Utc>,
         created_at: DateTime<Utc>,
@@ -91,7 +80,6 @@ impl Konto {
         Self {
             id,
             benutzer_id,
-            email,
             password_hash,
             bestätigt_am,
             created_at,
@@ -104,10 +92,6 @@ impl Konto {
 
     pub fn benutzer_id(&self) -> BenutzerId {
         self.benutzer_id
-    }
-
-    pub fn email(&self) -> &EmailAdresse {
-        &self.email
     }
 
     pub fn password_hash(&self) -> &HashedPasswort {
@@ -138,10 +122,6 @@ mod tests {
         DateTime::from_timestamp(1_700_000_000, 0).unwrap()
     }
 
-    fn email() -> EmailAdresse {
-        EmailAdresse::normalisiert("Anna.Muster@Example.AT ").unwrap()
-    }
-
     /// One real argon2id hash, computed once for this module's tests.
     fn hash() -> &'static HashedPasswort {
         static HASH: std::sync::OnceLock<HashedPasswort> = std::sync::OnceLock::new();
@@ -153,19 +133,17 @@ mod tests {
 
     #[test_log::test]
     fn neues_konto_bestätigt_die_adresse() {
-        let neu = NeuesKonto::neu(BenutzerId(Uuid::nil()), email(), hash().clone(), jetzt());
+        let neu = NeuesKonto::neu(BenutzerId(Uuid::nil()), hash().clone(), jetzt());
         assert_eq!(neu.bestätigt_am(), jetzt());
-        assert_eq!(neu.email().as_ref(), "anna.muster@example.at");
     }
 
     #[test_log::test]
     fn from_parts_roundtrip() {
-        let neu = NeuesKonto::neu(BenutzerId(Uuid::nil()), email(), hash().clone(), jetzt());
+        let neu = NeuesKonto::neu(BenutzerId(Uuid::nil()), hash().clone(), jetzt());
         let original = Konto::neu(KontoId(Uuid::nil()), neu);
         let geladen = Konto::from_parts(
             original.id(),
             original.benutzer_id(),
-            original.email().clone(),
             original.password_hash().clone(),
             original.bestätigt_am(),
             original.created_at(),

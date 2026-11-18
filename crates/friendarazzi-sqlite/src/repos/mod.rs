@@ -9,7 +9,6 @@ mod deck;
 mod game;
 mod konto;
 mod passwort_wiederherstellung;
-mod profile;
 mod session;
 
 pub use benutzer::SQLiteBenutzerRepository;
@@ -20,5 +19,4 @@ pub use deck::SQLiteDeckRepository;
 pub use game::SQLiteGameRepository;
 pub use konto::SQLiteKontoRepository;
 pub use passwort_wiederherstellung::SQLitePasswortWiederherstellungRepository;
-pub use profile::SQLiteUserProfileRepository;
 pub use session::SQLiteSessionRepository;

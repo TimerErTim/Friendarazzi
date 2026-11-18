@@ -37,7 +37,6 @@ import {
 } from "@/components/ui/paper-rule";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -122,7 +121,6 @@ function AuthenticatedHome() {
   const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>(
     VisibilityMode.Undercover,
   );
-  const [includeFreeSpace, setIncludeFreeSpace] = useState(true);
   const [inviteCode, setInviteCode] = useState("");
 
   async function handleCreate(e: React.FormEvent) {
@@ -131,7 +129,6 @@ function AuthenticatedHome() {
       title,
       gridSize: Number(gridSize),
       visibilityMode,
-      includeFreeSpace,
     });
     setCreateOpen(false);
     router.push(gameHref(created.id));
@@ -310,18 +307,6 @@ function AuthenticatedHome() {
                 </Select>
               </Field>
             </div>
-            {gridSize !== "4" ? (
-              <div className="flex items-center justify-between gap-4 rounded-md border border-subtle p-3">
-                <span className="text-sm text-ink">
-                  Mittleres „Free Space“-Feld aktivieren
-                </span>
-                <Switch
-                  checked={includeFreeSpace}
-                  onCheckedChange={setIncludeFreeSpace}
-                  aria-label="Free Space aktivieren"
-                />
-              </div>
-            ) : null}
 
             {mutations.createGame.isError ? (
               <Alert variant="error">

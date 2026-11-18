@@ -66,14 +66,23 @@ impl UseCase<()> for PasswortVergessen {
             .change_context(PasswortVergessenFehler::KontoLaden)?;
 
         let ergebnis = async {
-            let konto = match uow.konten().find_by_email(&self.email).await {
-                Ok(konto) => konto,
+            let benutzer = match uow.benutzer().find_by_email(&self.email).await {
+                Ok(b) => b,
                 Err(fehler) if matches!(fehler.current_context(), RepositoryError::NotFound) => {
                     return Ok::<_, Report<PasswortVergessenFehler>>(false);
                 }
                 Err(fehler) => {
                     return Err(fehler).change_context(PasswortVergessenFehler::KontoLaden);
                 }
+            };
+            let konten = uow
+                .konten()
+                .find_by_benutzer(benutzer.id())
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(PasswortVergessenFehler::KontoLaden)?;
+            let Some(konto) = konten.into_iter().next() else {
+                return Ok::<_, Report<PasswortVergessenFehler>>(false);
             };
 
             // One usable link per Konto: spend the outstanding ones first (rule 7).

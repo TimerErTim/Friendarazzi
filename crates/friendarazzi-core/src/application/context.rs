@@ -6,7 +6,10 @@ use crate::{
         InstrumentedThrottle, InstrumentedUnitOfWork,
     },
     application::uow::{UnitOfWork, UnitOfWorkImpl, UnitOfWorkProvider},
-    ports::{Clock, MailSender, ObjectStore, PdfRenderer, RepositoryResult, Signing, Throttle},
+    ports::{
+        Clock, MailSender, ObjectStore, PdfRenderer, PortRng, RepositoryResult, RngPort, Signing,
+        Throttle,
+    },
 };
 use tracing::instrument;
 
@@ -27,6 +30,7 @@ pub struct ExecutionContext<'a> {
     auth: AuthContext,
     signing: Arc<dyn Signing>,
     clock: Arc<dyn Clock>,
+    rng: Arc<dyn RngPort>,
     object_store: Arc<dyn ObjectStore>,
     pdf_renderer: Arc<dyn PdfRenderer>,
     throttle: Arc<dyn Throttle>,
@@ -40,6 +44,7 @@ pub(crate) struct ContextPorts {
     pub(crate) auth: AuthContext,
     pub(crate) signing: Arc<dyn Signing>,
     pub(crate) clock: Arc<dyn Clock>,
+    pub(crate) rng: Arc<dyn RngPort>,
     pub(crate) object_store: Arc<dyn ObjectStore>,
     pub(crate) pdf_renderer: Arc<dyn PdfRenderer>,
     pub(crate) throttle: Arc<dyn Throttle>,
@@ -57,6 +62,7 @@ impl<'a> ExecutionContext<'a> {
             auth: ports.auth,
             signing: ports.signing,
             clock: ports.clock,
+            rng: ports.rng,
             object_store: InstrumentedObjectStore::new(ports.object_store),
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
@@ -71,6 +77,7 @@ impl<'a> ExecutionContext<'a> {
             auth: ports.auth,
             signing: ports.signing,
             clock: ports.clock,
+            rng: ports.rng,
             object_store: InstrumentedObjectStore::new(ports.object_store),
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
@@ -81,6 +88,10 @@ impl<'a> ExecutionContext<'a> {
 
     pub fn clock(&self) -> &dyn Clock {
         self.clock.as_ref()
+    }
+
+    pub fn rng(&self) -> PortRng<'_> {
+        PortRng(self.rng.as_ref())
     }
 
     pub fn object_store(&self) -> &dyn ObjectStore {
@@ -126,6 +137,7 @@ impl<'a> ExecutionContext<'a> {
                 auth: self.auth,
                 signing: Arc::clone(&self.signing),
                 clock: Arc::clone(&self.clock),
+                rng: Arc::clone(&self.rng),
                 object_store: Arc::clone(&self.object_store),
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),

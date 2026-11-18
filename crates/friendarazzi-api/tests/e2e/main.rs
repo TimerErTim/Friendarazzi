@@ -19,7 +19,7 @@ use friendarazzi_core::{
     application::IdentityProviderConfiguration,
     ports::Clock,
 };
-use friendarazzi_fakes::{FakeMailSender, FixedClock};
+use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
 use friendarazzi_filesystemstore::FileSystemObjectStore;
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender};
 use friendarazzi_sqlite::SQLiteInstance;
@@ -27,10 +27,12 @@ use poem::{Route, http::StatusCode, test::TestClient};
 use serde_json::Value;
 use tempdir::TempDir;
 
-pub mod friendarazzi;
+pub mod capture;
+pub mod game;
 pub mod health;
 pub mod konto;
 pub mod mailpit;
+pub mod profile;
 pub mod spec;
 
 /// The frontend origin every e2e case's mailed links are spelled from, and the routes the
@@ -104,6 +106,7 @@ impl E2eHarness {
             .mail_sender(Arc::clone(&mail) as Arc<dyn friendarazzi_core::ports::MailSender>)
             .konto(test_konfiguration())
             .clock(Arc::clone(&clock) as Arc<dyn Clock>)
+            .rng(Arc::new(FixedRng::default()))
             .build();
 
         Self {
@@ -146,6 +149,7 @@ impl E2eHarness {
             .mail_sender(smtp as Arc<dyn friendarazzi_core::ports::MailSender>)
             .konto(test_konfiguration())
             .clock(Arc::clone(&clock) as Arc<dyn Clock>)
+            .rng(Arc::new(FixedRng::default()))
             .build();
 
         Self {
@@ -541,4 +545,92 @@ pub async fn befördere_zum_systemadministrator(harness: &E2eHarness, email: &st
         .await
         .expect("die Beförderung läuft");
     assert_eq!(befund, Beförderung::Befördert, "die Beförderung greift");
+}
+
+pub async fn enroll_and_start_game(
+    harness: &E2eHarness,
+    host_token: &str,
+    guest_tokens: &[&str],
+    title: &str,
+    grid_size: u8,
+    visibility_mode: &str,
+) -> (String, String) {
+    let (status, created) = harness
+        .client
+        .post_json_auth(
+            "/api/games",
+            serde_json::json!({
+                "title": title,
+                "gridSize": grid_size,
+                "visibilityMode": visibility_mode,
+            }),
+            host_token,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    let game_id = created["id"].as_str().unwrap().to_owned();
+    let invite_code = created["inviteCode"].as_str().unwrap().to_owned();
+
+    for token in guest_tokens {
+        let (st, joined) = harness
+            .client
+            .post_json_auth(
+                "/api/games/join",
+                serde_json::json!({ "inviteCode": invite_code }),
+                token,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK, "{joined}");
+    }
+
+    let (st, drafting) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/start-drafting"),
+            serde_json::json!({}),
+            host_token,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{drafting}");
+
+    let mut all = vec![host_token];
+    all.extend_from_slice(guest_tokens);
+    for token in all {
+        let (_, detail) = harness
+            .client
+            .get_json_auth(&format!("/api/games/{game_id}"), token)
+            .await;
+        let mut prompts = Vec::new();
+        for q in detail["myQuotas"].as_array().unwrap() {
+            let target_id = q["targetUser"]["id"].as_str().unwrap();
+            let count = q["requiredCount"].as_u64().unwrap();
+            for i in 0..count {
+                prompts.push(serde_json::json!({
+                    "targetUserId": target_id,
+                    "text": format!("Prompt {i}"),
+                    "source": "Custom"
+                }));
+            }
+        }
+        let (st, _) = harness
+            .client
+            .put_json_auth(
+                &format!("/api/games/{game_id}/prompts"),
+                serde_json::json!({ "prompts": prompts }),
+                token,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK);
+        let (st, _) = harness
+            .client
+            .post_json_auth(
+                &format!("/api/games/{game_id}/prompts/lock"),
+                serde_json::json!({}),
+                token,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK);
+    }
+
+    (game_id, invite_code)
 }

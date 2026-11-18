@@ -10,7 +10,7 @@ use chrono::Duration;
 use friendarazzi_core::{
     application::AuthContext,
     domain::{
-        EmailAdresse,
+        EmailAdresse, NonEmptyString,
         konto::{
             ACCESS_TOKEN_LIFETIME, BenutzerId, KlartextPasswort, NeuerBenutzer, Rolle, SecretToken,
             SessionId, TokenId,
@@ -91,13 +91,13 @@ async fn registriere(harness: &Harness, email: &str) -> SessionAusgestellt {
         .expect("registration step 2 issues a session")
 }
 
-async fn anmelden(harness: &Harness, email: &str) -> SessionAusgestellt {
+async fn anmelden(harness: &Harness, identifier: &str) -> SessionAusgestellt {
     harness
         .app()
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                email: adresse(email),
+                identifier: NonEmptyString::neu(identifier).expect("Test-Identifier ist gültig"),
                 passwort: passwort(),
                 client_key: client_key(2),
             },
@@ -304,7 +304,7 @@ async fn ac6_falsches_passwort_und_unbekannte_adresse_sind_ununterscheidbar() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                email: adresse("anna@muster.at"),
+                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
                 passwort: passwort_wie("falsches-passwort"),
                 client_key: client_key(10),
             },
@@ -315,7 +315,7 @@ async fn ac6_falsches_passwort_und_unbekannte_adresse_sind_ununterscheidbar() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                email: adresse("niemand@muster.at"),
+                identifier: NonEmptyString::neu("niemand@muster.at").expect("gültig"),
                 passwort: passwort(),
                 client_key: client_key(11),
             },
@@ -586,19 +586,31 @@ async fn ac11_neues_passwort_beendet_alle_sessions_und_ist_einmalig() {
         "das Wiederherstellungs-Token ist einmalig"
     );
 
-    // The new Passwort is what logs in now.
+    // The new Passwort is what logs in now (both email and derived username work).
     harness
         .app()
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                email: adresse("anna@muster.at"),
+                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
                 passwort: passwort_wie("ein-ganz-neues-passwort"),
                 client_key: client_key(20),
             },
         )
         .await
         .expect("das neue Passwort gilt");
+    harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            Anmeldung {
+                identifier: NonEmptyString::neu("anna").expect("gültig"),
+                passwort: passwort_wie("ein-ganz-neues-passwort"),
+                client_key: client_key(20),
+            },
+        )
+        .await
+        .expect("auch die Anmeldung per Benutzername funktioniert");
 }
 
 // ------------------------------------------------------------------------ AC-12, AC-13
@@ -625,7 +637,7 @@ async fn ac12_löschung_entfernt_identität_und_gibt_die_adresse_frei() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                email: adresse("anna@muster.at"),
+                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
                 passwort: passwort(),
                 client_key: client_key(21),
             },
@@ -677,7 +689,7 @@ async fn ac12_löschung_ohne_bestätigung_oder_mit_falschem_passwort_scheitert()
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                email: adresse("anna@muster.at"),
+                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
                 passwort: passwort(),
                 client_key: client_key(24),
             },
@@ -804,7 +816,10 @@ async fn speicher_vertrag_aktualisiert_die_version_und_schuetzt_das_loeschen() {
             let uow = ctx.enter().await?;
             let erstellt = uow
                 .benutzer()
-                .create(NeuerBenutzer::neu(Rolle::Benutzer, ctx.clock().now()))
+                .create(NeuerBenutzer::registrierung(
+                    adresse("unbestätigt@muster.at"),
+                    ctx.clock().now(),
+                ))
                 .await?;
             let geladen = uow.benutzer().find_by_id(erstellt.id()).await?;
             uow.commit().await?;

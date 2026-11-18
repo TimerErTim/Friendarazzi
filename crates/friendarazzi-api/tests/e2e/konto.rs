@@ -202,6 +202,19 @@ async fn ac5_anmeldung_eröffnet_eine_gültige_session() {
     let (status, body) = harness.client.get_json_auth("/api/benutzer", access).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(!refresh_cookie(&cookie).is_empty());
+
+    // Logging in with the derived username succeeds identically.
+    let (status, user_body, user_cookie) = harness
+        .client
+        .post_json_cookie(
+            "/api/anmeldung",
+            json!({ "identifier": "anna", "passwort": PASSWORT }),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{user_body}");
+    assert!(user_body["accessToken"].as_str().is_some());
+    assert!(user_cookie.is_some());
 }
 
 // ------------------------------------------------------------------------------- AC-6

@@ -3,14 +3,13 @@ use async_trait::async_trait;
 use crate::application::ResultReport;
 use crate::application::uow::Versioned;
 use crate::domain::konto::{
-    Benutzer, BenutzerId, BestätigungId, EmailBestätigung, Konto, KontoId, NeueBestätigung,
-    NeuePasswortWiederherstellung, NeueSession, NeuerBenutzer, NeuesKonto,
-    PasswortWiederherstellung, PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
+    BestätigungId, EmailBestätigung, Konto, KontoId, NeueBestätigung,
+    NeuePasswortWiederherstellung, NeueSession, NeuesKonto, PasswortWiederherstellung,
+    PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Board, BoardId, BoardTile, BoardTileId, Capture, CaptureId, EmailAdresse, Game, GameId,
-    GamePlayer, InviteCode, NewCapture, NewGame, NewUserProfile, PromptSubmission, StarterDeck,
-    UserProfile,
+    Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId,
+    InviteCode, NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck,
 };
 
 pub type RepositoryResult<T> = ResultReport<T, RepositoryError>;
@@ -38,76 +37,28 @@ pub enum RepositoryError {
 }
 
 #[async_trait]
-pub trait UserProfileRepository: Send + Sync {
-    async fn create(&self, profile: NewUserProfile) -> RepositoryResult<Versioned<UserProfile>>;
-    async fn find_by_user_id(
-        &self,
-        user_id: BenutzerId,
-    ) -> RepositoryResult<Versioned<UserProfile>>;
-    async fn find_by_user_ids(
-        &self,
-        user_ids: &[BenutzerId],
-    ) -> RepositoryResult<Vec<Versioned<UserProfile>>>;
-    async fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<UserProfile>>;
-    async fn update(&self, profile: &mut Versioned<UserProfile>) -> RepositoryResult<()>;
-    async fn delete_by_user_id(&self, user_id: BenutzerId) -> RepositoryResult<()>;
-}
-
-#[async_trait]
 pub trait GameRepository: Send + Sync {
     async fn create(&self, game: NewGame) -> RepositoryResult<Versioned<Game>>;
     async fn find_by_id(&self, id: GameId) -> RepositoryResult<Versioned<Game>>;
     async fn find_by_invite_code(&self, code: &InviteCode) -> RepositoryResult<Versioned<Game>>;
-    async fn find_for_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Game>>>;
-    async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()>;
-    async fn add_player(&self, player: GamePlayer) -> RepositoryResult<()>;
-    async fn find_players(&self, game_id: GameId) -> RepositoryResult<Vec<GamePlayer>>;
-    async fn set_player_draft_locked(
+    async fn find_by_participating_user(
         &self,
-        game_id: GameId,
         user_id: BenutzerId,
-        locked: bool,
-    ) -> RepositoryResult<()>;
-    async fn replace_author_prompts(
-        &self,
-        game_id: GameId,
-        author_user_id: BenutzerId,
-        prompts: Vec<PromptSubmission>,
-    ) -> RepositoryResult<()>;
-    async fn find_prompts_by_game(
-        &self,
-        game_id: GameId,
-    ) -> RepositoryResult<Vec<PromptSubmission>>;
-    async fn find_prompts_by_author(
-        &self,
-        game_id: GameId,
-        author_user_id: BenutzerId,
-    ) -> RepositoryResult<Vec<PromptSubmission>>;
+    ) -> RepositoryResult<Vec<Versioned<Game>>>;
+    async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()>;
 }
 
 #[async_trait]
 pub trait BoardRepository: Send + Sync {
-    async fn create_board_with_tiles(
-        &self,
-        board: Board,
-        tiles: Vec<BoardTile>,
-    ) -> RepositoryResult<()>;
-    async fn find_boards_by_game(&self, game_id: GameId)
-    -> RepositoryResult<Vec<Versioned<Board>>>;
-    async fn find_board_by_game_and_owner(
+    async fn create(&self, board: NewBoard) -> RepositoryResult<Versioned<Board>>;
+    async fn find_by_id(&self, id: BoardId) -> RepositoryResult<Versioned<Board>>;
+    async fn find_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<Versioned<Board>>>;
+    async fn find_by_game_and_owner(
         &self,
         game_id: GameId,
         owner: BenutzerId,
     ) -> RepositoryResult<Versioned<Board>>;
-    async fn find_tiles_by_board(&self, board_id: BoardId) -> RepositoryResult<Vec<BoardTile>>;
-    async fn find_tiles_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<BoardTile>>;
-    async fn find_tile_by_id(&self, tile_id: BoardTileId) -> RepositoryResult<BoardTile>;
-    async fn update_board(&self, board: &mut Versioned<Board>) -> RepositoryResult<()>;
-    async fn attach_tile_capture(
-        &self,
-        tile_id: BoardTileId,
-        capture_id: CaptureId,
-    ) -> RepositoryResult<()>;
+    async fn update(&self, board: &mut Versioned<Board>) -> RepositoryResult<()>;
 }
 
 #[async_trait]
@@ -128,7 +79,7 @@ pub trait CaptureRepository: Send + Sync {
 
 #[async_trait]
 pub trait DeckRepository: Send + Sync {
-    async fn list_all(&self) -> RepositoryResult<Vec<StarterDeck>>;
+    async fn find_all(&self) -> RepositoryResult<Vec<StarterDeck>>;
 }
 
 #[async_trait]
@@ -136,6 +87,12 @@ pub trait BenutzerRepository: Send + Sync {
     async fn create(&self, benutzer: NeuerBenutzer) -> RepositoryResult<Versioned<Benutzer>>;
 
     async fn find_by_id(&self, id: BenutzerId) -> RepositoryResult<Versioned<Benutzer>>;
+
+    async fn find_by_ids(&self, ids: &[BenutzerId]) -> RepositoryResult<Vec<Versioned<Benutzer>>>;
+
+    async fn find_by_email(&self, email: &EmailAdresse) -> RepositoryResult<Versioned<Benutzer>>;
+
+    async fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<Benutzer>>;
 
     async fn update(&self, benutzer: &mut Versioned<Benutzer>) -> RepositoryResult<()>;
 
@@ -147,9 +104,6 @@ pub trait KontoRepository: Send + Sync {
     async fn create(&self, konto: NeuesKonto) -> RepositoryResult<Versioned<Konto>>;
 
     async fn find_by_id(&self, id: KontoId) -> RepositoryResult<Versioned<Konto>>;
-
-    /// `NotFound` when no Konto holds the address.
-    async fn find_by_email(&self, email: &EmailAdresse) -> RepositoryResult<Versioned<Konto>>;
 
     async fn find_by_benutzer(
         &self,

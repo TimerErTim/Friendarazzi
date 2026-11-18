@@ -17,13 +17,13 @@ pub struct SQLiteDeckRepository {
 
 #[async_trait]
 impl DeckRepository for SQLiteDeckRepository {
-    async fn list_all(&self) -> RepositoryResult<Vec<StarterDeck>> {
+    async fn find_all(&self) -> RepositoryResult<Vec<StarterDeck>> {
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         let mut rows = tx
             .query(
-                r#"SELECT id, slug, name, description, prompts_json FROM "starter_decks" ORDER BY id ASC"#,
+                r#"SELECT id, slug, name, description, prompts_json FROM "starter_deck" ORDER BY id ASC"#,
                 (),
             )
             .await

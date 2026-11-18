@@ -422,7 +422,7 @@ export interface paths {
         get?: never;
         /**
          * Update lobby settings before drafting begins.
-         * @description Host only; allows configuring title, grid size, visibility mode, and Free Space.
+         * @description Host only; allows configuring title, grid size, and visibility mode.
          */
         put: {
             parameters: {
@@ -750,7 +750,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "image/jpeg": string;
+                        "image/webp": string;
                     };
                 };
                 404: {
@@ -974,7 +974,7 @@ export interface paths {
         put?: never;
         /**
          * Upload and set the authenticated caller's avatar image.
-         * @description Normalizes the image to a 400x400 JPEG stored in the object store.
+         * @description Normalizes the image to a 400x400 WebP stored in the object store.
          */
         post: {
             parameters: {
@@ -1607,15 +1607,13 @@ export interface components {
     schemas: {
         /**
          * AnmeldungRequest
-         * @description Sign-in with the account's e-mail address and password.
+         * @description Sign-in with the account's e-mail address or username and password.
          */
         AnmeldungRequest: {
-            /**
-             * E-Mail-Adresse
-             * @description The account's e-mail address.
-             * @example test@example.com
-             */
-            eMailAdresse: string;
+            /** @description E-mail address or username of the account. */
+            identifier?: string | null;
+            /** @description Legacy e-mail address field; used when `identifier` is omitted. */
+            eMailAdresse?: string | null;
             /** @description The account's password. */
             passwort: string;
         };
@@ -1631,7 +1629,7 @@ export interface components {
             id: string;
             /**
              * E-Mail-Adresse
-             * @description Its e-mail address, which is also the sign-in name.
+             * @description Its e-mail address.
              * @example test@example.com
              */
             eMailAdresse: string;
@@ -1688,10 +1686,8 @@ export interface components {
             col: number;
             /** @description Prompt text on the tile. */
             promptText: string;
-            /** @description Target friend badge, or null for Free Space. */
-            targetUser?: components["schemas"]["PlayerBadge"] | (never | null);
-            /** @description True if this is the center Free Space tile. */
-            isFreeSpace: boolean;
+            /** @description Target friend badge. */
+            targetUser: components["schemas"]["PlayerBadge"] & unknown;
             /** @description True if a photo capture is attached. */
             isCaptured: boolean;
             /**
@@ -1764,10 +1760,8 @@ export interface components {
         CaptureOutcome: {
             /** @description Created capture record. */
             capture: components["schemas"]["CaptureFeedItem"] & unknown;
-            /** @description True if this capture triggered Bingo and ended the game. */
-            gameCompleted: boolean;
-            /** @description Winning coordinates if Bingo was achieved. */
-            winningLine: components["schemas"]["GridCoordinate"][];
+            /** @description Winning coordinates if Bingo was achieved and the game completed; null otherwise. */
+            winningLine?: components["schemas"]["GridCoordinate"][] | null;
         };
         /**
          * CreateGameRequest
@@ -1783,8 +1777,6 @@ export interface components {
             gridSize: number;
             /** @description Proof visibility mode. */
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
-            /** @description Whether odd-sized boards include a central Free Space tile. */
-            includeFreeSpace: boolean;
         };
         /**
          * DraftPromptRequestItem
@@ -1867,8 +1859,6 @@ export interface components {
             gridSize: number;
             /** @description Proof visibility mode. */
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
-            /** @description Whether center Free Space is enabled on odd boards. */
-            includeFreeSpace: boolean;
             /** @description Current lifecycle state. */
             status: components["schemas"]["GameStatus"] & unknown;
             /**
@@ -1934,8 +1924,6 @@ export interface components {
             gridSize: number;
             /** @description Proof visibility mode. */
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
-            /** @description Whether center Free Space is enabled on odd boards. */
-            includeFreeSpace: boolean;
             /** @description Current lifecycle state. */
             status: components["schemas"]["GameStatus"] & unknown;
             /**
@@ -2267,8 +2255,6 @@ export interface components {
             gridSize: number;
             /** @description Proof visibility mode. */
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
-            /** @description Whether odd-sized boards include a central Free Space tile. */
-            includeFreeSpace: boolean;
         };
         /**
          * UpdateProfileRequest

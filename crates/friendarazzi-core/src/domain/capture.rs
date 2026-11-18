@@ -1,4 +1,4 @@
-//! Photo captures and post-game superlatives.
+//! Photo captures, capture media normalization, visibility predicates, and post-game awards.
 
 use std::collections::HashMap;
 
@@ -9,10 +9,23 @@ use uuid::Uuid;
 
 use crate::{
     ResultReport,
-    domain::{NonEmptyString, board::BoardTileId, game::GameId, konto::BenutzerId},
+    domain::{
+        NonEmptyString,
+        board::BoardTileId,
+        game::{Game, GameId, GameStatus, VisibilityMode},
+        konto::BenutzerId,
+        media::{
+            MediaProcessingError, decode_image_within_limit, encode_webp, pixelate_and_blur,
+            resize_max_edge,
+        },
+    },
 };
 
 const CONSTRUCTING: &str = "while constructing capture";
+const MAX_CAPTURE_EDGE: u32 = 1600;
+const BLUR_SMALL_EDGE: u32 = 14;
+const BLUR_OUTPUT_EDGE: u32 = 64;
+const MAX_CAPTURE_BYTES: usize = 20 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct CaptureId(pub Uuid);
@@ -25,6 +38,12 @@ pub enum CaptureError {
     EmptyStorageKey,
 }
 
+/// Normalized full WebP photo and 64px blurred teaser WebP for a capture.
+pub struct ProcessedCaptureMedia {
+    pub full_webp: Vec<u8>,
+    pub blurred_webp: Vec<u8>,
+}
+
 /// A candid photo proof captured for a tile during a game.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Capture {
@@ -32,7 +51,7 @@ pub struct Capture {
     game_id: GameId,
     tile_id: BoardTileId,
     catcher_user_id: BenutzerId,
-    target_user_id: Option<BenutzerId>,
+    target_user_id: BenutzerId,
     prompt_text: NonEmptyString,
     image_storage_key: String,
     thumbnail_storage_key: String,
@@ -44,7 +63,7 @@ pub struct NewCapture {
     pub game_id: GameId,
     pub tile_id: BoardTileId,
     pub catcher_user_id: BenutzerId,
-    pub target_user_id: Option<BenutzerId>,
+    pub target_user_id: BenutzerId,
     pub prompt_text: NonEmptyString,
     pub image_storage_key: String,
     pub thumbnail_storage_key: String,
@@ -72,7 +91,7 @@ impl Capture {
         game_id: GameId,
         tile_id: BoardTileId,
         catcher_user_id: BenutzerId,
-        target_user_id: Option<BenutzerId>,
+        target_user_id: BenutzerId,
         prompt_text: String,
         image_storage_key: String,
         thumbnail_storage_key: String,
@@ -99,6 +118,21 @@ impl Capture {
         })
     }
 
+    /// Normalize a capture photo to max 1600px WebP and generate a 64px pixelated+blurred teaser WebP.
+    pub fn process_photo(bytes: &[u8]) -> Result<ProcessedCaptureMedia, MediaProcessingError> {
+        let img = decode_image_within_limit(bytes, MAX_CAPTURE_BYTES)?;
+        let full = resize_max_edge(&img, MAX_CAPTURE_EDGE);
+        let full_webp = encode_webp(&full)?;
+
+        let blurred = pixelate_and_blur(&img, BLUR_SMALL_EDGE, BLUR_OUTPUT_EDGE, 2.2);
+        let blurred_webp = encode_webp(&blurred)?;
+
+        Ok(ProcessedCaptureMedia {
+            full_webp,
+            blurred_webp,
+        })
+    }
+
     pub fn id(&self) -> CaptureId {
         self.id
     }
@@ -115,7 +149,7 @@ impl Capture {
         self.catcher_user_id
     }
 
-    pub fn target_user_id(&self) -> Option<BenutzerId> {
+    pub fn target_user_id(&self) -> BenutzerId {
         self.target_user_id
     }
 
@@ -136,13 +170,57 @@ impl Capture {
     }
 }
 
-/// Automated post-game award derived from a completed game's captures.
+/// Domain service predicate: whether `viewer` may see the unredacted photo and prompt for `capture`.
+pub fn can_view_full_capture(game: &Game, capture: &Capture, viewer: BenutzerId) -> bool {
+    if !game.has_player(viewer) {
+        return false;
+    }
+    game.status() == GameStatus::Completed
+        || game.visibility_mode() == VisibilityMode::LiveFeed
+        || capture.catcher_user_id() == viewer
+}
+
+/// Domain service predicate: whether `viewer` may see the blurred teaser thumbnail for `capture`.
+pub fn can_view_blurred_capture(game: &Game, capture: &Capture, viewer: BenutzerId) -> bool {
+    if !game.has_player(viewer) {
+        return false;
+    }
+    can_view_full_capture(game, capture, viewer)
+        || game.visibility_mode() == VisibilityMode::BlurredTeaser
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Superlative {
-    pub kind: SuperlativeKind,
+pub struct MostWantedAward {
     pub user_id: BenutzerId,
     pub metric_value: i64,
-    pub capture_id: Option<CaptureId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GhostAward {
+    pub user_id: BenutzerId,
+    pub metric_value: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuickestDrawAward {
+    pub user_id: BenutzerId,
+    pub metric_value: i64,
+    pub capture_id: CaptureId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SniperAward {
+    pub user_id: BenutzerId,
+    pub metric_value: i64,
+}
+
+/// Explicit post-game awards calculated for a completed game.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GameAwards {
+    pub most_wanted: Option<MostWantedAward>,
+    pub ghost: Option<GhostAward>,
+    pub quickest_draw: Option<QuickestDrawAward>,
+    pub sniper: Option<SniperAward>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,14 +231,61 @@ pub enum SuperlativeKind {
     Sniper,
 }
 
-/// Compute post-game superlatives from `players` and chronological `captures`.
-pub fn compute_superlatives(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Superlative {
+    pub kind: SuperlativeKind,
+    pub user_id: BenutzerId,
+    pub metric_value: i64,
+    pub capture_id: Option<CaptureId>,
+}
+
+impl GameAwards {
+    pub fn into_superlatives(self) -> Vec<Superlative> {
+        let mut out = Vec::new();
+        if let Some(a) = self.most_wanted {
+            out.push(Superlative {
+                kind: SuperlativeKind::MostWanted,
+                user_id: a.user_id,
+                metric_value: a.metric_value,
+                capture_id: None,
+            });
+        }
+        if let Some(a) = self.ghost {
+            out.push(Superlative {
+                kind: SuperlativeKind::Ghost,
+                user_id: a.user_id,
+                metric_value: a.metric_value,
+                capture_id: None,
+            });
+        }
+        if let Some(a) = self.quickest_draw {
+            out.push(Superlative {
+                kind: SuperlativeKind::QuickestDraw,
+                user_id: a.user_id,
+                metric_value: a.metric_value,
+                capture_id: Some(a.capture_id),
+            });
+        }
+        if let Some(a) = self.sniper {
+            out.push(Superlative {
+                kind: SuperlativeKind::Sniper,
+                user_id: a.user_id,
+                metric_value: a.metric_value,
+                capture_id: None,
+            });
+        }
+        out
+    }
+}
+
+/// Compute post-game awards from `players` and chronological `captures`.
+pub fn compute_game_awards(
     players: &[BenutzerId],
     captures: &[Capture],
     started_at: Option<DateTime<Utc>>,
-) -> Vec<Superlative> {
+) -> GameAwards {
     if players.is_empty() || captures.is_empty() {
-        return Vec::new();
+        return GameAwards::default();
     }
 
     let mut targeted_counts: HashMap<BenutzerId, i64> =
@@ -168,58 +293,44 @@ pub fn compute_superlatives(
     let mut by_catcher: HashMap<BenutzerId, Vec<DateTime<Utc>>> = HashMap::new();
 
     for cap in captures {
-        if let Some(target) = cap.target_user_id() {
-            *targeted_counts.entry(target).or_insert(0) += 1;
-        }
+        *targeted_counts.entry(cap.target_user_id()).or_insert(0) += 1;
         by_catcher
             .entry(cap.catcher_user_id())
             .or_default()
             .push(cap.captured_at());
     }
 
-    let mut out = Vec::new();
-
-    // Most Wanted (most caught)
-    if let Some((&user_id, &count)) = targeted_counts
+    let most_wanted = targeted_counts
         .iter()
         .max_by(|(a_id, a_c), (b_id, b_c)| a_c.cmp(b_c).then_with(|| b_id.cmp(a_id)))
-        && count > 0
-    {
-        out.push(Superlative {
-            kind: SuperlativeKind::MostWanted,
+        .filter(|(_, count)| **count > 0)
+        .map(|(&user_id, &metric_value)| MostWantedAward {
             user_id,
-            metric_value: count,
-            capture_id: None,
+            metric_value,
         });
-    }
 
-    // Ghost (least caught)
-    if let Some((&user_id, &count)) = targeted_counts
+    let ghost = targeted_counts
         .iter()
         .min_by(|(a_id, a_c), (b_id, b_c)| a_c.cmp(b_c).then_with(|| a_id.cmp(b_id)))
-    {
-        out.push(Superlative {
-            kind: SuperlativeKind::Ghost,
+        .map(|(&user_id, &metric_value)| GhostAward {
             user_id,
-            metric_value: count,
-            capture_id: None,
+            metric_value,
         });
-    }
 
-    // Quickest Draw (fastest capture after game start)
-    if let Some(fastest) = captures.iter().min_by_key(|c| c.captured_at()) {
-        let elapsed = started_at
-            .map(|s| (fastest.captured_at() - s).num_seconds().max(0))
-            .unwrap_or(0);
-        out.push(Superlative {
-            kind: SuperlativeKind::QuickestDraw,
-            user_id: fastest.catcher_user_id(),
-            metric_value: elapsed,
-            capture_id: Some(fastest.id()),
+    let quickest_draw = captures
+        .iter()
+        .min_by_key(|c| c.captured_at())
+        .map(|fastest| {
+            let elapsed = started_at
+                .map(|s| (fastest.captured_at() - s).num_seconds().max(0))
+                .unwrap_or(0);
+            QuickestDrawAward {
+                user_id: fastest.catcher_user_id(),
+                metric_value: elapsed,
+                capture_id: fastest.id(),
+            }
         });
-    }
 
-    // Sniper (most captures within any rolling 60-minute window)
     let mut best_sniper: Option<(BenutzerId, i64)> = None;
     for (catcher, mut times) in by_catcher {
         times.sort();
@@ -240,16 +351,17 @@ pub fn compute_superlatives(
             _ => best_sniper = Some((catcher, max_window)),
         }
     }
-    if let Some((user_id, count)) = best_sniper {
-        out.push(Superlative {
-            kind: SuperlativeKind::Sniper,
-            user_id,
-            metric_value: count,
-            capture_id: None,
-        });
-    }
+    let sniper = best_sniper.map(|(user_id, metric_value)| SniperAward {
+        user_id,
+        metric_value,
+    });
 
-    out
+    GameAwards {
+        most_wanted,
+        ghost,
+        quickest_draw,
+        sniper,
+    }
 }
 
 #[cfg(test)]
@@ -257,8 +369,9 @@ mod tests {
     use chrono::Duration;
 
     use super::*;
+    use crate::domain::media::png_bytes_for_test;
 
-    fn mk_capture(catcher: BenutzerId, target: Option<BenutzerId>, at: DateTime<Utc>) -> Capture {
+    fn mk_capture(catcher: BenutzerId, target: BenutzerId, at: DateTime<Utc>) -> Capture {
         Capture::new(
             CaptureId(Uuid::new_v4()),
             NewCapture {
@@ -267,42 +380,68 @@ mod tests {
                 catcher_user_id: catcher,
                 target_user_id: target,
                 prompt_text: NonEmptyString::neu("Test").unwrap(),
-                image_storage_key: "capture_a.jpg".into(),
-                thumbnail_storage_key: "thumb_a.jpg".into(),
+                image_storage_key: "capture_a.webp".into(),
+                thumbnail_storage_key: "thumb_a.webp".into(),
                 captured_at: at,
             },
         )
     }
 
     #[test_log::test]
-    fn superlatives_compute_most_wanted_ghost_quickest_and_sniper() {
+    fn processes_large_image_into_bounded_webp_and_64px_blur() {
+        let raw = png_bytes_for_test(2400, 1200);
+        let processed = Capture::process_photo(&raw).unwrap();
+
+        let full = image::load_from_memory(&processed.full_webp).unwrap();
+        assert_eq!(full.width(), 1600);
+        assert_eq!(full.height(), 800);
+
+        let teaser = image::load_from_memory(&processed.blurred_webp).unwrap();
+        assert_eq!(teaser.width(), 64);
+        assert_eq!(teaser.height(), 64);
+    }
+
+    #[test_log::test]
+    fn awards_compute_most_wanted_ghost_quickest_and_sniper() {
         let p1 = BenutzerId(Uuid::from_u128(1));
         let p2 = BenutzerId(Uuid::from_u128(2));
         let p3 = BenutzerId(Uuid::from_u128(3));
         let start = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
 
         let captures = vec![
-            mk_capture(p1, Some(p2), start + Duration::seconds(45)),
-            mk_capture(p1, Some(p2), start + Duration::minutes(10)),
-            mk_capture(p3, Some(p1), start + Duration::minutes(120)),
+            mk_capture(p1, p2, start + Duration::seconds(45)),
+            mk_capture(p1, p2, start + Duration::minutes(10)),
+            mk_capture(p3, p1, start + Duration::minutes(120)),
         ];
 
-        let sups = compute_superlatives(&[p1, p2, p3], &captures, Some(start));
-        assert!(sups.iter().any(|s| s.kind == SuperlativeKind::MostWanted
-            && s.user_id == p2
-            && s.metric_value == 2));
-        assert!(
-            sups.iter().any(|s| s.kind == SuperlativeKind::Ghost
-                && s.user_id == p3
-                && s.metric_value == 0)
+        let awards = compute_game_awards(&[p1, p2, p3], &captures, Some(start));
+        assert_eq!(
+            awards.most_wanted,
+            Some(MostWantedAward {
+                user_id: p2,
+                metric_value: 2
+            })
         );
-        assert!(sups.iter().any(|s| s.kind == SuperlativeKind::QuickestDraw
-            && s.user_id == p1
-            && s.metric_value == 45));
-        assert!(
-            sups.iter().any(|s| s.kind == SuperlativeKind::Sniper
-                && s.user_id == p1
-                && s.metric_value == 2)
+        assert_eq!(
+            awards.ghost,
+            Some(GhostAward {
+                user_id: p3,
+                metric_value: 0
+            })
+        );
+        assert_eq!(
+            awards
+                .quickest_draw
+                .as_ref()
+                .map(|a| (a.user_id, a.metric_value)),
+            Some((p1, 45))
+        );
+        assert_eq!(
+            awards.sniper,
+            Some(SniperAward {
+                user_id: p1,
+                metric_value: 2
+            })
         );
     }
 }

@@ -158,11 +158,11 @@ function AuthLink({ href, children }: { href: string; children: ReactNode }) {
 export function LoginPage() {
   const router = useRouter();
   const auth = useAuthMutations();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
 
   const failure = authFailure(auth.login.error, {
-    unauthorized: "E-Mail-Adresse oder Passwort ist falsch.",
+    unauthorized: "Anmeldedaten oder Passwort sind falsch.",
     tooManyRequests:
       "Zu viele Anmeldeversuche. Bitte warten Sie und versuchen Sie es erneut.",
     fallback:
@@ -172,7 +172,7 @@ export function LoginPage() {
   function submit(event: FormEvent) {
     event.preventDefault();
     auth.login.mutate(
-      { eMailAdresse: email, passwort: password },
+      { identifier, passwort: password },
       { onSuccess: () => router.replace("/") },
     );
   }
@@ -180,7 +180,7 @@ export function LoginPage() {
   return (
     <AuthPage
       title="Anmelden"
-      description="Melden Sie sich mit E-Mail-Adresse und Passwort bei Friendarazzi an."
+      description="Melden Sie sich mit E-Mail-Adresse oder Benutzername und Passwort bei Friendarazzi an."
       footer={
         <>
           <p>
@@ -196,13 +196,13 @@ export function LoginPage() {
       <Card>
         <CardContent>
           <form className="space-y-5" onSubmit={submit}>
-            <Field label="E-Mail-Adresse">
+            <Field label="E-Mail-Adresse oder Benutzername">
               <Input
-                autoComplete="email"
-                type="email"
+                autoComplete="username"
+                type="text"
                 required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                value={identifier}
+                onChange={(event) => setIdentifier(event.target.value)}
               />
             </Field>
 

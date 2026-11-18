@@ -6,7 +6,13 @@ import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { gameHref, joinHref, paths, userProfileHref } from "@/lib/navigation";
+import {
+  gameHref,
+  joinHref,
+  paths,
+  stripBasePath,
+  userProfileHref,
+} from "@/lib/navigation";
 
 /**
  * Static export fallback: supports pretty share URLs (`/join/<code>`, `/games/<id>`,
@@ -18,7 +24,7 @@ export default function NotFoundPage() {
   const [redirecting, setRedirecting] = useState(false);
 
   useEffect(() => {
-    const path = window.location.pathname.replace(/\/+$/, "");
+    const path = stripBasePath(window.location.pathname).replace(/\/+$/, "");
     const joinMatch = path.match(/^\/join\/([^/]+)$/);
     if (joinMatch?.[1]) {
       setRedirecting(true);

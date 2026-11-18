@@ -7,6 +7,7 @@ mod blank_pdf_renderer;
 mod in_memory_object_store;
 mod in_memory_throttle;
 mod null_mail_sender;
+mod rng;
 mod signing;
 mod system_clock;
 
@@ -14,5 +15,6 @@ pub use blank_pdf_renderer::{BLANK_PDF, BlankPdfRenderer};
 pub use in_memory_object_store::InMemoryObjectStore;
 pub use in_memory_throttle::InMemoryThrottle;
 pub use null_mail_sender::NullMailSender;
+pub use rng::SystemRng;
 pub use signing::{InMemorySigning, verify_with_public_key_hex};
 pub use system_clock::SystemClock;

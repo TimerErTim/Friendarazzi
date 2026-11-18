@@ -8,20 +8,18 @@ use tracing::instrument;
 use crate::application::uow::UnitOfWorkImpl;
 use crate::application::uow::Versioned;
 use crate::domain::konto::{
-    Benutzer, BenutzerId, BestätigungId, EmailBestätigung, Konto, KontoId, NeueBestätigung,
-    NeuePasswortWiederherstellung, NeueSession, NeuerBenutzer, NeuesKonto,
-    PasswortWiederherstellung, PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
+    BestätigungId, EmailBestätigung, Konto, KontoId, NeueBestätigung,
+    NeuePasswortWiederherstellung, NeueSession, NeuesKonto, PasswortWiederherstellung,
+    PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Board, BoardId, BoardTile, BoardTileId, Capture, CaptureId, EmailAdresse, Game, GameId,
-    GamePlayer, InviteCode, NewCapture, NewGame, NewUserProfile, PromptSubmission, StarterDeck,
-    UserProfile,
+    Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId,
+    InviteCode, NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck,
 };
 use crate::ports::{
     BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
     EmailBestätigungRepository, GameRepository, KontoRepository,
     PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
-    UserProfileRepository,
 };
 
 macro_rules! impl_instrumented_repo {
@@ -68,26 +66,6 @@ macro_rules! impl_instrumented_repo {
 }
 
 impl_instrumented_repo!(
-    InstrumentedUserProfileRepository,
-    UserProfileRepository,
-    profiles,
-    methods: [
-        #[instrument(skip(self, profile), level = "debug", err(Debug))]
-        fn create(&self, profile: NewUserProfile) -> RepositoryResult<Versioned<UserProfile>>;
-        #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "trace", err(Debug))]
-        fn find_by_user_id(&self, user_id: BenutzerId) -> RepositoryResult<Versioned<UserProfile>>;
-        #[instrument(skip(self, user_ids), level = "trace", err(Debug))]
-        fn find_by_user_ids(&self, user_ids: &[BenutzerId]) -> RepositoryResult<Vec<Versioned<UserProfile>>>;
-        #[instrument(skip(self, username), level = "trace", err(Debug))]
-        fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<UserProfile>>;
-        #[instrument(skip(self, profile), level = "debug", err(Debug))]
-        fn update(&self, profile: &mut Versioned<UserProfile>) -> RepositoryResult<()>;
-        #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "debug", err(Debug))]
-        fn delete_by_user_id(&self, user_id: BenutzerId) -> RepositoryResult<()>;
-    ]
-);
-
-impl_instrumented_repo!(
     InstrumentedGameRepository,
     GameRepository,
     games,
@@ -99,21 +77,9 @@ impl_instrumented_repo!(
         #[instrument(skip(self, code), level = "trace", err(Debug))]
         fn find_by_invite_code(&self, code: &InviteCode) -> RepositoryResult<Versioned<Game>>;
         #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "trace", err(Debug))]
-        fn find_for_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Game>>>;
+        fn find_by_participating_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Game>>>;
         #[instrument(skip(self, game), level = "debug", err(Debug))]
         fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()>;
-        #[instrument(skip(self, player), level = "debug", err(Debug))]
-        fn add_player(&self, player: GamePlayer) -> RepositoryResult<()>;
-        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
-        fn find_players(&self, game_id: GameId) -> RepositoryResult<Vec<GamePlayer>>;
-        #[instrument(skip(self, game_id, user_id), level = "debug", err(Debug))]
-        fn set_player_draft_locked(&self, game_id: GameId, user_id: BenutzerId, locked: bool) -> RepositoryResult<()>;
-        #[instrument(skip(self, game_id, author_user_id, prompts), level = "debug", err(Debug))]
-        fn replace_author_prompts(&self, game_id: GameId, author_user_id: BenutzerId, prompts: Vec<PromptSubmission>) -> RepositoryResult<()>;
-        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
-        fn find_prompts_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<PromptSubmission>>;
-        #[instrument(skip(self, game_id, author_user_id), level = "trace", err(Debug))]
-        fn find_prompts_by_author(&self, game_id: GameId, author_user_id: BenutzerId) -> RepositoryResult<Vec<PromptSubmission>>;
     ]
 );
 
@@ -122,22 +88,16 @@ impl_instrumented_repo!(
     BoardRepository,
     boards,
     methods: [
-        #[instrument(skip(self, board, tiles), level = "debug", err(Debug))]
-        fn create_board_with_tiles(&self, board: Board, tiles: Vec<BoardTile>) -> RepositoryResult<()>;
-        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
-        fn find_boards_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<Versioned<Board>>>;
-        #[instrument(skip(self, game_id, owner), level = "trace", err(Debug))]
-        fn find_board_by_game_and_owner(&self, game_id: GameId, owner: BenutzerId) -> RepositoryResult<Versioned<Board>>;
-        #[instrument(skip(self, board_id), fields(board_id = ?board_id), level = "trace", err(Debug))]
-        fn find_tiles_by_board(&self, board_id: BoardId) -> RepositoryResult<Vec<BoardTile>>;
-        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
-        fn find_tiles_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<BoardTile>>;
-        #[instrument(skip(self, tile_id), fields(tile_id = ?tile_id), level = "trace", err(Debug))]
-        fn find_tile_by_id(&self, tile_id: BoardTileId) -> RepositoryResult<BoardTile>;
         #[instrument(skip(self, board), level = "debug", err(Debug))]
-        fn update_board(&self, board: &mut Versioned<Board>) -> RepositoryResult<()>;
-        #[instrument(skip(self, tile_id, capture_id), level = "debug", err(Debug))]
-        fn attach_tile_capture(&self, tile_id: BoardTileId, capture_id: CaptureId) -> RepositoryResult<()>;
+        fn create(&self, board: NewBoard) -> RepositoryResult<Versioned<Board>>;
+        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
+        fn find_by_id(&self, id: BoardId) -> RepositoryResult<Versioned<Board>>;
+        #[instrument(skip(self, game_id), fields(game_id = ?game_id), level = "trace", err(Debug))]
+        fn find_by_game(&self, game_id: GameId) -> RepositoryResult<Vec<Versioned<Board>>>;
+        #[instrument(skip(self, game_id, owner), level = "trace", err(Debug))]
+        fn find_by_game_and_owner(&self, game_id: GameId, owner: BenutzerId) -> RepositoryResult<Versioned<Board>>;
+        #[instrument(skip(self, board), level = "debug", err(Debug))]
+        fn update(&self, board: &mut Versioned<Board>) -> RepositoryResult<()>;
     ]
 );
 
@@ -167,7 +127,7 @@ impl_instrumented_repo!(
     decks,
     methods: [
         #[instrument(skip(self), level = "trace", err(Debug))]
-        fn list_all(&self) -> RepositoryResult<Vec<StarterDeck>>;
+        fn find_all(&self) -> RepositoryResult<Vec<StarterDeck>>;
     ]
 );
 
@@ -180,6 +140,12 @@ impl_instrumented_repo!(
         fn create(&self, benutzer: NeuerBenutzer) -> RepositoryResult<Versioned<Benutzer>>;
         #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
         fn find_by_id(&self, id: BenutzerId) -> RepositoryResult<Versioned<Benutzer>>;
+        #[instrument(skip(self, ids), level = "trace", err(Debug))]
+        fn find_by_ids(&self, ids: &[BenutzerId]) -> RepositoryResult<Vec<Versioned<Benutzer>>>;
+        #[instrument(skip(self, email), fields(email = email.as_ref()), level = "trace", err(Debug))]
+        fn find_by_email(&self, email: &EmailAdresse) -> RepositoryResult<Versioned<Benutzer>>;
+        #[instrument(skip(self, username), level = "trace", err(Debug))]
+        fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<Benutzer>>;
         #[instrument(skip(self, benutzer), level = "debug", err(Debug))]
         fn update(&self, benutzer: &mut Versioned<Benutzer>) -> RepositoryResult<()>;
         #[instrument(skip(self, benutzer), level = "debug", err(Debug))]
@@ -196,8 +162,6 @@ impl_instrumented_repo!(
         fn create(&self, konto: NeuesKonto) -> RepositoryResult<Versioned<Konto>>;
         #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
         fn find_by_id(&self, id: KontoId) -> RepositoryResult<Versioned<Konto>>;
-        #[instrument(skip(self, email), fields(email = email.as_ref()), level = "trace", err(Debug))]
-        fn find_by_email(&self, email: &EmailAdresse) -> RepositoryResult<Versioned<Konto>>;
         #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
         fn find_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Konto>>>;
         #[instrument(skip(self, konto), level = "debug", err(Debug))]
@@ -275,7 +239,6 @@ impl_instrumented_repo!(
 
 /// Pinned bundle: instrumented repos hold pointers into `uow` (field order keeps drop safe).
 pub(crate) struct RepoStorage {
-    pub(crate) profiles: InstrumentedUserProfileRepository,
     pub(crate) games: InstrumentedGameRepository,
     pub(crate) boards: InstrumentedBoardRepository,
     pub(crate) captures: InstrumentedCaptureRepository,
@@ -291,7 +254,6 @@ pub(crate) struct RepoStorage {
 impl RepoStorage {
     pub(crate) fn new(uow: Box<dyn UnitOfWorkImpl>) -> Pin<Box<Self>> {
         let mut pinned = Box::pin(RepoStorage {
-            profiles: InstrumentedUserProfileRepository::disabled(),
             games: InstrumentedGameRepository::disabled(),
             boards: InstrumentedBoardRepository::disabled(),
             captures: InstrumentedCaptureRepository::disabled(),
@@ -307,7 +269,6 @@ impl RepoStorage {
         unsafe {
             let this = pinned.as_mut().get_unchecked_mut();
             let uow_ptr = std::ptr::from_ref(this.uow.as_ref());
-            this.profiles = InstrumentedUserProfileRepository::new(uow_ptr);
             this.games = InstrumentedGameRepository::new(uow_ptr);
             this.boards = InstrumentedBoardRepository::new(uow_ptr);
             this.captures = InstrumentedCaptureRepository::new(uow_ptr);

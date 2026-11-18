@@ -25,7 +25,7 @@ use crate::{
 };
 
 const SELECT: &str = r#"SELECT id, konto_id, token_hash, expires_at, spent_at, _version
-    FROM "passwort_wiederherstellungen""#;
+    FROM "passwort_wiederherstellung""#;
 
 fn wiederherstellung_from_row(row: &Row) -> RepositoryResult<Versioned<PasswortWiederherstellung>> {
     let id_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
@@ -70,7 +70,7 @@ impl PasswortWiederherstellungRepository for SQLitePasswortWiederherstellungRepo
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"INSERT INTO "passwort_wiederherstellungen" (id, konto_id, token_hash, expires_at, spent_at, _version)
+            r#"INSERT INTO "passwort_wiederherstellung" (id, konto_id, token_hash, expires_at, spent_at, _version)
                VALUES (?1, ?2, ?3, ?4, NULL, 0)"#,
             (
                 id.0.to_string(),
@@ -171,7 +171,7 @@ impl PasswortWiederherstellungRepository for SQLitePasswortWiederherstellungRepo
 
         update_versioned(
             tx,
-            r#"UPDATE "passwort_wiederherstellungen" SET konto_id = ?2, token_hash = ?3,
+            r#"UPDATE "passwort_wiederherstellung" SET konto_id = ?2, token_hash = ?3,
                    expires_at = ?4, spent_at = ?5, _version = ?6 + 1
                WHERE id = ?1 AND _version = ?6"#,
             (
@@ -200,7 +200,7 @@ impl PasswortWiederherstellungRepository for SQLitePasswortWiederherstellungRepo
 
         delete_versioned(
             tx,
-            r#"DELETE FROM "passwort_wiederherstellungen" WHERE id = ?1 AND _version = ?2"#,
+            r#"DELETE FROM "passwort_wiederherstellung" WHERE id = ?1 AND _version = ?2"#,
             (
                 wiederherstellung.id().0.to_string(),
                 wiederherstellung.v() as i64,
@@ -215,7 +215,7 @@ impl PasswortWiederherstellungRepository for SQLitePasswortWiederherstellungRepo
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"DELETE FROM "passwort_wiederherstellungen" WHERE konto_id = ?1"#,
+            r#"DELETE FROM "passwort_wiederherstellung" WHERE konto_id = ?1"#,
             [konto_id.0.to_string()],
         )
         .await

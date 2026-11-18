@@ -59,7 +59,7 @@ pub struct BenutzerLöschen {
 impl UseCase<()> for BenutzerLöschen {
     type Error = Report<BenutzerLöschenFehler>;
 
-    #[instrument(skip_all, err(Debug))]
+    #[instrument(skip_all, fields(bestätigt = self.bestätigt), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<(), Self::Error> {
         let (benutzer_id, _) = ctx
             .auth()
@@ -114,7 +114,7 @@ impl UseCase<()> for BenutzerLöschen {
                     .map_err(IntoReport::into_report)
                     .change_context(BenutzerLöschenFehler::WiederherstellungLöschen)?;
                 uow.bestätigungen()
-                    .delete_by_email(konto.email())
+                    .delete_by_email(benutzer.email_address())
                     .await
                     .map_err(IntoReport::into_report)
                     .change_context(BenutzerLöschenFehler::BestätigungLöschen)?;
@@ -134,12 +134,6 @@ impl UseCase<()> for BenutzerLöschen {
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(BenutzerLöschenFehler::SessionLöschen)?;
-
-            uow.profiles()
-                .delete_by_user_id(benutzer_id)
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(BenutzerLöschenFehler::BenutzerLöschen)?;
 
             uow.benutzer()
                 .delete(benutzer)
@@ -197,7 +191,7 @@ pub enum Beförderung {
 impl UseCase<Beförderung> for SystemadministratorBefördern {
     type Error = Report<SystemadministratorBefördernFehler>;
 
-    #[instrument(skip_all, err(Debug))]
+    #[instrument(skip_all, fields(email = ?self.email), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Beförderung, Self::Error> {
         let uow = ctx
             .enter()
@@ -205,23 +199,16 @@ impl UseCase<Beförderung> for SystemadministratorBefördern {
             .change_context(SystemadministratorBefördernFehler::KontoLaden)?;
 
         let ergebnis = async {
-            let konto = match uow.konten().find_by_email(&self.email).await {
-                Ok(konto) => konto,
+            let benutzer = match uow.benutzer().find_by_email(&self.email).await {
+                Ok(b) => b,
                 Err(fehler) if matches!(fehler.current_context(), RepositoryError::NotFound) => {
                     return Ok(Beförderung::KeinKonto);
                 }
                 Err(fehler) => {
                     return Err(fehler)
-                        .change_context(SystemadministratorBefördernFehler::KontoLaden);
+                        .change_context(SystemadministratorBefördernFehler::BenutzerLaden);
                 }
             };
-
-            let benutzer = uow
-                .benutzer()
-                .find_by_id(konto.benutzer_id())
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(SystemadministratorBefördernFehler::BenutzerLaden)?;
 
             if benutzer.rolle() == Rolle::Systemadministrator {
                 return Ok(Beförderung::BereitsBefördert);

@@ -45,11 +45,11 @@ impl<T: ToJSON, C: ThreadSafeError + HttpStatusMapping> From<Result<T, Report<C>
     }
 }
 
-/// Streaming JPEG image body for OpenAPI.
+/// Streaming WebP image body for OpenAPI.
 pub struct ImageStreamBody(Response);
 
 impl Payload for ImageStreamBody {
-    const CONTENT_TYPE: &'static str = "image/jpeg";
+    const CONTENT_TYPE: &'static str = "image/webp";
 
     fn check_content_type(_content_type: &str) -> bool {
         true
@@ -71,7 +71,7 @@ impl IntoResponse for ImageStreamBody {
 
 #[derive(ApiResponse)]
 pub enum StreamImageResponse {
-    #[oai(status = 200, content_type = "image/jpeg")]
+    #[oai(status = 200, content_type = "image/webp")]
     Ok(ImageStreamBody),
     #[oai(status = 404)]
     NotFound(Json<StructuredError>),
@@ -92,7 +92,7 @@ impl<C: ThreadSafeError + HttpStatusMapping> From<Result<ObjectStream, Report<C>
                 );
                 StreamImageResponse::Ok(ImageStreamBody(
                     Response::builder()
-                        .content_type("image/jpeg")
+                        .content_type("image/webp")
                         .header("Cache-Control", "private, max-age=3600")
                         .body(body),
                 ))

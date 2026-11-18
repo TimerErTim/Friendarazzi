@@ -2,9 +2,9 @@
 //! case performs the domain validation once, at the edge. A conversion failure reuses the
 //! use case's own `UngültigeAnfrage` variant, so no route invents a second error type.
 
-use error_stack::Report;
+use error_stack::{Report, ResultExt};
 use friendarazzi_core::{
-    domain,
+    domain::{self, NonEmptyString},
     ports::ClientKey,
     service::{
         Anmeldung, AnmeldungFehler, BenutzerLöschen, BenutzerLöschenFehler, PasswortVergessen,
@@ -40,15 +40,17 @@ pub struct RegistrierungAbschlussRequest {
     pub passwort: String,
 }
 
-/// Sign-in with the account's e-mail address and password.
+/// Sign-in with the account's e-mail address or username and password.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
 #[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnmeldungRequest {
-    /// The account's e-mail address.
-    pub e_mail_adresse: EmailAdresse,
+    /// E-mail address or username of the account.
+    pub identifier: Option<String>,
+    /// Legacy e-mail address field; used when `identifier` is omitted.
+    pub e_mail_adresse: Option<String>,
     /// The account's password.
     pub passwort: String,
 }
@@ -95,10 +97,8 @@ impl RegistrierungStartRequest {
         self,
         client_key: ClientKey,
     ) -> Result<RegistrierungStarten, Report<RegistrierungStartenFehler>> {
-        let email = self
-            .e_mail_adresse
-            .try_into()
-            .map_err(|_| Report::new(RegistrierungStartenFehler::UngültigeAnfrage))?;
+        let email = domain::EmailAdresse::try_from(self.e_mail_adresse)
+            .change_context(RegistrierungStartenFehler::UngültigeAnfrage)?;
         Ok(RegistrierungStarten { email, client_key })
     }
 }
@@ -109,9 +109,9 @@ impl RegistrierungAbschlussRequest {
         client_key: ClientKey,
     ) -> Result<RegistrierungAbschließen, Report<RegistrierungAbschliessenFehler>> {
         let token = domain::konto::SecretToken::try_from(self.token)
-            .map_err(|_| Report::new(RegistrierungAbschliessenFehler::UngültigeAnfrage))?;
+            .change_context(RegistrierungAbschliessenFehler::UngültigeAnfrage)?;
         let passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
-            .map_err(|_| Report::new(RegistrierungAbschliessenFehler::UngültigeAnfrage))?;
+            .change_context(RegistrierungAbschliessenFehler::UngültigeAnfrage)?;
         Ok(RegistrierungAbschließen {
             token,
             passwort,
@@ -122,16 +122,18 @@ impl RegistrierungAbschlussRequest {
 
 impl AnmeldungRequest {
     pub fn in_use_case(self, client_key: ClientKey) -> Result<Anmeldung, Report<AnmeldungFehler>> {
-        let email = self
-            .e_mail_adresse
-            .try_into()
-            .map_err(|_| Report::new(AnmeldungFehler::ZugangsdatenFalsch))?;
+        let raw_identifier = self
+            .identifier
+            .or(self.e_mail_adresse)
+            .ok_or_else(|| Report::new(AnmeldungFehler::ZugangsdatenFalsch))?;
+        let identifier = NonEmptyString::neu(raw_identifier)
+            .change_context(AnmeldungFehler::ZugangsdatenFalsch)?;
         // A Passwort that breaks the length rule cannot be right, but it is also not a
         // reason to answer differently from a wrong one.
         let passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
-            .map_err(|_| Report::new(AnmeldungFehler::ZugangsdatenFalsch))?;
+            .change_context(AnmeldungFehler::ZugangsdatenFalsch)?;
         Ok(Anmeldung {
-            email,
+            identifier,
             passwort,
             client_key,
         })
@@ -144,10 +146,8 @@ impl PasswortVergessenRequest {
         client_key: ClientKey,
     ) -> Result<PasswortVergessen, Report<PasswortVergessenFehler>> {
         // A malformed address is answered like a free one: no address oracle.
-        let email = self
-            .e_mail_adresse
-            .try_into()
-            .map_err(|_| Report::new(PasswortVergessenFehler::UngültigeAnfrage))?;
+        let email = domain::EmailAdresse::try_from(self.e_mail_adresse)
+            .change_context(PasswortVergessenFehler::UngültigeAnfrage)?;
         Ok(PasswortVergessen { email, client_key })
     }
 }
@@ -159,9 +159,9 @@ impl PasswortWiederherstellenRequest {
         self,
     ) -> Result<PasswortWiederherstellen, Report<PasswortWiederherstellenFehler>> {
         let token = domain::konto::SecretToken::try_from(self.token)
-            .map_err(|_| Report::new(PasswortWiederherstellenFehler::UngültigeAnfrage))?;
+            .change_context(PasswortWiederherstellenFehler::UngültigeAnfrage)?;
         let neues_passwort = domain::konto::KlartextPasswort::try_from(self.neues_passwort)
-            .map_err(|_| Report::new(PasswortWiederherstellenFehler::UngültigeAnfrage))?;
+            .change_context(PasswortWiederherstellenFehler::UngültigeAnfrage)?;
         Ok(PasswortWiederherstellen {
             token,
             neues_passwort,
@@ -172,7 +172,7 @@ impl PasswortWiederherstellenRequest {
 impl BenutzerLoeschungRequest {
     pub fn in_use_case(self) -> Result<BenutzerLöschen, Report<BenutzerLöschenFehler>> {
         let passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
-            .map_err(|_| Report::new(BenutzerLöschenFehler::UngültigeAnfrage))?;
+            .change_context(BenutzerLöschenFehler::UngültigeAnfrage)?;
         Ok(BenutzerLöschen {
             passwort,
             bestätigt: self.bestaetigt,

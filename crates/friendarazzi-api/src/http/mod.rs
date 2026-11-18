@@ -1,10 +1,10 @@
 //! The HTTP edge: one thin `#[OpenApi]` wrapper over [`FriendarazziAppApi`].
 
-use error_stack::Report;
+use error_stack::ResultExt;
 use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
-    domain::{BoardTileId, GameId, konto::BenutzerId},
+    domain::{BenutzerId, BoardTileId, GameId},
     service::{
         AbmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError,
         PasswortWiederherstellenFehler, ProfileUseCaseError,
@@ -225,7 +225,7 @@ impl FriendarazziApiSpec {
 
     /// Update lobby settings before drafting begins.
     ///
-    /// Host only; allows configuring title, grid size, visibility mode, and Free Space.
+    /// Host only; allows configuring title, grid size, and visibility mode.
     #[oai(
         path = "/games/:game_id/settings",
         method = "put",
@@ -338,12 +338,15 @@ impl FriendarazziApiSpec {
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let bytes = match multipart.file.into_vec().await {
+        let bytes = match multipart
+            .file
+            .into_vec()
+            .await
+            .change_context(CaptureUseCaseError::InvalidImage)
+        {
             Ok(b) => b,
-            Err(_) => {
-                return TypicalJsonResponse::from(Err(Report::new(
-                    CaptureUseCaseError::InvalidImage,
-                )));
+            Err(err) => {
+                return TypicalJsonResponse::from(Err(err));
             }
         };
         self.app_api
@@ -430,7 +433,7 @@ impl FriendarazziApiSpec {
 
     /// Upload and set the authenticated caller's avatar image.
     ///
-    /// Normalizes the image to a 400x400 JPEG stored in the object store.
+    /// Normalizes the image to a 400x400 WebP stored in the object store.
     #[oai(path = "/profil/avatar", method = "post", tag = "ApiTag::Profiles")]
     async fn profile_upload_avatar(
         &self,
@@ -441,12 +444,15 @@ impl FriendarazziApiSpec {
             .auth_context(authorization.0.as_deref())
             .await
             .unwrap_or(AuthContext::Anonymous);
-        let bytes = match multipart.file.into_vec().await {
+        let bytes = match multipart
+            .file
+            .into_vec()
+            .await
+            .change_context(ProfileUseCaseError::BadRequest)
+        {
             Ok(b) => b,
-            Err(_) => {
-                return TypicalJsonResponse::from(Err(Report::new(
-                    ProfileUseCaseError::BadRequest,
-                )));
+            Err(err) => {
+                return TypicalJsonResponse::from(Err(err));
             }
         };
         self.app_api.profile_upload_avatar(auth, bytes).await.into()

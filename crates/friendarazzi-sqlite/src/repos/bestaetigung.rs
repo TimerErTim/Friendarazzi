@@ -25,7 +25,7 @@ use crate::{
 };
 
 const SELECT: &str =
-    r#"SELECT id, email, token_hash, expires_at, spent_at, _version FROM "email_bestätigungen""#;
+    r#"SELECT id, email, token_hash, expires_at, spent_at, _version FROM "email_bestätigung""#;
 
 fn bestätigung_from_row(row: &Row) -> RepositoryResult<Versioned<EmailBestätigung>> {
     let id_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
@@ -64,7 +64,7 @@ impl EmailBestätigungRepository for SQLiteEmailBestätigungRepository {
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"INSERT INTO "email_bestätigungen" (id, email, token_hash, expires_at, spent_at, _version)
+            r#"INSERT INTO "email_bestätigung" (id, email, token_hash, expires_at, spent_at, _version)
                VALUES (?1, ?2, ?3, ?4, NULL, 0)"#,
             (
                 id.0.to_string(),
@@ -164,7 +164,7 @@ impl EmailBestätigungRepository for SQLiteEmailBestätigungRepository {
 
         update_versioned(
             tx,
-            r#"UPDATE "email_bestätigungen" SET email = ?2, token_hash = ?3,
+            r#"UPDATE "email_bestätigung" SET email = ?2, token_hash = ?3,
                    expires_at = ?4, spent_at = ?5, _version = ?6 + 1
                WHERE id = ?1 AND _version = ?6"#,
             (
@@ -190,7 +190,7 @@ impl EmailBestätigungRepository for SQLiteEmailBestätigungRepository {
 
         delete_versioned(
             tx,
-            r#"DELETE FROM "email_bestätigungen" WHERE id = ?1 AND _version = ?2"#,
+            r#"DELETE FROM "email_bestätigung" WHERE id = ?1 AND _version = ?2"#,
             (bestätigung.id().0.to_string(), bestätigung.v() as i64),
             bestätigung.v(),
         )
@@ -202,7 +202,7 @@ impl EmailBestätigungRepository for SQLiteEmailBestätigungRepository {
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"DELETE FROM "email_bestätigungen" WHERE email = ?1"#,
+            r#"DELETE FROM "email_bestätigung" WHERE email = ?1"#,
             [email.as_ref().to_string()],
         )
         .await

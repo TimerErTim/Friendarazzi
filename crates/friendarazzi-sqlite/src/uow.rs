@@ -8,7 +8,6 @@ use friendarazzi_core::{
         BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
         EmailBestätigungRepository, GameRepository, KontoRepository,
         PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
-        UserProfileRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
 };
@@ -21,7 +20,6 @@ use crate::{
         SQLiteBenutzerRepository, SQLiteBoardRepository, SQLiteCaptureRepository,
         SQLiteDeckRepository, SQLiteEmailBestätigungRepository, SQLiteGameRepository,
         SQLiteKontoRepository, SQLitePasswortWiederherstellungRepository, SQLiteSessionRepository,
-        SQLiteUserProfileRepository,
     },
 };
 
@@ -29,7 +27,6 @@ pub struct SQLiteUnitOfWork {
     #[allow(dead_code)]
     connection: SQLiteConnection,
     pub(crate) tx: Arc<Mutex<Option<Transaction>>>,
-    profile_repo: SQLiteUserProfileRepository,
     game_repo: SQLiteGameRepository,
     board_repo: SQLiteBoardRepository,
     capture_repo: SQLiteCaptureRepository,
@@ -52,7 +49,6 @@ impl UnitOfWorkProvider for SQLiteInstance {
         let tx = Arc::new(Mutex::new(Some(tx)));
         Ok(Box::new(SQLiteUnitOfWork {
             connection,
-            profile_repo: SQLiteUserProfileRepository { tx: tx.clone() },
             game_repo: SQLiteGameRepository { tx: tx.clone() },
             board_repo: SQLiteBoardRepository { tx: tx.clone() },
             capture_repo: SQLiteCaptureRepository { tx: tx.clone() },
@@ -83,10 +79,6 @@ impl UnitOfWorkImpl for SQLiteUnitOfWork {
         tx.rollback()
             .await
             .contextualize_with(libsql_error_to_persistence_error)
-    }
-
-    fn profiles(&self) -> &dyn UserProfileRepository {
-        &self.profile_repo
     }
 
     fn games(&self) -> &dyn GameRepository {

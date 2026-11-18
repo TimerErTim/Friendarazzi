@@ -53,7 +53,7 @@ pub struct Erneuerung {
 impl UseCase<SessionAusgestellt> for Erneuerung {
     type Error = Report<ErneuerungFehler>;
 
-    #[instrument(skip_all, err(Debug))]
+    #[instrument(skip_all, fields(client_ip = %self.client_key.ip), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<SessionAusgestellt, Self::Error> {
         let jetzt = ctx.clock().now();
         ctx.throttle()
@@ -127,12 +127,12 @@ impl UseCase<SessionAusgestellt> for Erneuerung {
                 .await
                 .change_context(ErneuerungFehler::SessionSpeichern)?;
 
-            Ok(Erneuerungsausgang::Ok(SessionAusgestellt {
+            Ok(Erneuerungsausgang::Ok(Box::new(SessionAusgestellt {
                 session_id: folge.id(),
                 benutzer: benutzer.into_data(),
                 refresh_token: folge_refresh,
                 claims: claims_for_session(&ctx, benutzer_id, folge.id(), jetzt),
-            }))
+            })))
         }
         .await;
 
@@ -164,7 +164,7 @@ impl UseCase<SessionAusgestellt> for Erneuerung {
         }
 
         match ausgang {
-            Erneuerungsausgang::Ok(ausgestellt) => Ok(ausgestellt),
+            Erneuerungsausgang::Ok(ausgestellt) => Ok(*ausgestellt),
             Erneuerungsausgang::Wiederholung => Err(Report::new(ErneuerungFehler::SessionUngültig)),
         }
     }
@@ -172,7 +172,7 @@ impl UseCase<SessionAusgestellt> for Erneuerung {
 
 /// Whether a renewal produced a successor session or detected a replay.
 enum Erneuerungsausgang {
-    Ok(SessionAusgestellt),
+    Ok(Box<SessionAusgestellt>),
     Wiederholung,
 }
 
@@ -270,7 +270,7 @@ pub struct SessionPrüfen {
 impl UseCase<AuthContext> for SessionPrüfen {
     type Error = Report<SessionPrüfenFehler>;
 
-    #[instrument(skip_all, err(Debug))]
+    #[instrument(skip_all, fields(sub = ?self.claims.sub, sid = ?self.claims.sid), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<AuthContext, Self::Error> {
         let jetzt = ctx.clock().now();
         let konfiguration = ctx.identity_provider_conf();

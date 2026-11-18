@@ -16,9 +16,8 @@ turn hangouts, trips, parties, or everyday weeks into a candid photo-hunting gam
 
 ## Core Gameplay Loop
 
-1. **Lobby & Invitation:** Host creates a game lobby with grid size (`3×3`, `4×4`, `5×5`, optional
-   center Free Space) and proof visibility mode (`Undercover`, `LiveFeed`, `BlurredTeaser`) and
-   shares an invite link (`/join/[invite_code]`).
+1. **Lobby & Invitation:** Host creates a game lobby with grid size (`3×3`, `4×4`, `5×5`) and proof
+   visibility mode (`Undercover`, `LiveFeed`, `BlurredTeaser`) and shares an invite link (`/join/[invite_code]`).
 2. **Drafting Phase:** Participants submit custom prompts evenly distributed across the other players
    in the lobby, or pick and customize prompts from curated Quick-Start decks (*Night Out*, *Urlaub &
    Festival*, *WG & Zuhause*, *Büro & Uni*).
@@ -37,9 +36,8 @@ turn hangouts, trips, parties, or everyday weeks into a candid photo-hunting gam
 
 | Term | Meaning |
 |------|---------|
-| `Benutzer` / `Konto` | Authenticated person and credentials (`konto` supporting subdomain). |
-| `UserProfile` | Public identity, avatar, `gold_medal_count`, unlocked rank title (`RANK_TIERS`). |
-| `Game` | Bingo match with `InviteCode`, `GridSize`, `VisibilityMode`, and lifecycle state (`Lobby` → `Drafting` → `Active` → `Completed`). |
+| `Benutzer` / `Konto` | Identity, public profile (`username`, `display_name`, `avatar_storage_key`, `gold_medal_count`, rank titles), and credentials (`konto` supporting subdomain). |
+| `Game` | Bingo match with `InviteCode`, `GridSize`, `VisibilityMode`, `GamePlayer` roster, `PromptSubmission` list, and typestate lifecycle (`Lobby` → `Drafting` → `Active` → `Completed`). |
 | `PromptSubmission` | Custom or starter-deck action written by `author_user_id` about `target_user_id`. |
 | `Board` / `BoardTile` | Player's individualized grid and tile assignments (`author != owner && target != owner`). |
 | `Capture` | Uploaded photo proof (`image_storage_key`, `thumbnail_storage_key`, timestamp). |

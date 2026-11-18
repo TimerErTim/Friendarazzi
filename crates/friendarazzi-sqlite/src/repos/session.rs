@@ -24,7 +24,7 @@ use crate::{
 };
 
 const SELECT: &str = r#"SELECT id, benutzer_id, refresh_token_hash, public_key,
-    created_at, expires_at, spent_at, revoked_at, _version FROM "sessions""#;
+    created_at, expires_at, spent_at, revoked_at, _version FROM "session""#;
 
 fn option_datetime(raw: Option<String>) -> RepositoryResult<Option<chrono::DateTime<chrono::Utc>>> {
     raw.map(|wert| parse_datetime(&wert)).transpose()
@@ -76,7 +76,7 @@ impl SessionRepository for SQLiteSessionRepository {
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"INSERT INTO "sessions"
+            r#"INSERT INTO "session"
                (id, benutzer_id, refresh_token_hash, public_key, created_at,
                 expires_at, spent_at, revoked_at, _version)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, 0)"#,
@@ -149,7 +149,7 @@ impl SessionRepository for SQLiteSessionRepository {
 
         update_versioned(
             tx,
-            r#"UPDATE "sessions" SET benutzer_id = ?2, refresh_token_hash = ?3,
+            r#"UPDATE "session" SET benutzer_id = ?2, refresh_token_hash = ?3,
                    public_key = ?4, created_at = ?5, expires_at = ?6,
                    spent_at = ?7, revoked_at = ?8, _version = ?9 + 1
                WHERE id = ?1 AND _version = ?9"#,
@@ -211,7 +211,7 @@ impl SessionRepository for SQLiteSessionRepository {
 
         delete_versioned(
             tx,
-            r#"DELETE FROM "sessions" WHERE id = ?1 AND _version = ?2"#,
+            r#"DELETE FROM "session" WHERE id = ?1 AND _version = ?2"#,
             (session.id().0.to_string(), session.v() as i64),
             session.v(),
         )
@@ -223,7 +223,7 @@ impl SessionRepository for SQLiteSessionRepository {
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"DELETE FROM "sessions" WHERE benutzer_id = ?1"#,
+            r#"DELETE FROM "session" WHERE benutzer_id = ?1"#,
             [benutzer_id.0.to_string()],
         )
         .await

@@ -26,6 +26,33 @@ export function isExactPath(pathname: string, href: string): boolean {
   return normalizePath(pathname) === normalizePath(href);
 }
 
+export const BASE_PATH = (
+  process.env.NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH ?? ""
+).replace(/\/+$/, "");
+
+export function withBasePath(path: string): string {
+  if (!BASE_PATH || path.startsWith(BASE_PATH)) {
+    return path;
+  }
+  return `${BASE_PATH}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+export function stripBasePath(pathname: string): string {
+  if (BASE_PATH && pathname.startsWith(BASE_PATH)) {
+    const stripped = pathname.slice(BASE_PATH.length);
+    return stripped.startsWith("/") ? stripped : `/${stripped}`;
+  }
+  return pathname;
+}
+
+export function absoluteUrl(appPath: string): string {
+  const fullPath = withBasePath(appPath);
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${fullPath}`;
+  }
+  return fullPath;
+}
+
 export const paths = {
   home: "/",
   games: "/games",

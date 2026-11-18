@@ -12,7 +12,7 @@ use crate::ports::{
     EmailBestätigungRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
     ObjectStore, ObjectStoreError, ObjectStream, PasswortWiederherstellungRepository, PdfDokument,
     PdfRenderError, PdfRenderer, RepositoryResult, SessionRepository, Throttle, ThrottleAction,
-    ThrottleError, UserProfileRepository,
+    ThrottleError,
 };
 
 #[derive(Clone)]
@@ -165,10 +165,6 @@ impl UnitOfWorkImpl for InstrumentedUnitOfWork {
     async fn rollback(self: Box<Self>) -> RepositoryResult<()> {
         let RepoStorage { uow, .. } = *Pin::into_inner(self.storage);
         uow.rollback().await
-    }
-
-    fn profiles(&self) -> &dyn UserProfileRepository {
-        &self.storage.profiles
     }
 
     fn games(&self) -> &dyn GameRepository {

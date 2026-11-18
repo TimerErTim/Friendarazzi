@@ -11,7 +11,7 @@ owner: TimerErTim
 > warm ink, hairline pencil rules, light and dark themes.
 >
 > Implementation rules and token tables live in
-> [`.cursor/rules/design-system.mdc`](../../.cursor/rules/design-system.mdc); literal token values
+> [`.agents/skills/design-system/SKILL.md`](../../.agents/skills/design-system/SKILL.md); literal token values
 > live in `frontend/src/app/globals.css` and are enforced by `mise run check:design`.
 
 ## Design Principles

@@ -11,13 +11,13 @@ Read the one that owns the question; do not restate it here.
 
 | Question | Document |
 |----------|----------|
-| How work flows and how to contribute | [`.github/CONTRIBUTING.md`](../.github/CONTRIBUTING.md) |
-| Product charter and decisions | [`specs/`](../specs/README.md) |
-| In which order to build one feature slice | [`docs/vertical-slice.md`](../docs/vertical-slice.md) |
-| How to model domain types | [`crates/friendarazzi-core/src/domain/README.md`](../crates/friendarazzi-core/src/domain/README.md) — module docs |
-| How the UI looks and behaves | [`.cursor/rules/design-system.mdc`](rules/design-system.mdc) |
-| Server configuration and environment variables | [`backend/README.md`](../backend/README.md) |
-| The code map (symbols, dependencies) | `graphify` (see [`graphify.mdc`](rules/graphify.mdc)) |
+| How work flows and how to contribute | [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) |
+| Product charter and decisions | [`specs/`](specs/README.md) |
+| In which order to build one feature slice | [`docs/vertical-slice.md`](docs/vertical-slice.md) |
+| How to model domain types | [`crates/friendarazzi-core/src/domain/README.md`](crates/friendarazzi-core/src/domain/README.md) — module docs |
+| How the UI looks and behaves | [`.agents/skills/design-system/SKILL.md`](.agents/skills/design-system/SKILL.md) |
+| Server configuration and environment variables | [`backend/README.md`](backend/README.md) |
+| The code map (symbols, dependencies) | `graphify` (see [`.agents/skills/graphify/SKILL.md`](.agents/skills/graphify/SKILL.md)) |
 
 ## Workspace layout
 
@@ -114,7 +114,7 @@ adapters emit `debug!`/`trace!` events only, never duplicate spans.
 2. No spans on the public `UnitOfWork`; wrap at `InstrumentedUnitOfWork` and the ports.
 3. New repository trait: add an `Instrumented*Repository` with `impl_instrumented_repo!`, add a
    `RepoStorage` field, and return it from `InstrumentedUnitOfWork`. The `uow` field stays last —
-   [`docs/vertical-slice.md`](../docs/vertical-slice.md) explains the pointer wiring.
+   [`docs/vertical-slice.md`](docs/vertical-slice.md) explains the pointer wiring.
 4. New non-repository port: add an `Instrumented*` wrapper and wire it in `ExecutionContext`.
 
 `backend/server/src/tracing_setup.rs` reads `FRIENDARAZZI_LOG_LEVEL` (default `info`).
@@ -169,12 +169,12 @@ optimistic updates.
 Configuration is static and baked in at build time (`NEXT_PUBLIC_FRIENDARAZZI_*`); there is no runtime
 config file and no async bootstrap. Keep the access token in frontend memory only; never persist it
 to `localStorage` or a cookie. The refresh token is held in the API's `HttpOnly` cookie. See
-[`docs/vertical-slice.md`](../docs/vertical-slice.md) for the seam and the state rules.
+[`docs/vertical-slice.md`](docs/vertical-slice.md) for the seam and the state rules.
 
-**UI work starts by reading [`.cursor/rules/design-system.mdc`](rules/design-system.mdc).** It owns
+**UI work starts by reading [`.agents/skills/design-system/SKILL.md`](.agents/skills/design-system/SKILL.md).** It owns
 tokens, components, contrast, touch targets, and the `/dev` gallery; this file does not. Values live
 only in `frontend/src/app/globals.css`, used through semantic utilities. A new token, pairing,
-variant, or convention updates that rule and `specs/product/visual-identity.md` in the same commit.
+variant, or convention updates that skill and `specs/product/visual-identity.md` in the same commit.
 
 ## Tooling
 
@@ -184,6 +184,9 @@ gate (`check`, `build`, `test`, `verify`) and is what CI runs.
 The Rust toolchain is pinned in `rust-toolchain.toml`; do not bump the nightly without testing,
 because newer nightlies break poem-openapi's lifetime capture across `.await`.
 
+- Invoke GitHub CLI via `mise x -- gh ...` (see [`.agents/skills/gh-via-mise/SKILL.md`](.agents/skills/gh-via-mise/SKILL.md)); never switch away from the agent account.
+- When `graphify-out/graph.json` exists, query `graphify` before reading or searching files to explore the codebase, and update it after modifying code (see [`.agents/skills/graphify/SKILL.md`](.agents/skills/graphify/SKILL.md)).
+
 ## Version Control
 
 - **Merge, don't rebase, to integrate upstream.** When a branch conflicts with or falls behind its
@@ -191,12 +194,12 @@ because newer nightlies break poem-openapi's lifetime capture across `.await`.
   resolutions stay visible in history; never rewrite pushed commits to hide them.
 - Rebase only for unpushed local work or explicit maintainer instruction. Never force-push a shared
   or reviewed branch.
-- Commit identity and signing key come from the `CURSOR_AGENT`-conditional jj config. Never override
-  `user.name`, `user.email`, or `signing.key` inline, and never disable signing.
+- Commit identity and signing key come from the environment-conditional jj config (e.g. `CURSOR_AGENT`).
+  Never override `user.name`, `user.email`, or `signing.key` inline, and never disable signing.
 
 ## Adding a feature
 
-Walk [`docs/vertical-slice.md`](../docs/vertical-slice.md) in order — domain → port → use case →
+Walk [`docs/vertical-slice.md`](docs/vertical-slice.md) in order — domain → port → use case →
 UoW wiring → fakes → migration → SQLite repository → API → tests → frontend — and copy its shape,
 not its concrete names. Domain changes stay in core.
 

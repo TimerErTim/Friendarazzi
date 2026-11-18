@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const CSS = join(ROOT, "frontend/src/app/globals.css");
-const RULE = join(ROOT, ".cursor/rules/design-system.mdc");
+const RULE = join(ROOT, ".agents/skills/design-system/SKILL.md");
 const SRC = join(ROOT, "frontend/src");
 
 /** Files the rules apply to. */

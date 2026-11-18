@@ -1,14 +1,14 @@
 ---
-description: Friendarazzi visual identity — tokens, components, accessibility, gallery
-alwaysApply: true
+name: design-system
+description: "Friendarazzi visual identity (Sleek Paperstyle) — semantic design tokens, shadcn-style UI primitives, WCAG contrast and touch-target rules, screen composition, and the /dev gallery. Read before creating or modifying any frontend UI, CSS tokens, or components."
 ---
 
 # Design system — Sleek Paperstyle
 
 The operative rulebook. Follow it literally; it is the only document an implementer needs to build
-UI. Values live in [`frontend/src/app/globals.css`](../../frontend/src/app/globals.css) — this file
+UI. Values live in [`frontend/src/app/globals.css`](../../../frontend/src/app/globals.css) — this file
 names tokens and states rules, never hex codes. Rationale and history live in
-[`specs/product/visual-identity.md`](../../specs/product/visual-identity.md).
+[`specs/product/visual-identity.md`](../../../specs/product/visual-identity.md).
 
 **Scope: appearance only.** How a screen looks, feels, and behaves visually — never what the product
 does, which journey it supports, or how data flows. Content decisions live in product specs.
@@ -320,7 +320,7 @@ product decision, not settled here.
 - A superseded direction belongs in the spec decision log, not on the page.
 
 **Workflow for any visual change:** edit a token or component → look at `/dev` → decide → write the
-result into this rule and the spec decision log in the same commit.
+result into this skill and the spec decision log in the same commit.
 
 ## Keeping in sync
 

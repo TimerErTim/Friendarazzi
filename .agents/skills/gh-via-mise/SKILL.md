@@ -1,6 +1,6 @@
 ---
-description: Invoke GitHub CLI through mise without changing project tool configuration
-alwaysApply: true
+name: gh-via-mise
+description: "Invoke GitHub CLI (gh) through mise without changing project tool configuration. Use for every GitHub CLI command, including issue, pull request, workflow, and project operations."
 ---
 
 # GitHub CLI via mise

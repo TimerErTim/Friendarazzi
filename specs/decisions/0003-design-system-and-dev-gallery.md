@@ -32,7 +32,7 @@ A review surface therefore has to be absent from the build or dead weight in it.
    `dev.tsx` / `dev.ts` to `pageExtensions` only for `PHASE_DEVELOPMENT_SERVER`; production keeps
    exactly `["tsx", "ts"]`. Route: `src/app/dev/page.dev.tsx`, sections in
    `src/components/dev-gallery/`. The gate is trusted; the build does not re-assert it.
-4. **Two documents, one job each.** `.cursor/rules/design-system.mdc` is the operative rulebook an
+4. **Two documents, one job each.** `.agents/skills/design-system/SKILL.md` is the operative rulebook an
    implementer follows (tokens by name, component conventions, accessibility, screen composition).
    `specs/product/visual-identity.md` holds PO-level intent, acceptance criteria, and the decision
    log. Neither contains token values; those live only in `globals.css`. The rule also states the

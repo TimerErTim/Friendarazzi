@@ -72,5 +72,5 @@ Three things stay ASCII, because something outside the compiler consumes them:
 
 The rule is enforced by review, not by a task: no reliable scanner distinguishes a German word
 from a transliteration, so an automated check would pass the mistakes it exists to catch. The
-three ASCII exceptions above are named in `.cursor/AGENTS.md`, where every contributor and agent
+three ASCII exceptions above are named in `AGENTS.md`, where every contributor and agent
 reads them.

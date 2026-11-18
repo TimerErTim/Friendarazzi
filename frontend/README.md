@@ -25,7 +25,7 @@ static export.
 
 ## Design system
 
-**Read [`.cursor/rules/design-system.mdc`](../.cursor/rules/design-system.mdc) before changing UI.**
+**Read [`.agents/skills/design-system/SKILL.md`](../.agents/skills/design-system/SKILL.md) before changing UI.**
 It is the operative rulebook — tokens, components, accessibility, screen composition. Rationale and
 history are in [`specs/product/visual-identity.md`](../specs/product/visual-identity.md); do not
 restate either document here.

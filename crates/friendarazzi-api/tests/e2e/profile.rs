@@ -1,4 +1,4 @@
-use friendarazzi_core::domain::media::png_bytes_for_test;
+use friendarazzi_fakes::png_bytes_for_test;
 use poem::http::StatusCode;
 use serde_json::json;
 
@@ -17,7 +17,6 @@ async fn e2e_profile_update_avatar_upload_and_caught_vs_captured_gallery() {
         .put_json_auth(
             "/api/profil",
             json!({
-                "username": "alice_pg",
                 "displayName": "Alice PG",
                 "equippedTitle": "Schnappschuss-Jäger"
             }),
@@ -32,7 +31,6 @@ async fn e2e_profile_update_avatar_upload_and_caught_vs_captured_gallery() {
         .put_json_auth(
             "/api/profil",
             json!({
-                "username": "alice_pg",
                 "displayName": "Alice PG",
                 "equippedTitle": "Neuling"
             }),
@@ -40,23 +38,7 @@ async fn e2e_profile_update_avatar_upload_and_caught_vs_captured_gallery() {
         )
         .await;
     assert_eq!(st, StatusCode::OK, "{prof}");
-    assert_eq!(prof["username"], "alice_pg");
     assert_eq!(prof["displayName"], "Alice PG");
-
-    // Duplicate username by Bob -> Conflict
-    let (st, _) = harness
-        .client
-        .put_json_auth(
-            "/api/profil",
-            json!({
-                "username": "alice_pg",
-                "displayName": "Bob",
-                "equippedTitle": null
-            }),
-            &t_bob,
-        )
-        .await;
-    assert_eq!(st, StatusCode::CONFLICT);
 
     // Avatar upload #1 -> accessible via /api/media/{key}
     let (st, av1) = harness

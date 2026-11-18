@@ -412,12 +412,10 @@ impl FakeBenutzerRepository {
 impl BenutzerRepository for FakeBenutzerRepository {
     async fn create(&self, benutzer: NeuerBenutzer) -> RepositoryResult<Versioned<Benutzer>> {
         let mut map = self.datastore.benutzer();
-        if map.values().any(|b| {
-            b.email_address() == benutzer.email_address()
-                || b.username()
-                    .as_str()
-                    .eq_ignore_ascii_case(benutzer.username().as_str())
-        }) {
+        if map
+            .values()
+            .any(|b| b.email_address() == benutzer.email_address())
+        {
             return Err(Report::new(RepositoryError::Conflict));
         }
         let id = BenutzerId(Uuid::new_v4());
@@ -448,24 +446,12 @@ impl BenutzerRepository for FakeBenutzerRepository {
             .ok_or_else(|| Report::new(RepositoryError::NotFound))
     }
 
-    async fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<Benutzer>> {
-        self.datastore
-            .benutzer()
-            .values()
-            .find(|b| b.username().as_str().eq_ignore_ascii_case(username))
-            .cloned()
-            .ok_or_else(|| Report::new(RepositoryError::NotFound))
-    }
-
     async fn update(&self, benutzer: &mut Versioned<Benutzer>) -> RepositoryResult<()> {
         let mut map = self.datastore.benutzer();
-        if map.values().any(|b| {
-            b.id() != benutzer.id()
-                && (b.email_address() == benutzer.email_address()
-                    || b.username()
-                        .as_str()
-                        .eq_ignore_ascii_case(benutzer.username().as_str()))
-        }) {
+        if map
+            .values()
+            .any(|b| b.id() != benutzer.id() && b.email_address() == benutzer.email_address())
+        {
             return Err(Report::new(RepositoryError::Conflict));
         }
         store_update(&mut map, benutzer.id(), benutzer)

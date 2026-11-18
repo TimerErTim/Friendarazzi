@@ -2,7 +2,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tracing::instrument;
+use rand::Rng;
+use tracing::{instrument, trace};
 
 use crate::ResultReport;
 use crate::application::instrumented_repos::RepoStorage;
@@ -11,8 +12,8 @@ use crate::ports::{
     BenutzerRepository, BoardRepository, CaptureRepository, ClientKey, DeckRepository,
     EmailBestätigungRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
     ObjectStore, ObjectStoreError, ObjectStream, PasswortWiederherstellungRepository, PdfDokument,
-    PdfRenderError, PdfRenderer, RepositoryResult, SessionRepository, Throttle, ThrottleAction,
-    ThrottleError,
+    PdfRenderError, PdfRenderer, RepositoryResult, RngSource, SessionRepository, Throttle,
+    ThrottleAction, ThrottleError,
 };
 
 #[derive(Clone)]
@@ -201,5 +202,23 @@ impl UnitOfWorkImpl for InstrumentedUnitOfWork {
 
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository {
         &self.storage.wiederherstellungen
+    }
+}
+
+#[derive(Clone)]
+pub struct InstrumentedRngSource {
+    inner: Arc<dyn RngSource>,
+}
+
+impl InstrumentedRngSource {
+    pub fn new(inner: Arc<dyn RngSource>) -> Arc<dyn RngSource> {
+        Arc::new(Self { inner })
+    }
+}
+
+impl RngSource for InstrumentedRngSource {
+    fn rng(&self) -> Box<dyn Rng + '_> {
+        trace!("rng requested");
+        self.inner.rng()
     }
 }

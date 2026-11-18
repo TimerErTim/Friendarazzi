@@ -9,7 +9,7 @@ use tracing::instrument;
 use crate::{
     application::ExecutionContext,
     domain::{
-        EmailAdresse, NeuerBenutzer, NonEmptyString, default_username_from_email,
+        EmailAdresse, NeuerBenutzer,
         konto::{
             KlartextPasswort, NeueBestätigung, NeuesKonto, RefreshToken, SecretToken, hash_password,
         },
@@ -254,20 +254,7 @@ impl UseCase<SessionAusgestellt> for RegistrierungAbschließen {
                 _ => {}
             };
 
-            let mut neuer_benutzer = NeuerBenutzer::registrierung(email.clone(), jetzt);
-            let base_username = default_username_from_email(&email);
-            if uow
-                .benutzer()
-                .find_by_username(base_username.as_str())
-                .await
-                .is_ok()
-            {
-                let suffix = &uuid::Uuid::new_v4().simple().to_string()[..4];
-                let unique = format!("{}_{}", base_username.as_str(), suffix);
-                neuer_benutzer = neuer_benutzer.with_username(
-                    NonEmptyString::neu(unique).expect("non-empty suffixed username"),
-                );
-            }
+            let neuer_benutzer = NeuerBenutzer::registrierung(email.clone(), jetzt);
 
             let benutzer = uow
                 .benutzer()

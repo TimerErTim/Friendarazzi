@@ -16,6 +16,7 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 rustc-hash = { workspace = true }
 rand = { workspace = true }
+image = { workspace = true }
 
 [lints]
 workspace = true

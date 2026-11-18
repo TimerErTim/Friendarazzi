@@ -3,27 +3,8 @@
 use uuid::Uuid;
 
 use friendarazzi_core::domain;
-use friendarazzi_core::domain::konto::Rolle as DomainBenutzerRolle;
 
 use crate::schema::EmailAdresse;
-
-/// `Benutzer` or `Systemadministrator`: the role a Benutzer holds on the whole instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "openapi", derive(poem_openapi::Enum))]
-#[derive(serde::Serialize, serde::Deserialize)]
-pub enum BenutzerRolle {
-    Benutzer,
-    Systemadministrator,
-}
-
-impl From<DomainBenutzerRolle> for BenutzerRolle {
-    fn from(rolle: DomainBenutzerRolle) -> Self {
-        match rolle {
-            DomainBenutzerRolle::Benutzer => Self::Benutzer,
-            DomainBenutzerRolle::Systemadministrator => Self::Systemadministrator,
-        }
-    }
-}
 
 /// The authenticated caller, as `GET /benutzer` answers it.
 #[derive(Debug, Clone)]
@@ -36,10 +17,6 @@ pub struct AuthenticatedBenutzer {
     pub id: Uuid,
     /// Its e-mail address.
     pub e_mail_adresse: EmailAdresse,
-    /// Its role on the whole instance.
-    pub rolle: BenutzerRolle,
-    /// Public handle of the player.
-    pub username: String,
     /// Display name shown in lobbies and boards.
     pub display_name: String,
     /// Storage key of the player's avatar, if uploaded.
@@ -78,8 +55,6 @@ impl From<domain::Benutzer> for AuthenticatedBenutzer {
         Self {
             id: benutzer.id().0,
             e_mail_adresse: benutzer.email_address().clone().into(),
-            rolle: benutzer.rolle().into(),
-            username: benutzer.username().as_str().to_owned(),
             display_name: benutzer.display_name().as_str().to_owned(),
             avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
             gold_medal_count: benutzer.gold_medal_count(),

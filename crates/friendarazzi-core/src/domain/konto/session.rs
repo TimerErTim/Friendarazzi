@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use super::{BenutzerId, KontoFehler, SecretTokenHash};
+use super::{KontoFehler, SecretTokenHash};
+use crate::domain::BenutzerId;
 
 /// Identity of one Anmelde-Sitzung.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

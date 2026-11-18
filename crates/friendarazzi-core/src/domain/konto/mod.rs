@@ -44,7 +44,6 @@ mod session;
 mod signing;
 mod token;
 
-pub use crate::domain::benutzer::{Benutzer, BenutzerId, NeuerBenutzer, Rolle};
 pub use bestaetigung::{BestätigungId, EmailBestätigung, NeueBestätigung};
 pub use claims::{AccessTokenClaims, TokenId};
 pub use konto::{Konto, KontoId, NeuesKonto};
@@ -105,8 +104,6 @@ pub enum KontoFehler {
     SignaturUngültig,
     #[error("der Signaturschlüssel ist ungültig")]
     SigningKeyUngültig,
-    #[error("die Rolle ist unbekannt")]
-    RolleUnbekannt,
     #[error("es konnte kein Zufall erzeugt werden")]
     ZufallFehlgeschlagen,
 }

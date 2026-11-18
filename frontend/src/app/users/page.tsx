@@ -74,7 +74,7 @@ export default function UserProfilePage() {
       <PageHeader
         register={["Spieler", "Profil"]}
         title={profile.displayName}
-        description={`@${profile.username} · ${profile.effectiveTitle}`}
+        description={profile.effectiveTitle}
       />
 
       <Card>

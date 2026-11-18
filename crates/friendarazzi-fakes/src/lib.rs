@@ -1,6 +1,7 @@
 //! In-memory fakes for friendarazzi.app ports — usable in integration tests, scripts, and seed tooling.
 
 mod clock;
+mod media;
 mod object_store;
 mod pdf;
 mod repository;
@@ -8,6 +9,7 @@ mod rng;
 mod uow;
 
 pub use clock::*;
+pub use media::*;
 pub use object_store::*;
 pub use pdf::*;
 pub use repository::*;

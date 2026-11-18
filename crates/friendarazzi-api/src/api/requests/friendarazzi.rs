@@ -143,8 +143,6 @@ impl SaveDraftPromptsRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
-    /// Public handle (2..=32 ASCII alphanumeric, `_`, or `-`).
-    pub username: String,
     /// Display name shown to friends.
     pub display_name: String,
     /// Optional unlocked rank title to equip.
@@ -153,15 +151,12 @@ pub struct UpdateProfileRequest {
 
 impl UpdateProfileRequest {
     pub fn into_use_case(self) -> Result<UpdateProfile, Report<ProfileUseCaseError>> {
-        let username =
-            NonEmptyString::neu(self.username).change_context(ProfileUseCaseError::BadRequest)?;
         let display_name = NonEmptyString::neu(self.display_name)
             .change_context(ProfileUseCaseError::BadRequest)?;
         let equipped_title = self
             .equipped_title
             .and_then(|t| NonEmptyString::neu(t).ok());
         Ok(UpdateProfile {
-            username,
             display_name,
             equipped_title,
         })

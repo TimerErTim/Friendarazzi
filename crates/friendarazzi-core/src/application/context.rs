@@ -3,14 +3,14 @@ use std::sync::Arc;
 use crate::{
     application::instrumented::{
         InstrumentedMailSender, InstrumentedObjectStore, InstrumentedPdfRenderer,
-        InstrumentedThrottle, InstrumentedUnitOfWork,
+        InstrumentedRngSource, InstrumentedThrottle, InstrumentedUnitOfWork,
     },
     application::uow::{UnitOfWork, UnitOfWorkImpl, UnitOfWorkProvider},
     ports::{
-        Clock, MailSender, ObjectStore, PdfRenderer, PortRng, RepositoryResult, RngPort, Signing,
-        Throttle,
+        Clock, MailSender, ObjectStore, PdfRenderer, RepositoryResult, RngSource, Signing, Throttle,
     },
 };
+use rand::Rng;
 use tracing::instrument;
 
 use super::auth::AuthContext;
@@ -30,7 +30,7 @@ pub struct ExecutionContext<'a> {
     auth: AuthContext,
     signing: Arc<dyn Signing>,
     clock: Arc<dyn Clock>,
-    rng: Arc<dyn RngPort>,
+    rng: Arc<dyn RngSource>,
     object_store: Arc<dyn ObjectStore>,
     pdf_renderer: Arc<dyn PdfRenderer>,
     throttle: Arc<dyn Throttle>,
@@ -44,7 +44,7 @@ pub(crate) struct ContextPorts {
     pub(crate) auth: AuthContext,
     pub(crate) signing: Arc<dyn Signing>,
     pub(crate) clock: Arc<dyn Clock>,
-    pub(crate) rng: Arc<dyn RngPort>,
+    pub(crate) rng: Arc<dyn RngSource>,
     pub(crate) object_store: Arc<dyn ObjectStore>,
     pub(crate) pdf_renderer: Arc<dyn PdfRenderer>,
     pub(crate) throttle: Arc<dyn Throttle>,
@@ -62,7 +62,7 @@ impl<'a> ExecutionContext<'a> {
             auth: ports.auth,
             signing: ports.signing,
             clock: ports.clock,
-            rng: ports.rng,
+            rng: InstrumentedRngSource::new(ports.rng),
             object_store: InstrumentedObjectStore::new(ports.object_store),
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
@@ -77,7 +77,7 @@ impl<'a> ExecutionContext<'a> {
             auth: ports.auth,
             signing: ports.signing,
             clock: ports.clock,
-            rng: ports.rng,
+            rng: InstrumentedRngSource::new(ports.rng),
             object_store: InstrumentedObjectStore::new(ports.object_store),
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
@@ -90,8 +90,8 @@ impl<'a> ExecutionContext<'a> {
         self.clock.as_ref()
     }
 
-    pub fn rng(&self) -> PortRng<'_> {
-        PortRng(self.rng.as_ref())
+    pub fn rng(&self) -> Box<dyn Rng + '_> {
+        self.rng.rng()
     }
 
     pub fn object_store(&self) -> &dyn ObjectStore {

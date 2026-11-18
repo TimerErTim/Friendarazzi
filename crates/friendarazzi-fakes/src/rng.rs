@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
-use friendarazzi_core::ports::RngPort;
-use rand::{RngCore, SeedableRng, rngs::StdRng};
+use friendarazzi_core::ports::RngSource;
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 /// Deterministic RNG for repeatable tests.
 pub struct FixedRng {
@@ -22,16 +22,8 @@ impl Default for FixedRng {
     }
 }
 
-impl RngPort for FixedRng {
-    fn next_u32(&self) -> u32 {
-        self.inner.lock().unwrap().next_u32()
-    }
-
-    fn next_u64(&self) -> u64 {
-        self.inner.lock().unwrap().next_u64()
-    }
-
-    fn fill_bytes(&self, dest: &mut [u8]) {
-        self.inner.lock().unwrap().fill_bytes(dest);
+impl RngSource for FixedRng {
+    fn rng(&self) -> Box<dyn Rng + '_> {
+        Box::new(self.inner.lock().unwrap())
     }
 }

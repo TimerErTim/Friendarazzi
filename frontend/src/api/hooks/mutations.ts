@@ -122,12 +122,12 @@ export function useAuthMutations() {
   return {
     login: useMutation({
       mutationFn: ({
-        identifier,
+        eMailAdresse,
         passwort,
       }: {
-        identifier: string;
+        eMailAdresse: string;
         passwort: string;
-      }) => api.anmelden(identifier, passwort),
+      }) => api.anmelden(eMailAdresse, passwort),
       ...SITE_HANDLED,
       onSuccess: loggedIn,
     }),

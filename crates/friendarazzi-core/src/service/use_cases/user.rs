@@ -1,4 +1,4 @@
-//! Reading, deleting, and bootstrapping a Benutzer.
+//! Deleting a Benutzer.
 //!
 //! One error enum per use case. Authorisation is decided in the use case body from the
 //! aggregates it loads, never by the endpoint (SPEC-konto rule 17).
@@ -9,11 +9,7 @@ use tracing::instrument;
 
 use crate::{
     application::ExecutionContext,
-    domain::{
-        EmailAdresse,
-        konto::{KlartextPasswort, Rolle, verify_password},
-    },
-    ports::RepositoryError,
+    domain::konto::{KlartextPasswort, verify_password},
     service::UseCase,
 };
 
@@ -149,86 +145,5 @@ impl UseCase<()> for BenutzerLöschen {
             .await?;
         tracing::info!(benutzer_id = ?benutzer_id, "benutzer gelöscht");
         Ok(())
-    }
-}
-
-/// Every way `SystemadministratorBefördern` may refuse.
-#[derive(Debug, thiserror::Error)]
-pub enum SystemadministratorBefördernFehler {
-    #[error("das Konto konnte nicht geladen werden")]
-    KontoLaden,
-    #[error("der Benutzer konnte nicht geladen werden")]
-    BenutzerLaden,
-    #[error("der Benutzer konnte nicht gespeichert werden")]
-    BenutzerSpeichern,
-}
-
-/// Promote the configured address to `Systemadministrator`, or report that there is nothing
-/// to promote.
-///
-/// The only path that grants the role (rule 9): no API route reaches this, it runs at
-/// startup from deployment configuration. Idempotent — promoting twice changes nothing —
-/// and it never creates an account, because an address with no `Benutzer` has no identity
-/// and no password. A missing account is `Ok` so a fresh deployment can start before the
-/// superuser has registered.
-#[derive(Debug, Clone)]
-pub struct SystemadministratorBefördern {
-    pub email: EmailAdresse,
-}
-
-/// What the bootstrap found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Beförderung {
-    /// Promoted now.
-    Befördert,
-    /// Already a `Systemadministrator`; nothing written.
-    BereitsBefördert,
-    /// No `Konto` holds the address, so there was nothing to promote.
-    KeinKonto,
-}
-
-#[async_trait]
-impl UseCase<Beförderung> for SystemadministratorBefördern {
-    type Error = Report<SystemadministratorBefördernFehler>;
-
-    #[instrument(skip_all, fields(email = ?self.email), err(Debug))]
-    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Beförderung, Self::Error> {
-        let uow = ctx
-            .enter()
-            .await
-            .change_context(SystemadministratorBefördernFehler::KontoLaden)?;
-
-        let ergebnis = async {
-            let benutzer = match uow.benutzer().find_by_email(&self.email).await {
-                Ok(b) => b,
-                Err(fehler) if matches!(fehler.current_context(), RepositoryError::NotFound) => {
-                    return Ok(Beförderung::KeinKonto);
-                }
-                Err(fehler) => {
-                    return Err(fehler)
-                        .change_context(SystemadministratorBefördernFehler::BenutzerLaden);
-                }
-            };
-
-            if benutzer.rolle() == Rolle::Systemadministrator {
-                return Ok(Beförderung::BereitsBefördert);
-            }
-
-            // A plain domain mutation written back with `update`, so optimistic concurrency
-            // applies like any other change.
-            let mut benutzer = benutzer;
-            benutzer.befördere_zu_systemadministrator();
-            uow.benutzer()
-                .update(&mut benutzer)
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(SystemadministratorBefördernFehler::BenutzerSpeichern)?;
-
-            Ok(Beförderung::Befördert)
-        }
-        .await;
-
-        uow.finish(ergebnis, SystemadministratorBefördernFehler::KontoLaden)
-            .await
     }
 }

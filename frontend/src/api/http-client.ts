@@ -384,10 +384,10 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
     this.setAccessToken(result.accessToken);
   }
 
-  async anmelden(identifier: string, passwort: string): Promise<void> {
+  async anmelden(eMailAdresse: string, passwort: string): Promise<void> {
     const result = await unwrap(
       await this.client.POST("/anmeldung", {
-        body: { identifier, passwort },
+        body: { eMailAdresse, passwort },
       }),
     );
     this.setAccessToken(result.accessToken);

@@ -51,13 +51,13 @@ pub enum GameStatus {
     Completed,
 }
 
-impl From<domain::GameStatus> for GameStatus {
-    fn from(value: domain::GameStatus) -> Self {
+impl From<&domain::Game> for GameStatus {
+    fn from(value: &domain::Game) -> Self {
         match value {
-            domain::GameStatus::Lobby => Self::Lobby,
-            domain::GameStatus::Drafting => Self::Drafting,
-            domain::GameStatus::Active => Self::Active,
-            domain::GameStatus::Completed => Self::Completed,
+            domain::Game::Lobby(_) => Self::Lobby,
+            domain::Game::Drafting(_) => Self::Drafting,
+            domain::Game::Active(_) => Self::Active,
+            domain::Game::Completed(_) => Self::Completed,
         }
     }
 }

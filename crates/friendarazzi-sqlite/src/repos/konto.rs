@@ -9,7 +9,10 @@ use uuid::Uuid;
 use friendarazzi_core::{
     ErrorReportExt,
     application::uow::Versioned,
-    domain::konto::{BenutzerId, HashedPasswort, Konto, KontoId, NeuesKonto},
+    domain::{
+        BenutzerId,
+        konto::{HashedPasswort, Konto, KontoId, NeuesKonto},
+    },
     ports::{KontoRepository, RepositoryError, RepositoryResult},
 };
 

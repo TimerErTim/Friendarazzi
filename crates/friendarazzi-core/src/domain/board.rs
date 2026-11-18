@@ -9,10 +9,9 @@ use uuid::Uuid;
 use crate::{
     ResultReport,
     domain::{
-        NonEmptyString,
+        BenutzerId, NonEmptyString,
         capture::CaptureId,
         game::{GameId, GridSize, PromptSubmissionId},
-        konto::BenutzerId,
     },
 };
 

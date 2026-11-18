@@ -415,9 +415,9 @@ impl FriendarazziApiSpec {
             .into()
     }
 
-    /// Update the authenticated caller's username, display name, and equipped rank title.
+    /// Update the authenticated caller's display name and equipped rank title.
     ///
-    /// Rejects locked titles or already-taken handles.
+    /// Rejects locked rank titles.
     #[oai(path = "/profil", method = "put", tag = "ApiTag::Profiles")]
     async fn profile_update(
         &self,

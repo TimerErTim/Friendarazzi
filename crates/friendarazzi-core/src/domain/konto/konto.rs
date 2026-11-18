@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use super::{BenutzerId, HashedPasswort};
+use super::HashedPasswort;
+use crate::domain::BenutzerId;
 
 /// Identity of one Konto.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -49,7 +50,7 @@ impl NeuesKonto {
     }
 }
 
-/// Authentication credential of a Benutzer (email/username lives on `Benutzer`).
+/// Authentication credential of a Benutzer (email lives on `Benutzer`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Konto {
     id: KontoId,

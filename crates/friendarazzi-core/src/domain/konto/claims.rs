@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 
 use crate::domain::konto::ACCESS_TOKEN_LIFETIME;
 
-use super::{BenutzerId, CLOCK_SKEW, KontoFehler, SessionId};
+use super::{CLOCK_SKEW, KontoFehler, SessionId};
+use crate::domain::BenutzerId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenId(pub uuid::Uuid);

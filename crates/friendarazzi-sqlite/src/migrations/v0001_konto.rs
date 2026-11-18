@@ -20,19 +20,14 @@ impl UpMigration<libsql::Transaction, libsql::Error> for Migration {
                 r#"
             CREATE TABLE IF NOT EXISTS "benutzer" (
                 id TEXT PRIMARY KEY,
-                rolle TEXT NOT NULL,
                 email_address TEXT NOT NULL UNIQUE,
-                username TEXT NOT NULL UNIQUE,
                 display_name TEXT NOT NULL,
                 avatar_storage_key TEXT,
                 gold_medal_count INTEGER NOT NULL DEFAULT 0,
                 equipped_title TEXT,
-                created_at TEXT NOT NULL,
+                registered_at TEXT NOT NULL,
                 _version INTEGER NOT NULL DEFAULT 0
             );
-
-            CREATE UNIQUE INDEX IF NOT EXISTS "idx_benutzer_username_lower"
-                ON "benutzer" (LOWER(username));
 
             CREATE TABLE IF NOT EXISTS "konto" (
                 id TEXT PRIMARY KEY,

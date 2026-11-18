@@ -92,8 +92,6 @@ pub trait BenutzerRepository: Send + Sync {
 
     async fn find_by_email(&self, email: &EmailAdresse) -> RepositoryResult<Versioned<Benutzer>>;
 
-    async fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<Benutzer>>;
-
     async fn update(&self, benutzer: &mut Versioned<Benutzer>) -> RepositoryResult<()>;
 
     async fn delete(&self, benutzer: Versioned<Benutzer>) -> RepositoryResult<()>;

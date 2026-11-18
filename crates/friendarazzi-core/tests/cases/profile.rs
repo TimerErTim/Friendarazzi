@@ -1,15 +1,16 @@
 //! Shared user profile, title unlock, and avatar storage conformance tests.
 
 use friendarazzi_core::{
-    domain::{GridSize, NonEmptyString, VisibilityMode, media::png_bytes_for_test},
+    domain::{GridSize, NonEmptyString, VisibilityMode},
     ports::{RepositoryError, collect_object},
     service::{ProfileUseCaseError, SubmitCapture, UpdateProfile, UploadAvatar},
 };
+use friendarazzi_fakes::png_bytes_for_test;
 
 use super::helpers::{build, is_webp, load_tiles, register_user, setup_active_game};
 
 #[test_log::test(pollster::test)]
-async fn profile_update_username_uniqueness_title_unlocks_and_avatar_cleanup() {
+async fn profile_update_title_unlocks_and_avatar_cleanup() {
     let harness = build(super::super::base_app_builder().await);
     let alice = register_user(&harness, "alice@example.at").await;
     let bob = register_user(&harness, "bob@example.at").await;
@@ -22,7 +23,6 @@ async fn profile_update_username_uniqueness_title_unlocks_and_avatar_cleanup() {
         .execute(
             alice,
             UpdateProfile {
-                username: NonEmptyString::neu("alice_p").unwrap(),
                 display_name: NonEmptyString::neu("Alice").unwrap(),
                 equipped_title: Some(NonEmptyString::neu("Schnappschuss-Jäger").unwrap()),
             },
@@ -34,47 +34,27 @@ async fn profile_update_username_uniqueness_title_unlocks_and_avatar_cleanup() {
         ProfileUseCaseError::TitleLocked
     ));
 
-    // Invalid username (< 2 chars) -> BadRequest
-    let err = harness
-        .app()
-        .execute(
-            alice,
-            UpdateProfile {
-                username: NonEmptyString::neu("a").unwrap(),
-                display_name: NonEmptyString::neu("Alice").unwrap(),
-                equipped_title: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        err.current_context(),
-        ProfileUseCaseError::BadRequest
-    ));
-
-    // Alice claims username "alice_unique"
+    // Alice updates display_name and equips unlocked "Neuling"
     let updated = harness
         .app()
         .execute(
             alice,
             UpdateProfile {
-                username: NonEmptyString::neu("alice_unique").unwrap(),
                 display_name: NonEmptyString::neu("Alice P").unwrap(),
                 equipped_title: Some(NonEmptyString::neu("Neuling").unwrap()),
             },
         )
         .await
         .unwrap();
-    assert_eq!(updated.username().as_str(), "alice_unique");
+    assert_eq!(updated.display_name().as_str(), "Alice P");
     assert_eq!(updated.effective_title(), "Neuling");
 
-    // Keeping one's own username while editing display_name succeeds; None clears equipped title
+    // Editing display_name while passing None clears equipped title
     let updated2 = harness
         .app()
         .execute(
             alice,
             UpdateProfile {
-                username: NonEmptyString::neu("alice_unique").unwrap(),
                 display_name: NonEmptyString::neu("Alice Updated").unwrap(),
                 equipped_title: None,
             },
@@ -83,24 +63,6 @@ async fn profile_update_username_uniqueness_title_unlocks_and_avatar_cleanup() {
         .unwrap();
     assert_eq!(updated2.display_name().as_str(), "Alice Updated");
     assert_eq!(updated2.equipped_title(), None);
-
-    // Bob cannot steal Alice's username -> UsernameTaken
-    let err = harness
-        .app()
-        .execute(
-            bob,
-            UpdateProfile {
-                username: NonEmptyString::neu("alice_unique").unwrap(),
-                display_name: NonEmptyString::neu("Bob").unwrap(),
-                equipped_title: None,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        err.current_context(),
-        ProfileUseCaseError::UsernameTaken
-    ));
 
     // Invalid avatar upload -> BadRequest
     let err = harness
@@ -195,7 +157,6 @@ async fn profile_update_username_uniqueness_title_unlocks_and_avatar_cleanup() {
         .execute(
             alice,
             UpdateProfile {
-                username: NonEmptyString::neu("alice_unique").unwrap(),
                 display_name: NonEmptyString::neu("Alice").unwrap(),
                 equipped_title: Some(NonEmptyString::neu("Paparazzi King").unwrap()),
             },
@@ -212,7 +173,6 @@ async fn profile_update_username_uniqueness_title_unlocks_and_avatar_cleanup() {
         .execute(
             alice,
             UpdateProfile {
-                username: NonEmptyString::neu("alice_unique").unwrap(),
                 display_name: NonEmptyString::neu("Alice").unwrap(),
                 equipped_title: Some(NonEmptyString::neu("Paparazzo").unwrap()),
             },

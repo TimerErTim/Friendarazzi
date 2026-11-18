@@ -8,10 +8,9 @@ use friendarazzi_api::{errors::InternalServerError, openapi_service};
 use friendarazzi_core::{
     App,
     adapters::{InMemorySigning, InMemoryThrottle, NullMailSender},
-    application::{AuthContext, IdentityProviderConfiguration},
+    application::IdentityProviderConfiguration,
     domain::EmailAdresse,
     ports::MailSender,
-    service::{Beförderung, SystemadministratorBefördern},
 };
 use friendarazzi_filesystemstore::FileSystemObjectStore;
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
@@ -196,41 +195,6 @@ fn cors(config: &config::ServerConfig) -> Cors {
         ])
 }
 
-/// Promote the configured address to `Systemadministrator`; idempotent, and an address
-/// without a Konto yet is not an error.
-async fn bootstrap_superuser(app: &App) -> Result<(), Report<BackendServerError>> {
-    let Some(email) = std::env::var("FRIENDARAZZI_SUPERUSER_EMAIL")
-        .ok()
-        .filter(|wert| !wert.trim().is_empty())
-    else {
-        return Ok(());
-    };
-
-    let adresse = EmailAdresse::normalisiert(&email).map_err(|_| {
-        Report::new(BackendServerError)
-            .attach(format!("superuser address `{email}` is not an address"))
-    })?;
-
-    let ergebnis = app
-        .execute(
-            AuthContext::Anonymous,
-            SystemadministratorBefördern { email: adresse },
-        )
-        .await
-        .change_context(BackendServerError)?;
-
-    match ergebnis {
-        Beförderung::Befördert => tracing::info!("superuser befördert"),
-        Beförderung::BereitsBefördert => {
-            tracing::info!("superuser war bereits befördert")
-        }
-        Beförderung::KeinKonto => {
-            tracing::warn!("superuser-adresse hat noch kein konto; beim nächsten start erneut")
-        }
-    }
-    Ok(())
-}
-
 /// Create the directory a configured database path lives in.
 ///
 /// libsql creates the database file but not its parent, and the configured path is only
@@ -286,8 +250,6 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .mail_sender(mail_sender)
         .konto(konto)
         .build();
-
-    bootstrap_superuser(&app).await?;
 
     let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
     let api_url = config

@@ -20,8 +20,6 @@ pub enum ProfileUseCaseError {
     NotFound,
     #[error("ungültige Profilangabe")]
     BadRequest,
-    #[error("Benutzername ist bereits vergeben")]
-    UsernameTaken,
     #[error("Titel ist noch nicht freigeschaltet")]
     TitleLocked,
     #[error("Profil konnte nicht gespeichert werden")]
@@ -30,7 +28,6 @@ pub enum ProfileUseCaseError {
 
 #[derive(Debug, Clone)]
 pub struct UpdateProfile {
-    pub username: NonEmptyString,
     pub display_name: NonEmptyString,
     pub equipped_title: Option<NonEmptyString>,
 }
@@ -42,7 +39,6 @@ impl UseCase<Benutzer> for UpdateProfile {
     #[instrument(
         skip_all,
         fields(
-            username = %self.username,
             display_name = %self.display_name,
             equipped_title = ?self.equipped_title
         ),
@@ -67,24 +63,14 @@ impl UseCase<Benutzer> for UpdateProfile {
                 Err(err) => return Err(err).change_context(ProfileUseCaseError::Persistence),
             };
 
-            if self.username.as_str() != benutzer.username().as_str()
-                && let Ok(other) = uow
-                    .benutzer()
-                    .find_by_username(self.username.as_str())
-                    .await
-                && other.id() != user_id
-            {
-                return Err(Report::new(ProfileUseCaseError::UsernameTaken));
-            }
-
             benutzer
-                .update_details(self.username, self.display_name, self.equipped_title)
+                .update_details(self.display_name, self.equipped_title)
                 .map_err(|e| {
                     let mapped = match e.current_context() {
                         ProfileError::TitleLocked => ProfileUseCaseError::TitleLocked,
-                        ProfileError::EmptyField
-                        | ProfileError::InvalidUsername
-                        | ProfileError::InvalidAvatar => ProfileUseCaseError::BadRequest,
+                        ProfileError::EmptyField | ProfileError::InvalidAvatar => {
+                            ProfileUseCaseError::BadRequest
+                        }
                     };
                     e.change_context(mapped)
                 })?;

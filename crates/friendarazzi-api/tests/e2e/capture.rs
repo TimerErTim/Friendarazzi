@@ -1,5 +1,5 @@
 use chrono::Duration;
-use friendarazzi_core::domain::media::png_bytes_for_test;
+use friendarazzi_fakes::png_bytes_for_test;
 use poem::http::StatusCode;
 use serde_json::json;
 

@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use friendarazzi_core::{
     application::AuthContext,
     domain::{
-        BoardTileId, GameId, GameStatus, GridSize, InviteCode, NonEmptyString, PromptSource,
-        PromptSubmissionId, VisibilityMode, konto::BenutzerId, media::png_bytes_for_test,
+        BenutzerId, BoardTileId, Game, GameId, GridSize, InviteCode, NonEmptyString, PromptSource,
+        PromptSubmissionId, VisibilityMode,
     },
     ports::RepositoryError,
     service::{
@@ -15,6 +15,7 @@ use friendarazzi_core::{
         UpdateGameSettings, UpdateProfile, UploadAvatar,
     },
 };
+use friendarazzi_fakes::png_bytes_for_test;
 use uuid::Uuid;
 
 use super::helpers::{
@@ -145,7 +146,6 @@ async fn anonymous_users_cannot_run_game_capture_or_profile_use_cases() {
         .execute(
             AuthContext::Anonymous,
             UpdateProfile {
-                username: NonEmptyString::neu("anon").unwrap(),
                 display_name: NonEmptyString::neu("Anon").unwrap(),
                 equipped_title: None,
             },
@@ -310,7 +310,7 @@ async fn lobby_settings_authorization_and_join_rules() {
         .execute(alice, StartDrafting { game_id: game.id() })
         .await
         .unwrap();
-    assert_eq!(drafted.status(), GameStatus::Drafting);
+    assert!(matches!(drafted, Game::Drafting(_)));
 
     // Once drafting starts: settings update, second StartDrafting, and new player join -> Conflict
     let err = harness
@@ -539,7 +539,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
         .execute(alice, LockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
-    assert_eq!(still_drafting.status(), GameStatus::Drafting);
+    assert!(matches!(still_drafting, Game::Drafting(_)));
 
     // Alice edits her prompts before Bob & Carol finish -> replaces prompts AND resets draft_locked
     let alice_edited = balanced_prompts_for(
@@ -587,7 +587,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
             .execute(auth, LockDraftPrompts { game_id: game.id() })
             .await
             .unwrap();
-        assert_eq!(state.status(), GameStatus::Drafting);
+        assert!(matches!(state, Game::Drafting(_)));
     }
 
     // Re-locking Alice completes all locks and activates the game with Alice's edited prompts only
@@ -596,14 +596,17 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
         .execute(alice, LockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
-    assert_eq!(active.status(), GameStatus::Active);
+    assert!(matches!(active, Game::Active(_)));
 
     let all_prompts = harness
         .app()
         .execute_fn(alice, async move |ctx| {
             let uow = ctx.enter().await.unwrap();
             let loaded = uow.games().find_by_id(game.id()).await.unwrap();
-            let list = loaded.into_data().prompts().to_vec();
+            let Game::Active(active) = loaded.into_data() else {
+                panic!("expected active game");
+            };
+            let list = active.prompts().to_vec();
             uow.finish(
                 Ok::<_, error_stack::Report<RepositoryError>>(list),
                 RepositoryError::Unknown,
@@ -652,8 +655,10 @@ async fn board_assembly_4x4_and_5x5_enforce_author_and_target_constraints() {
             .execute_fn(p1, async move |ctx| {
                 let uow = ctx.enter().await.unwrap();
                 let loaded = uow.games().find_by_id(game_id).await.unwrap();
-                let map: HashMap<_, _> = loaded
-                    .into_data()
+                let Game::Active(active) = loaded.into_data() else {
+                    panic!("expected active game");
+                };
+                let map: HashMap<_, _> = active
                     .prompts()
                     .iter()
                     .map(|p| (p.id, p.author_user_id))

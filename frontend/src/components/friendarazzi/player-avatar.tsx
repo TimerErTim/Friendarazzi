@@ -35,7 +35,7 @@ export function PlayerAvatar({
 }: {
   user: Pick<
     PlayerBadge,
-    "id" | "displayName" | "username" | "avatarStorageKey" | "goldMedalCount"
+    "id" | "displayName" | "avatarStorageKey" | "goldMedalCount"
   >;
   size?: AvatarSize;
   linkToProfile?: boolean;
@@ -140,7 +140,7 @@ export function PlayerBadgeLink({
           ) : null}
         </span>
         <span className="block truncate text-xs text-secondary">
-          {subtitle ?? `@${user.username} · ${user.effectiveTitle}`}
+          {subtitle ?? user.effectiveTitle}
         </span>
       </span>
     </Link>

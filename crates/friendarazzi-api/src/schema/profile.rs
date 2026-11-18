@@ -14,8 +14,6 @@ use super::capture::CaptureFeedItem;
 pub struct PlayerBadge {
     /// Player user ID.
     pub id: Uuid,
-    /// Public handle.
-    pub username: String,
     /// Display name.
     pub display_name: String,
     /// Avatar storage key, if present.
@@ -39,8 +37,6 @@ pub struct PlayerBadge {
 pub struct UserProfile {
     /// Player user ID.
     pub id: Uuid,
-    /// Public handle.
-    pub username: String,
     /// Display name.
     pub display_name: String,
     /// Avatar storage key, if present.

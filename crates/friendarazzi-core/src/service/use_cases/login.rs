@@ -11,7 +11,7 @@ use tracing::instrument;
 use crate::{
     application::ExecutionContext,
     domain::{
-        EmailAdresse, NonEmptyString,
+        EmailAdresse,
         konto::{KlartextPasswort, RefreshToken, dummy_verify, verify_password},
     },
     ports::{ClientKey, RepositoryError, ThrottleAction},
@@ -39,14 +39,14 @@ pub enum AnmeldungFehler {
     SessionSpeichern,
 }
 
-/// Log in with email address or username and Passwort.
+/// Log in with E-Mail-Adresse and Passwort.
 ///
-/// Unknown address/username and wrong Passwort answer identically, and the unknown path
+/// Unknown address and wrong Passwort answer identically, and the unknown path
 /// still pays for one argon2 verification (`dummy_verify`), so the response time does not
 /// disclose existence (rule 4, AC-6).
 #[derive(Debug)]
 pub struct Anmeldung {
-    pub identifier: NonEmptyString,
+    pub email: EmailAdresse,
     pub passwort: KlartextPasswort,
     /// Throttle key. Never the address: that would let anybody lock an owner out.
     pub client_key: ClientKey,
@@ -56,7 +56,7 @@ pub struct Anmeldung {
 impl UseCase<SessionAusgestellt> for Anmeldung {
     type Error = Report<AnmeldungFehler>;
 
-    #[instrument(skip_all, fields(identifier = %self.identifier), err(Debug))]
+    #[instrument(skip_all, fields(email = ?self.email), err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<SessionAusgestellt, Self::Error> {
         let jetzt = ctx.clock().now();
 
@@ -71,16 +71,7 @@ impl UseCase<SessionAusgestellt> for Anmeldung {
             .change_context(AnmeldungFehler::KontoLaden)?;
 
         let ergebnis = async {
-            let benutzer_res =
-                if let Ok(email) = EmailAdresse::normalisiert(self.identifier.as_str()) {
-                    uow.benutzer().find_by_email(&email).await
-                } else {
-                    uow.benutzer()
-                        .find_by_username(self.identifier.as_str())
-                        .await
-                };
-
-            let benutzer = match benutzer_res {
+            let benutzer = match uow.benutzer().find_by_email(&self.email).await {
                 Ok(b) => b,
                 Err(fehler) if matches!(fehler.current_context(), RepositoryError::NotFound) => {
                     // Same work as the wrong-Passwort path (rule 4).

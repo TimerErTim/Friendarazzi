@@ -22,8 +22,9 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     application::ExecutionContext,
-    domain::konto::{
-        AccessTokenClaims, Benutzer, BenutzerId, NeueSession, RefreshToken, SessionId, TokenId,
+    domain::{
+        Benutzer, BenutzerId,
+        konto::{AccessTokenClaims, NeueSession, RefreshToken, SessionId, TokenId},
     },
 };
 

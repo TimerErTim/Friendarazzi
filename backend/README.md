@@ -34,7 +34,6 @@ mise sets environment variables for the server suitable for a dev environment au
 |--------|------|
 | File (camelCase JSON) | `bindAddress`, `bindPort`, `subpath`, `databaseUrl`, `objectStoreDir`, `logDir`, `signingKeyPath`, `tokenIssuer`, `tokenAudience`, `frontendBasisUrl`, `smtpHost`, `smtpPort`, `smtpVerschlüsselung`, `smtpBenutzername`, `smtpPasswort`, `smtpAbsender` |
 | Env / CLI | `FRIENDARAZZI_BIND_ADDRESS` / `--bind-address`, `FRIENDARAZZI_BIND_PORT` / `--bind-port`, `SUBPATH` / `--subpath`, `FRIENDARAZZI_DATABASE_URL` / `--database-url`, `FRIENDARAZZI_OBJECT_STORE_DIR` / `--object-store-dir`, `FRIENDARAZZI_LOG_DIR` / `--log-dir`, `FRIENDARAZZI_SIGNING_KEY_PATH` / `--signing-key-path`, `FRIENDARAZZI_TOKEN_ISSUER` / `--token-issuer`, `FRIENDARAZZI_TOKEN_AUDIENCE` / `--token-audience`, `FRIENDARAZZI_FRONTEND_BASIS_URL` / `--frontend-basis-url`, `FRIENDARAZZI_SMTP_HOST` / `--smtp-host`, `FRIENDARAZZI_SMTP_PORT` / `--smtp-port`, `FRIENDARAZZI_SMTP_VERSCHLUESSELUNG` / `--smtp-verschlüsselung`, `FRIENDARAZZI_SMTP_BENUTZERNAME` / `--smtp-benutzername`, `FRIENDARAZZI_SMTP_PASSWORT` / `--smtp-passwort`, `FRIENDARAZZI_SMTP_ABSENDER` / `--smtp-absender` |
-| Accounts (env only) | `FRIENDARAZZI_SUPERUSER_EMAIL` — the address promoted to `Systemadministrator` at startup |
 | CORS (env only) | `FRIENDARAZZI_CORS_ORIGIN` — optional comma-separated extra allowed origins; the configured frontend origin and documented loopback dev origins are allowed by default |
 | Tracing | `FRIENDARAZZI_LOG_LEVEL` (default `info`) |
 
@@ -63,9 +62,6 @@ Notes on the account keys:
   the relay and records the result. The route never waits on it, so a broken relay never slows or
   fails a request (NFR-5). `GET /api/health` stays the literal `OK` and does
   not depend on mail; the Compose healthcheck requires both.
-- `FRIENDARAZZI_SUPERUSER_EMAIL` is the only way a `Systemadministrator` is created — there is no
-  self-service elevation (rule 9). Promotion is idempotent and tolerates an address that has not
-  registered yet; it is retried on the next start.
 
 ### Transactional mail in development
 

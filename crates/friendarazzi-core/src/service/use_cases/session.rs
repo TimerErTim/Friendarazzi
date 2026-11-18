@@ -11,9 +11,12 @@ use tracing::instrument;
 use crate::{
     ThreadSafeError,
     application::{AuthContext, ExecutionContext},
-    domain::konto::{
-        AccessTokenClaims, BenutzerId, RefreshToken, RenewableSession, SessionNotRenewable,
-        Signature, SigningKeypair,
+    domain::{
+        BenutzerId,
+        konto::{
+            AccessTokenClaims, RefreshToken, RenewableSession, SessionNotRenewable, Signature,
+            SigningKeypair,
+        },
     },
     ports::{ClientKey, RepositoryError, ThrottleAction},
     service::{SessionAusgestellt, UseCase},

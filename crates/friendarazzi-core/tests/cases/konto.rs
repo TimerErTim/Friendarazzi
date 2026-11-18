@@ -10,11 +10,8 @@ use chrono::Duration;
 use friendarazzi_core::{
     application::AuthContext,
     domain::{
-        EmailAdresse, NonEmptyString,
-        konto::{
-            ACCESS_TOKEN_LIFETIME, BenutzerId, KlartextPasswort, NeuerBenutzer, Rolle, SecretToken,
-            SessionId, TokenId,
-        },
+        BenutzerId, EmailAdresse, NeuerBenutzer,
+        konto::{ACCESS_TOKEN_LIFETIME, KlartextPasswort, SecretToken, SessionId, TokenId},
     },
     ports::{ClientKey, RepositoryError},
     service::{
@@ -91,13 +88,13 @@ async fn registriere(harness: &Harness, email: &str) -> SessionAusgestellt {
         .expect("registration step 2 issues a session")
 }
 
-async fn anmelden(harness: &Harness, identifier: &str) -> SessionAusgestellt {
+async fn anmelden(harness: &Harness, email: &str) -> SessionAusgestellt {
     harness
         .app()
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: NonEmptyString::neu(identifier).expect("Test-Identifier ist gültig"),
+                email: adresse(email),
                 passwort: passwort(),
                 client_key: client_key(2),
             },
@@ -191,7 +188,6 @@ async fn ac3_abschluss_erzeugt_benutzer_konto_und_erste_session() {
 
     let ausgestellt = registriere(&harness, "anna@muster.at").await;
 
-    assert_eq!(ausgestellt.benutzer.rolle(), Rolle::Benutzer);
     assert_eq!(
         ausgestellt.claims.sub,
         ausgestellt.benutzer.id(),
@@ -304,7 +300,7 @@ async fn ac6_falsches_passwort_und_unbekannte_adresse_sind_ununterscheidbar() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
+                email: adresse("anna@muster.at"),
                 passwort: passwort_wie("falsches-passwort"),
                 client_key: client_key(10),
             },
@@ -315,7 +311,7 @@ async fn ac6_falsches_passwort_und_unbekannte_adresse_sind_ununterscheidbar() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: NonEmptyString::neu("niemand@muster.at").expect("gültig"),
+                email: adresse("niemand@muster.at"),
                 passwort: passwort(),
                 client_key: client_key(11),
             },
@@ -586,31 +582,19 @@ async fn ac11_neues_passwort_beendet_alle_sessions_und_ist_einmalig() {
         "das Wiederherstellungs-Token ist einmalig"
     );
 
-    // The new Passwort is what logs in now (both email and derived username work).
+    // The new Passwort is what logs in now.
     harness
         .app()
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
+                email: adresse("anna@muster.at"),
                 passwort: passwort_wie("ein-ganz-neues-passwort"),
                 client_key: client_key(20),
             },
         )
         .await
         .expect("das neue Passwort gilt");
-    harness
-        .app()
-        .execute(
-            AuthContext::Anonymous,
-            Anmeldung {
-                identifier: NonEmptyString::neu("anna").expect("gültig"),
-                passwort: passwort_wie("ein-ganz-neues-passwort"),
-                client_key: client_key(20),
-            },
-        )
-        .await
-        .expect("auch die Anmeldung per Benutzername funktioniert");
 }
 
 // ------------------------------------------------------------------------ AC-12, AC-13
@@ -637,7 +621,7 @@ async fn ac12_löschung_entfernt_identität_und_gibt_die_adresse_frei() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
+                email: adresse("anna@muster.at"),
                 passwort: passwort(),
                 client_key: client_key(21),
             },
@@ -689,7 +673,7 @@ async fn ac12_löschung_ohne_bestätigung_oder_mit_falschem_passwort_scheitert()
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: NonEmptyString::neu("anna@muster.at").expect("gültig"),
+                email: adresse("anna@muster.at"),
                 passwort: passwort(),
                 client_key: client_key(24),
             },
@@ -829,7 +813,7 @@ async fn speicher_vertrag_aktualisiert_die_version_und_schuetzt_das_loeschen() {
         .expect("ein Benutzer wird angelegt und zurückgelesen");
 
     let mut zu_aktualisieren = geladen.clone();
-    zu_aktualisieren.befördere_zu_systemadministrator();
+    zu_aktualisieren.award_gold_medal();
     harness
         .app()
         .execute_fn::<_, _, RepositoryError>(AuthContext::Anonymous, async |ctx| {
@@ -848,7 +832,7 @@ async fn speicher_vertrag_aktualisiert_die_version_und_schuetzt_das_loeschen() {
 
     // Writing the same row again at its now-stale version is a conflict, not a rewrite.
     let mut veraltet = geladen.clone();
-    veraltet.befördere_zu_systemadministrator();
+    veraltet.award_gold_medal();
     let zweiter_schreibversuch = harness
         .app()
         .execute_fn::<_, _, RepositoryError>(AuthContext::Anonymous, async |ctx| {

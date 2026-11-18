@@ -9,8 +9,9 @@ use uuid::Uuid;
 use friendarazzi_core::{
     ErrorReportExt,
     application::uow::Versioned,
-    domain::konto::{
-        BenutzerId, NeueSession, RenewableSession, SecretTokenHash, Session, SessionId,
+    domain::{
+        BenutzerId,
+        konto::{NeueSession, RenewableSession, SecretTokenHash, Session, SessionId},
     },
     ports::{RepositoryError, RepositoryResult, SessionRepository},
 };

@@ -912,8 +912,8 @@ export interface paths {
         };
         get?: never;
         /**
-         * Update the authenticated caller's username, display name, and equipped rank title.
-         * @description Rejects locked titles or already-taken handles.
+         * Update the authenticated caller's display name and equipped rank title.
+         * @description Rejects locked rank titles.
          */
         put: {
             parameters: {
@@ -1607,13 +1607,15 @@ export interface components {
     schemas: {
         /**
          * AnmeldungRequest
-         * @description Sign-in with the account's e-mail address or username and password.
+         * @description Sign-in with the account's e-mail address and password.
          */
         AnmeldungRequest: {
-            /** @description E-mail address or username of the account. */
-            identifier?: string | null;
-            /** @description Legacy e-mail address field; used when `identifier` is omitted. */
-            eMailAdresse?: string | null;
+            /**
+             * E-Mail-Adresse
+             * @description E-mail address of the account.
+             * @example test@example.com
+             */
+            eMailAdresse: string;
             /** @description The account's password. */
             passwort: string;
         };
@@ -1633,10 +1635,6 @@ export interface components {
              * @example test@example.com
              */
             eMailAdresse: string;
-            /** @description Its role on the whole instance. */
-            rolle: components["schemas"]["BenutzerRolle"] & unknown;
-            /** @description Public handle of the player. */
-            username: string;
             /** @description Display name shown in lobbies and boards. */
             displayName: string;
             /** @description Storage key of the player's avatar, if uploaded. */
@@ -1659,11 +1657,6 @@ export interface components {
             /** @description Must be `true`; a missing flag is a refusal, never a default. */
             bestaetigt: boolean;
         };
-        /**
-         * @description `Benutzer` or `Systemadministrator`: the role a Benutzer holds on the whole instance.
-         * @enum {string}
-         */
-        BenutzerRolle: BenutzerRolle;
         /**
          * BoardTileView
          * @description One tile on a Bingo board.
@@ -2097,8 +2090,6 @@ export interface components {
              * @description Player user ID.
              */
             id: string;
-            /** @description Public handle. */
-            username: string;
             /** @description Display name. */
             displayName: string;
             /** @description Avatar storage key, if present. */
@@ -2261,8 +2252,6 @@ export interface components {
          * @description Update the caller's profile details and equipped Gold Medal title.
          */
         UpdateProfileRequest: {
-            /** @description Public handle (2..=32 ASCII alphanumeric, `_`, or `-`). */
-            username: string;
             /** @description Display name shown to friends. */
             displayName: string;
             /** @description Optional unlocked rank title to equip. */
@@ -2290,8 +2279,6 @@ export interface components {
              * @description Player user ID.
              */
             id: string;
-            /** @description Public handle. */
-            username: string;
             /** @description Display name. */
             displayName: string;
             /** @description Avatar storage key, if present. */
@@ -2336,10 +2323,6 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export enum BenutzerRolle {
-    Benutzer = "Benutzer",
-    Systemadministrator = "Systemadministrator"
-}
 export enum GameStatus {
     Lobby = "Lobby",
     Drafting = "Drafting",

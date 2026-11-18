@@ -33,7 +33,6 @@ export default function ProfilePage() {
   const mutations = useFriendarazziMutations();
   const feedback = useErfolgsmeldung();
 
-  const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [equippedTitle, setEquippedTitle] = useState("");
 
@@ -44,7 +43,6 @@ export default function ProfilePage() {
   useEffect(() => {
     const profile = gallery.data?.user;
     if (!profile) return;
-    setUsername(profile.username);
     setDisplayName(profile.displayName);
     setEquippedTitle(profile.equippedTitle ?? "");
   }, [gallery.data?.user]);
@@ -55,7 +53,6 @@ export default function ProfilePage() {
     e.preventDefault();
     feedback.verwerfen();
     await mutations.updateProfile.mutateAsync({
-      username,
       displayName,
       equippedTitle: equippedTitle || undefined,
     });
@@ -104,9 +101,6 @@ export default function ProfilePage() {
                     </Badge>
                     <Badge variant="primary">{profile.effectiveTitle}</Badge>
                   </div>
-                  <p className="font-mono text-xs text-secondary">
-                    @{profile.username}
-                  </p>
                   <p className="text-xs text-secondary tabular-nums">
                     {profile.gamesPlayed} Spiele · {profile.capturesMade} Fotos
                     geschossen · {profile.timesCaught}× erwischt
@@ -137,29 +131,16 @@ export default function ProfilePage() {
             </CardHeader>
             <CardContent>
               <form className="space-y-4" onSubmit={(e) => void saveProfile(e)}>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field
-                    label="Anzeigename"
-                    hint="So sehen dich deine Freunde in Lobbys."
-                  >
-                    <Input
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      required
-                    />
-                  </Field>
-                  <Field
-                    label="Benutzername"
-                    hint="2–32 Zeichen (Buchstaben, Zahlen, _ oder -)."
-                  >
-                    <Input
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="font-mono"
-                      required
-                    />
-                  </Field>
-                </div>
+                <Field
+                  label="Anzeigename"
+                  hint="So sehen dich deine Freunde in Lobbys."
+                >
+                  <Input
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    required
+                  />
+                </Field>
 
                 <Field
                   label="Angelegter Rang-Titel"

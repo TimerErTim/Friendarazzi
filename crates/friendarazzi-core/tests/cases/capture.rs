@@ -3,12 +3,12 @@
 use chrono::Duration;
 use friendarazzi_core::{
     domain::{
-        BoardCoordinates, GridSize, NonEmptyString, SuperlativeKind, VisibilityMode,
-        compute_game_awards, media::png_bytes_for_test,
+        BoardCoordinates, Game, GridSize, NonEmptyString, VisibilityMode, compute_game_awards,
     },
     ports::{RepositoryError, collect_object},
     service::{CaptureUseCaseError, SubmitCapture, UpdateProfile},
 };
+use friendarazzi_fakes::png_bytes_for_test;
 
 use super::helpers::{build, is_webp, load_tiles, register_user, setup_active_game, user_id_of};
 
@@ -64,7 +64,6 @@ async fn full_game_lifecycle_bingo_awards_gold_medal() {
         .execute(
             alice,
             UpdateProfile {
-                username: NonEmptyString::neu("alice_winner").unwrap(),
                 display_name: NonEmptyString::neu("Alice").unwrap(),
                 equipped_title: Some(NonEmptyString::neu("Schnappschuss-Jäger").unwrap()),
             },
@@ -540,25 +539,15 @@ async fn superlatives_computed_from_persisted_captures() {
         .await
         .unwrap();
 
-    assert_eq!(loaded_game.winner_user_id(), Some(user_id_of(bob)));
+    let Game::Completed(completed) = loaded_game else {
+        panic!("expected completed game");
+    };
+    assert_eq!(completed.winner_user_id(), user_id_of(bob));
     assert_eq!(captures.len(), 5);
 
-    let awards = compute_game_awards(&player_ids, &captures, loaded_game.started_at());
-    let sups = awards.into_superlatives();
-    let quickest = sups
-        .iter()
-        .find(|s| s.kind == SuperlativeKind::QuickestDraw)
-        .unwrap();
-    assert_eq!(quickest.user_id, user_id_of(alice));
-    assert_eq!(quickest.metric_value, 45);
-
-    let sniper = sups
-        .iter()
-        .find(|s| s.kind == SuperlativeKind::Sniper)
-        .unwrap();
-    assert_eq!(sniper.user_id, user_id_of(bob));
-    assert_eq!(sniper.metric_value, 4);
-
-    assert!(sups.iter().any(|s| s.kind == SuperlativeKind::MostWanted));
-    assert!(sups.iter().any(|s| s.kind == SuperlativeKind::Ghost));
+    let awards = compute_game_awards(&player_ids, &captures, completed.started_at()).unwrap();
+    assert_eq!(awards.quickest_draw.user_id, user_id_of(alice));
+    assert_eq!(awards.quickest_draw.metric_value, 45);
+    assert_eq!(awards.sniper.user_id, user_id_of(bob));
+    assert_eq!(awards.sniper.metric_value, 4);
 }

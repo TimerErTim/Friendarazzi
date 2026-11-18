@@ -6,9 +6,9 @@ use friendarazzi_core::{
     adapters::{InMemorySigning, InMemoryThrottle},
     application::{AppBuilder, AuthContext, IdentityProviderConfiguration, SetUowProvider},
     domain::{
-        BoardTile, EmailAdresse, Game, GameId, GameStatus, GridSize, NonEmptyString, PromptSource,
+        BenutzerId, BoardTile, EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource,
         VisibilityMode,
-        konto::{AccessTokenClaims, BenutzerId, KlartextPasswort, SecretToken, SessionId},
+        konto::{AccessTokenClaims, KlartextPasswort, SecretToken, SessionId},
         target_quotas_for_author,
     },
     ports::{ClientKey, Clock, RepositoryError, Signing},
@@ -238,7 +238,7 @@ pub async fn setup_active_game(
             .await
             .unwrap();
     }
-    assert_eq!(last_state.status(), GameStatus::Active);
+    assert!(matches!(last_state, Game::Active(_)));
     last_state
 }
 

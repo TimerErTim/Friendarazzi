@@ -1,7 +1,6 @@
 //! OpenAPI schemas for photo captures, activity feeds, and post-game superlatives.
 
 use chrono::{DateTime, Utc};
-use friendarazzi_core::domain;
 use uuid::Uuid;
 
 use super::{board::GridCoordinate, profile::PlayerBadge};
@@ -15,17 +14,6 @@ pub enum SuperlativeKind {
     Ghost,
     QuickestDraw,
     Sniper,
-}
-
-impl From<domain::SuperlativeKind> for SuperlativeKind {
-    fn from(value: domain::SuperlativeKind) -> Self {
-        match value {
-            domain::SuperlativeKind::MostWanted => Self::MostWanted,
-            domain::SuperlativeKind::Ghost => Self::Ghost,
-            domain::SuperlativeKind::QuickestDraw => Self::QuickestDraw,
-            domain::SuperlativeKind::Sniper => Self::Sniper,
-        }
-    }
 }
 
 /// One capture entry shown in the game feed, 1:1 timeline, or galleries.

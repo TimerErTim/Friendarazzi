@@ -5,7 +5,6 @@ use friendarazzi_core::service::{
     AbmeldungFehler, AnmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError, ErneuerungFehler,
     GameUseCaseError, PasswortVergessenFehler, PasswortWiederherstellenFehler, ProfileUseCaseError,
     RegistrierungAbschliessenFehler, RegistrierungStartenFehler, SessionPrüfenFehler,
-    SystemadministratorBefördernFehler,
 };
 use http::StatusCode;
 
@@ -54,7 +53,6 @@ fn nested_http_status<C: ThreadSafeError>(error: &Report<C>) -> Option<StatusCod
         .or_else(|| mapped::<C, PasswortVergessenFehler>(error))
         .or_else(|| mapped::<C, PasswortWiederherstellenFehler>(error))
         .or_else(|| mapped::<C, BenutzerLöschenFehler>(error))
-        .or_else(|| mapped::<C, SystemadministratorBefördernFehler>(error))
         .or_else(|| mapped::<C, RepositoryError>(error))
         .or_else(|| mapped::<C, ObjectStoreError>(error))
         .or_else(|| mapped::<C, ValidationError>(error))
@@ -127,7 +125,6 @@ http_status!(ProfileUseCaseError {
     Unauthorized => StatusCode::UNAUTHORIZED,
     NotFound => StatusCode::NOT_FOUND,
     BadRequest => StatusCode::BAD_REQUEST,
-    UsernameTaken => StatusCode::CONFLICT,
     TitleLocked => StatusCode::BAD_REQUEST,
     Persistence => StatusCode::INTERNAL_SERVER_ERROR,
 });
@@ -234,10 +231,4 @@ http_status!(BenutzerLöschenFehler {
     KontoLöschen => StatusCode::INTERNAL_SERVER_ERROR,
     SessionLöschen => StatusCode::INTERNAL_SERVER_ERROR,
     BenutzerLöschen => StatusCode::INTERNAL_SERVER_ERROR,
-});
-
-http_status!(SystemadministratorBefördernFehler {
-    KontoLaden => StatusCode::INTERNAL_SERVER_ERROR,
-    BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
-    BenutzerSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
 });

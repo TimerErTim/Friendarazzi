@@ -4,7 +4,7 @@
 
 use error_stack::{Report, ResultExt};
 use friendarazzi_core::{
-    domain::{self, NonEmptyString},
+    domain,
     ports::ClientKey,
     service::{
         Anmeldung, AnmeldungFehler, BenutzerLöschen, BenutzerLöschenFehler, PasswortVergessen,
@@ -40,17 +40,15 @@ pub struct RegistrierungAbschlussRequest {
     pub passwort: String,
 }
 
-/// Sign-in with the account's e-mail address or username and password.
+/// Sign-in with the account's e-mail address and password.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
 #[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnmeldungRequest {
-    /// E-mail address or username of the account.
-    pub identifier: Option<String>,
-    /// Legacy e-mail address field; used when `identifier` is omitted.
-    pub e_mail_adresse: Option<String>,
+    /// E-mail address of the account.
+    pub e_mail_adresse: EmailAdresse,
     /// The account's password.
     pub passwort: String,
 }
@@ -122,18 +120,14 @@ impl RegistrierungAbschlussRequest {
 
 impl AnmeldungRequest {
     pub fn in_use_case(self, client_key: ClientKey) -> Result<Anmeldung, Report<AnmeldungFehler>> {
-        let raw_identifier = self
-            .identifier
-            .or(self.e_mail_adresse)
-            .ok_or_else(|| Report::new(AnmeldungFehler::ZugangsdatenFalsch))?;
-        let identifier = NonEmptyString::neu(raw_identifier)
+        let email = domain::EmailAdresse::try_from(self.e_mail_adresse)
             .change_context(AnmeldungFehler::ZugangsdatenFalsch)?;
         // A Passwort that breaks the length rule cannot be right, but it is also not a
         // reason to answer differently from a wrong one.
         let passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
             .change_context(AnmeldungFehler::ZugangsdatenFalsch)?;
         Ok(Anmeldung {
-            identifier,
+            email,
             passwort,
             client_key,
         })

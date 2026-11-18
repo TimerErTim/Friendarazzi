@@ -49,7 +49,7 @@ export interface FriendarazziApi {
   // ---------------------------------------------------------------- Konto
   registrierungStarten(eMailAdresse: string): Promise<void>;
   registrierungAbschliessen(token: string, passwort: string): Promise<void>;
-  anmelden(identifier: string, passwort: string): Promise<void>;
+  anmelden(eMailAdresse: string, passwort: string): Promise<void>;
   passwortVergessen(eMailAdresse: string): Promise<void>;
   passwortWiederherstellen(token: string, neuesPasswort: string): Promise<void>;
   benutzerAbrufen(): Promise<AuthenticatedBenutzer>;

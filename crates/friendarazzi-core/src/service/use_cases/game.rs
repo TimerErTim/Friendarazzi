@@ -2,14 +2,15 @@
 
 use async_trait::async_trait;
 use error_stack::{IntoReport, Report, ResultExt};
-use tracing::{instrument, warn};
+use tracing::{error, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    application::ExecutionContext,
+    application::{ExecutionContext, uow::Versioned},
     domain::{
-        DraftLockOutcome, Game, GameError, GameId, GridSize, InviteCode, MIN_PLAYERS, NewGame,
-        NonEmptyString, PromptSource, PromptSubmission, PromptSubmissionId, VisibilityMode,
+        BenutzerId, DraftLockOutcome, Game, GameError, GameId, GridSize, InviteCode, MIN_PLAYERS,
+        NewGame, NonEmptyString, PromptSource, PromptSubmission, PromptSubmissionId,
+        VisibilityMode,
     },
     ports::RepositoryError,
     service::UseCase,
@@ -41,7 +42,6 @@ fn map_game_error(err: &GameError) -> GameUseCaseError {
         | GameError::InvalidInviteCode
         | GameError::InvalidGridSize
         | GameError::InvalidVisibilityMode
-        | GameError::InvalidStatus
         | GameError::InvalidPromptSource
         | GameError::SelfTargetNotAllowed
         | GameError::TargetNotInGame
@@ -86,10 +86,12 @@ impl UseCase<Game> for CreateGame {
             .change_context(GameUseCaseError::Persistence)?;
 
         let result = async {
-            let mut rng = ctx.rng();
             let mut invite_code = None;
             for attempt in 1..=MAX_INVITE_CODE_ATTEMPTS {
-                let candidate = InviteCode::generate(&mut rng);
+                let candidate = {
+                    let mut rng = ctx.rng();
+                    InviteCode::generate(&mut *rng)
+                };
                 match uow.games().find_by_invite_code(&candidate).await {
                     Ok(_) => {
                         warn!(
@@ -108,7 +110,7 @@ impl UseCase<Game> for CreateGame {
             let invite_code = match invite_code {
                 Some(code) => code,
                 None => {
-                    warn!(
+                    error!(
                         attempts = MAX_INVITE_CODE_ATTEMPTS,
                         "exhausted invite code generation retries"
                     );
@@ -178,7 +180,7 @@ impl UseCase<Game> for JoinGame {
             };
 
             lobby.join_player(user_id, now);
-            let mut updated = crate::application::uow::Versioned::new(version, Game::Lobby(lobby));
+            let mut updated = Versioned::new(version, Game::Lobby(lobby));
             uow.games()
                 .update(&mut updated)
                 .await
@@ -245,7 +247,7 @@ impl UseCase<Game> for UpdateGameSettings {
 
             lobby.update_settings(self.title, self.grid_size, self.visibility_mode);
 
-            let mut updated = crate::application::uow::Versioned::new(version, Game::Lobby(lobby));
+            let mut updated = Versioned::new(version, Game::Lobby(lobby));
             uow.games()
                 .update(&mut updated)
                 .await
@@ -303,8 +305,7 @@ impl UseCase<Game> for StartDrafting {
                 e.change_context(mapped)
             })?;
 
-            let mut updated =
-                crate::application::uow::Versioned::new(version, Game::Drafting(drafting));
+            let mut updated = Versioned::new(version, Game::Drafting(drafting));
             uow.games()
                 .update(&mut updated)
                 .await
@@ -321,7 +322,7 @@ impl UseCase<Game> for StartDrafting {
 
 #[derive(Debug, Clone)]
 pub struct DraftPromptInput {
-    pub target_user_id: crate::domain::BenutzerId,
+    pub target_user_id: BenutzerId,
     pub text: NonEmptyString,
     pub source: PromptSource,
 }
@@ -391,8 +392,7 @@ impl UseCase<()> for SaveDraftPrompts {
                     e.change_context(mapped)
                 })?;
 
-            let mut updated =
-                crate::application::uow::Versioned::new(version, Game::Drafting(drafting));
+            let mut updated = Versioned::new(version, Game::Drafting(drafting));
             uow.games()
                 .update(&mut updated)
                 .await
@@ -446,13 +446,15 @@ impl UseCase<Game> for LockDraftPrompts {
                 return Err(Report::new(GameUseCaseError::Conflict));
             };
 
-            let mut rng = ctx.rng();
-            let outcome = drafting
-                .lock_author_prompts(user_id, now, &mut rng)
-                .map_err(|e| {
-                    let mapped = map_game_error(e.current_context());
-                    e.change_context(mapped)
-                })?;
+            let outcome = {
+                let mut rng = ctx.rng();
+                drafting
+                    .lock_author_prompts(user_id, now, &mut *rng)
+                    .map_err(|e| {
+                        let mapped = map_game_error(e.current_context());
+                        e.change_context(mapped)
+                    })?
+            };
 
             let next_game = match outcome {
                 DraftLockOutcome::StillDrafting(d) => Game::Drafting(d),
@@ -471,7 +473,7 @@ impl UseCase<Game> for LockDraftPrompts {
                 }
             };
 
-            let mut updated = crate::application::uow::Versioned::new(version, next_game);
+            let mut updated = Versioned::new(version, next_game);
             uow.games()
                 .update(&mut updated)
                 .await

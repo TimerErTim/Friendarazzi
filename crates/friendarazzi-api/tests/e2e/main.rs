@@ -524,29 +524,6 @@ pub async fn neuer_benutzer(harness: &E2eHarness, email: &str) -> (String, Strin
     (access, benutzer_id)
 }
 
-/// Promote a registered Benutzer through the configured-superuser path, which has no route
-/// by design (SPEC-stammdaten rule 9). The harness keeps its `Arc<App>` for exactly this.
-pub async fn befördere_zum_systemadministrator(harness: &E2eHarness, email: &str) {
-    use friendarazzi_core::{
-        application::AuthContext,
-        domain::EmailAdresse,
-        service::{Beförderung, SystemadministratorBefördern},
-    };
-
-    let befund = harness
-        .client
-        .app()
-        .execute(
-            AuthContext::Anonymous,
-            SystemadministratorBefördern {
-                email: EmailAdresse::normalisiert(email).expect("Testadresse ist gültig"),
-            },
-        )
-        .await
-        .expect("die Beförderung läuft");
-    assert_eq!(befund, Beförderung::Befördert, "die Beförderung greift");
-}
-
 pub async fn enroll_and_start_game(
     harness: &E2eHarness,
     host_token: &str,

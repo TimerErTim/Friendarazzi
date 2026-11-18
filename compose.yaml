@@ -28,7 +28,6 @@ services:
       FRIENDARAZZI_FRONTEND_BASIS_URL: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN in .env}
       FRIENDARAZZI_PUBLIC_URL: ${API_DOMAIN:?Set API_DOMAIN in .env}
       FRIENDARAZZI_CORS_ORIGIN: ${API_DOMAIN:?Set API_DOMAIN in .env}
-      FRIENDARAZZI_SUPERUSER_EMAIL: ${SUPERUSER_EMAIL:-}
       # STARTTLS to the public FQDN, the only name on the certificate. A network alias keeps
       # the hop inside the bridge.
       FRIENDARAZZI_SMTP_HOST: ${API_DOMAIN:?Set API_DOMAIN in .env}

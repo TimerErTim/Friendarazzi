@@ -136,7 +136,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           {benutzer.data.displayName}
                         </span>
                         <span className="block truncate text-xs text-secondary">
-                          @{benutzer.data.username} ·{" "}
                           {benutzer.data.effectiveTitle}
                         </span>
                       </DropdownMenuLabel>

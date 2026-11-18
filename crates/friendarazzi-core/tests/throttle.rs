@@ -9,7 +9,7 @@ use friendarazzi_core::{
     App,
     adapters::InMemoryThrottle,
     application::{AuthContext, IdentityProviderConfiguration},
-    domain::{EmailAdresse, NonEmptyString, konto::KlartextPasswort},
+    domain::{EmailAdresse, konto::KlartextPasswort},
     ports::ClientKey,
     service::{Anmeldung, AnmeldungFehler, RegistrierungStarten, RegistrierungStartenFehler},
 };
@@ -21,10 +21,6 @@ fn client_key(ip: u8) -> ClientKey {
 
 fn adresse(wert: &str) -> EmailAdresse {
     EmailAdresse::normalisiert(wert).expect("Testadresse ist gültig")
-}
-
-fn ident(wert: &str) -> NonEmptyString {
-    NonEmptyString::neu(wert).expect("Test-Identifier ist gültig")
 }
 
 fn passwort() -> KlartextPasswort {
@@ -59,7 +55,7 @@ async fn ac15_drossel_greift_erst_nach_zwanzig_fehlversuchen_pro_client() {
             .execute(
                 AuthContext::Anonymous,
                 Anmeldung {
-                    identifier: ident("niemand@muster.at"),
+                    email: adresse("niemand@muster.at"),
                     passwort: passwort(),
                     client_key: client.clone(),
                 },
@@ -77,7 +73,7 @@ async fn ac15_drossel_greift_erst_nach_zwanzig_fehlversuchen_pro_client() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: ident("niemand@muster.at"),
+                email: adresse("niemand@muster.at"),
                 passwort: passwort(),
                 client_key: client.clone(),
             },
@@ -92,7 +88,7 @@ async fn ac15_drossel_greift_erst_nach_zwanzig_fehlversuchen_pro_client() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: ident("anna@muster.at"),
+                email: adresse("anna@muster.at"),
                 passwort: passwort(),
                 client_key: client.clone(),
             },
@@ -122,7 +118,7 @@ async fn ac15_drossel_greift_erst_nach_zwanzig_fehlversuchen_pro_client() {
         .execute(
             AuthContext::Anonymous,
             Anmeldung {
-                identifier: ident("niemand@muster.at"),
+                email: adresse("niemand@muster.at"),
                 passwort: passwort(),
                 client_key: client_key(31),
             },

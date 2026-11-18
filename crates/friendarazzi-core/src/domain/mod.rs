@@ -10,24 +10,21 @@ pub mod kontakt;
 pub mod konto;
 pub mod media;
 
-pub use benutzer::{
-    Benutzer, BenutzerId, NeuerBenutzer, ProfileError, RANK_TIERS, Rolle,
-    default_username_from_email,
-};
+pub use benutzer::{Benutzer, BenutzerId, NeuerBenutzer, ProfileError, RANK_TIERS};
 pub use board::{
     Board, BoardCoordinates, BoardError, BoardId, BoardTile, BoardTileAssignment, BoardTileId,
     NewBoard,
 };
 pub use capture::{
     Capture, CaptureError, CaptureId, GameAwards, GhostAward, MostWantedAward, NewCapture,
-    ProcessedCaptureMedia, QuickestDrawAward, SniperAward, Superlative, SuperlativeKind,
-    can_view_blurred_capture, can_view_full_capture, compute_game_awards,
+    ProcessedCaptureMedia, QuickestDrawAward, SniperAward, can_view_blurred_capture,
+    can_view_full_capture, compute_game_awards,
 };
 pub use common::NonEmptyString;
 pub use deck::{DeckId, StarterDeck, builtin_starter_decks};
 pub use game::{
     ActiveGame, CompletedGame, DraftLockOutcome, DraftingGame, Game, GameError, GameId, GameIn,
-    GamePlayer, GameStatus, GridSize, InviteCode, LobbyGame, MIN_PLAYERS, NewGame, PromptSource,
+    GamePlayer, GridSize, InviteCode, LobbyGame, MIN_PLAYERS, NewGame, PromptSource,
     PromptSubmission, PromptSubmissionId, VisibilityMode, assemble_boards, state as GameState,
     target_quotas_for_author, validate_author_prompts,
 };

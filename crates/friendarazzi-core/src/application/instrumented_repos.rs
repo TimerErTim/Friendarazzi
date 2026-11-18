@@ -144,8 +144,6 @@ impl_instrumented_repo!(
         fn find_by_ids(&self, ids: &[BenutzerId]) -> RepositoryResult<Vec<Versioned<Benutzer>>>;
         #[instrument(skip(self, email), fields(email = email.as_ref()), level = "trace", err(Debug))]
         fn find_by_email(&self, email: &EmailAdresse) -> RepositoryResult<Versioned<Benutzer>>;
-        #[instrument(skip(self, username), level = "trace", err(Debug))]
-        fn find_by_username(&self, username: &str) -> RepositoryResult<Versioned<Benutzer>>;
         #[instrument(skip(self, benutzer), level = "debug", err(Debug))]
         fn update(&self, benutzer: &mut Versioned<Benutzer>) -> RepositoryResult<()>;
         #[instrument(skip(self, benutzer), level = "debug", err(Debug))]

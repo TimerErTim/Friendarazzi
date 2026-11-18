@@ -7,7 +7,7 @@ use crate::adapters::{
     SystemClock, SystemRng,
 };
 use crate::application::context::ContextPorts;
-use crate::ports::{Clock, MailSender, ObjectStore, PdfRenderer, RngPort, Signing, Throttle};
+use crate::ports::{Clock, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle};
 use crate::service::UseCase;
 use crate::uow::UnitOfWorkProvider;
 
@@ -52,7 +52,7 @@ pub struct App {
     #[builder(default = Arc::new(SystemClock))]
     pub clock: Arc<dyn Clock>,
     #[builder(default = Arc::new(SystemRng))]
-    pub rng: Arc<dyn RngPort>,
+    pub rng: Arc<dyn RngSource>,
     #[builder(default = Arc::new(InMemoryObjectStore::new()))]
     pub object_store: Arc<dyn ObjectStore>,
     #[builder(default = Arc::new(BlankPdfRenderer))]

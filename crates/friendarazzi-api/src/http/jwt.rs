@@ -22,7 +22,10 @@ use error_stack::Report;
 use friendarazzi_core::{
     ResultReport,
     application::AccessError,
-    domain::konto::{AccessToken, AccessTokenClaims, BenutzerId, SessionId, Signature, TokenId},
+    domain::{
+        BenutzerId,
+        konto::{AccessToken, AccessTokenClaims, SessionId, Signature, TokenId},
+    },
     ports::Signing,
     service::SessionAusgestellt,
 };

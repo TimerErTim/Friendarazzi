@@ -8,8 +8,8 @@ use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
     domain::{
-        Benutzer as DomainBenutzer, BenutzerId, BoardTileId, Capture, Game, GameId, GameStatus,
-        InviteCode, can_view_blurred_capture, can_view_full_capture, compute_game_awards,
+        self, BenutzerId, BoardTileId, Capture, Game, GameAwards, GameId, InviteCode,
+        can_view_blurred_capture, can_view_full_capture, compute_game_awards,
         target_quotas_for_author,
     },
     ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
@@ -31,7 +31,7 @@ use self::errors::{GameReadError, MediaReadError, ProfileReadError};
 use crate::schema::{
     AuthenticatedBenutzer, BoardTileView, BoardView, CaptureFeedItem, CaptureOutcome,
     DraftTargetQuota, GalleryGameGroup, GameDetail, GameSummary, GridCoordinate, PlayerBadge,
-    PromptSubmissionView, StarterDeck, SuperlativeView, UserGallery, UserProfile,
+    PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView, UserGallery, UserProfile,
 };
 
 #[derive(Clone)]
@@ -120,33 +120,21 @@ impl FriendarazziAppApi {
 
                     let mut summaries = Vec::with_capacity(games.len());
                     for game in games {
-                        let players = game.players();
-                        let mut winner = None;
-                        if let Some(winner_id) = game.winner_user_id()
-                            && let Ok(benutzer) = uow.benutzer().find_by_id(winner_id).await
-                        {
-                            winner = Some(badge_from_benutzer(
-                                &benutzer.into_data(),
-                                players
-                                    .iter()
-                                    .find(|p| p.user_id == winner_id)
-                                    .is_some_and(|p| p.draft_locked),
-                                game.host_user_id() == winner_id,
-                            ));
-                        }
-                        summaries.push(GameSummary {
-                            id: game.id().0,
-                            invite_code: game.invite_code().as_str().to_owned(),
-                            title: game.title().as_str().to_owned(),
-                            grid_size: game.grid_size() as u8,
-                            visibility_mode: game.visibility_mode().into(),
-                            status: game.status().into(),
-                            player_count: players.len() as u32,
-                            winner,
-                            started_at: game.started_at(),
-                            ended_at: game.ended_at(),
-                            created_at: game.created_at(),
-                        });
+                        let game = game.into_data();
+                        let winner = match &game {
+                            Game::Completed(c) => {
+                                let winner_id = c.winner_user_id();
+                                uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
+                                    badge_from_benutzer(
+                                        &b.into_data(),
+                                        false,
+                                        game.host_user_id() == winner_id,
+                                    )
+                                })
+                            }
+                            Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
+                        };
+                        summaries.push(game_to_summary(&game, winner));
                     }
                     Ok::<_, Report<GameReadError>>(summaries)
                 }
@@ -174,35 +162,26 @@ impl FriendarazziAppApi {
                     .change_context(GameReadError::Persistence)?;
                 let res = async {
                     let game = match uow.games().find_by_invite_code(&invite_code).await {
-                        Ok(g) => g,
+                        Ok(g) => g.into_data(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                             return Err(Report::new(GameReadError::NotFound));
                         }
                         Err(err) => return Err(err).change_context(GameReadError::Persistence),
                     };
-                    let mut winner = None;
-                    if let Some(winner_id) = game.winner_user_id()
-                        && let Ok(benutzer) = uow.benutzer().find_by_id(winner_id).await
-                    {
-                        winner = Some(badge_from_benutzer(
-                            &benutzer.into_data(),
-                            false,
-                            game.host_user_id() == winner_id,
-                        ));
-                    }
-                    Ok::<_, Report<GameReadError>>(GameSummary {
-                        id: game.id().0,
-                        invite_code: game.invite_code().as_str().to_owned(),
-                        title: game.title().as_str().to_owned(),
-                        grid_size: game.grid_size() as u8,
-                        visibility_mode: game.visibility_mode().into(),
-                        status: game.status().into(),
-                        player_count: game.players().len() as u32,
-                        winner,
-                        started_at: game.started_at(),
-                        ended_at: game.ended_at(),
-                        created_at: game.created_at(),
-                    })
+                    let winner = match &game {
+                        Game::Completed(c) => {
+                            let winner_id = c.winner_user_id();
+                            uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
+                                badge_from_benutzer(
+                                    &b.into_data(),
+                                    false,
+                                    game.host_user_id() == winner_id,
+                                )
+                            })
+                        }
+                        Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
+                    };
+                    Ok::<_, Report<GameReadError>>(game_to_summary(&game, winner))
                 }
                 .await;
                 uow.finish(res, GameReadError::Persistence).await
@@ -329,16 +308,22 @@ impl FriendarazziAppApi {
                         .filter_map(|pid| badges.get(pid).cloned())
                         .collect();
 
-                    let winner = game
-                        .winner_user_id()
-                        .and_then(|wid| badges.get(&wid).cloned());
+                    let (started_at, ended_at, winner) = match &game {
+                        Game::Lobby(_) | Game::Drafting(_) => (None, None, None),
+                        Game::Active(a) => (Some(a.started_at()), None, None),
+                        Game::Completed(c) => (
+                            Some(c.started_at()),
+                            Some(c.ended_at()),
+                            badges.get(&c.winner_user_id()).cloned(),
+                        ),
+                    };
 
                     // Drafting quotas & caller's saved drafts
-                    let (my_quotas, my_drafts) = if game.status() == GameStatus::Drafting {
+                    let (my_quotas, my_drafts) = if let Game::Drafting(drafting) = &game {
                         let quotas = target_quotas_for_author(
                             &player_ids,
                             viewer_id,
-                            game.playable_tile_count(),
+                            drafting.playable_tile_count(),
                         )
                         .map_err(|e| e.change_context(GameReadError::Persistence))?;
                         let quota_views = quotas
@@ -353,7 +338,7 @@ impl FriendarazziAppApi {
                                     })
                             })
                             .collect();
-                        let drafts = game
+                        let drafts = drafting
                             .prompts_by_author(viewer_id)
                             .into_iter()
                             .map(|p| PromptSubmissionView {
@@ -374,8 +359,8 @@ impl FriendarazziAppApi {
                     let mut feed = Vec::new();
                     let mut superlatives = Vec::new();
 
-                    if game.status() == GameStatus::Active || game.status() == GameStatus::Completed
-                    {
+                    if matches!(&game, Game::Active(_) | Game::Completed(_)) {
+                        let is_completed = matches!(&game, Game::Completed(_));
                         let boards = uow
                             .boards()
                             .find_by_game(game_id)
@@ -399,7 +384,7 @@ impl FriendarazziAppApi {
                             let b = b.into_data();
                             let owner_id = b.owner_user_id();
                             let is_mine = owner_id == viewer_id;
-                            if !is_mine && game.status() != GameStatus::Completed {
+                            if !is_mine && !is_completed {
                                 continue;
                             }
                             let Some(owner_badge) = badges.get(&owner_id).cloned() else {
@@ -443,7 +428,7 @@ impl FriendarazziAppApi {
                             if is_mine {
                                 my_board = Some(view.clone());
                             }
-                            if game.status() == GameStatus::Completed {
+                            if is_completed {
                                 all_boards.push(view);
                             }
                         }
@@ -455,19 +440,11 @@ impl FriendarazziAppApi {
                             }
                         }
 
-                        if game.status() == GameStatus::Completed {
-                            let awards =
-                                compute_game_awards(&player_ids, &captures, game.started_at());
-                            for sup in awards.into_superlatives() {
-                                if let Some(user) = badges.get(&sup.user_id).cloned() {
-                                    superlatives.push(SuperlativeView {
-                                        kind: sup.kind.into(),
-                                        user,
-                                        metric_value: sup.metric_value,
-                                        capture_id: sup.capture_id.map(|c| c.0),
-                                    });
-                                }
-                            }
+                        if let Game::Completed(completed) = &game
+                            && let Some(awards) =
+                                compute_game_awards(&player_ids, &captures, completed.started_at())
+                        {
+                            superlatives = awards_to_superlatives(awards, &badges);
                         }
                     }
 
@@ -478,10 +455,10 @@ impl FriendarazziAppApi {
                         title: game.title().as_str().to_owned(),
                         grid_size: game.grid_size() as u8,
                         visibility_mode: game.visibility_mode().into(),
-                        status: game.status().into(),
+                        status: (&game).into(),
                         playable_tile_count: game.playable_tile_count() as u32,
-                        started_at: game.started_at(),
-                        ended_at: game.ended_at(),
+                        started_at,
+                        ended_at,
                         winner,
                         created_at: game.created_at(),
                         players: player_badges,
@@ -739,14 +716,21 @@ impl FriendarazziAppApi {
                             .filter_map(|(gid, mut photos)| {
                                 let (game, badges) = game_cache.get(&gid)?;
                                 photos.sort_by_key(|p| std::cmp::Reverse(p.captured_at));
+                                let (started_at, ended_at, winner) = match game {
+                                    Game::Lobby(_) | Game::Drafting(_) => (None, None, None),
+                                    Game::Active(a) => (Some(a.started_at()), None, None),
+                                    Game::Completed(c) => (
+                                        Some(c.started_at()),
+                                        Some(c.ended_at()),
+                                        badges.get(&c.winner_user_id()).cloned(),
+                                    ),
+                                };
                                 Some(GalleryGameGroup {
                                     game_id: game.id().0,
                                     game_title: game.title().as_str().to_owned(),
-                                    started_at: game.started_at(),
-                                    ended_at: game.ended_at(),
-                                    winner: game
-                                        .winner_user_id()
-                                        .and_then(|wid| badges.get(&wid).cloned()),
+                                    started_at,
+                                    ended_at,
+                                    winner,
                                     photos,
                                 })
                             })
@@ -979,15 +963,78 @@ impl FriendarazziAppApi {
     }
 }
 
+fn game_to_summary(game: &Game, winner: Option<PlayerBadge>) -> GameSummary {
+    let (started_at, ended_at) = match game {
+        Game::Lobby(_) | Game::Drafting(_) => (None, None),
+        Game::Active(a) => (Some(a.started_at()), None),
+        Game::Completed(c) => (Some(c.started_at()), Some(c.ended_at())),
+    };
+    GameSummary {
+        id: game.id().0,
+        invite_code: game.invite_code().as_str().to_owned(),
+        title: game.title().as_str().to_owned(),
+        grid_size: game.grid_size() as u8,
+        visibility_mode: game.visibility_mode().into(),
+        status: game.into(),
+        player_count: game.players().len() as u32,
+        winner,
+        started_at,
+        ended_at,
+        created_at: game.created_at(),
+    }
+}
+
+fn awards_to_superlatives(
+    awards: GameAwards,
+    badges: &HashMap<BenutzerId, PlayerBadge>,
+) -> Vec<SuperlativeView> {
+    let entries = [
+        (
+            SuperlativeKind::MostWanted,
+            awards.most_wanted.user_id,
+            awards.most_wanted.metric_value,
+            None,
+        ),
+        (
+            SuperlativeKind::Ghost,
+            awards.ghost.user_id,
+            awards.ghost.metric_value,
+            None,
+        ),
+        (
+            SuperlativeKind::QuickestDraw,
+            awards.quickest_draw.user_id,
+            awards.quickest_draw.metric_value,
+            Some(awards.quickest_draw.capture_id.0),
+        ),
+        (
+            SuperlativeKind::Sniper,
+            awards.sniper.user_id,
+            awards.sniper.metric_value,
+            None,
+        ),
+    ];
+    entries
+        .into_iter()
+        .filter_map(|(kind, user_id, metric_value, capture_id)| {
+            badges.get(&user_id).cloned().map(|user| SuperlativeView {
+                kind,
+                user,
+                metric_value,
+                capture_id,
+            })
+        })
+        .collect()
+}
+
 fn badge_from_benutzer(
-    benutzer: &DomainBenutzer,
+    benutzer: &domain::Benutzer,
     draft_locked: bool,
     is_host: bool,
 ) -> PlayerBadge {
     let effective_title = benutzer.effective_title().to_owned();
     PlayerBadge {
         id: benutzer.id().0,
-        username: benutzer.username().as_str().to_owned(),
         display_name: benutzer.display_name().as_str().to_owned(),
         avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
         gold_medal_count: benutzer.gold_medal_count(),
@@ -999,31 +1046,31 @@ fn badge_from_benutzer(
 
 fn build_badge_map(
     game: &Game,
-    users: impl Iterator<Item = DomainBenutzer>,
+    users: impl Iterator<Item = domain::Benutzer>,
 ) -> HashMap<BenutzerId, PlayerBadge> {
-    let user_map: HashMap<BenutzerId, DomainBenutzer> = users.map(|b| (b.id(), b)).collect();
+    let user_map: HashMap<BenutzerId, domain::Benutzer> = users.map(|b| (b.id(), b)).collect();
+    let draft_locked = match game {
+        Game::Drafting(d) => Some(d.draft_locked()),
+        Game::Lobby(_) | Game::Active(_) | Game::Completed(_) => None,
+    };
     let mut out = HashMap::new();
     for player in game.players() {
+        let is_locked = draft_locked.is_some_and(|set| set.contains(&player.user_id));
         if let Some(b) = user_map.get(&player.user_id) {
             out.insert(
                 player.user_id,
-                badge_from_benutzer(
-                    b,
-                    player.draft_locked,
-                    game.host_user_id() == player.user_id,
-                ),
+                badge_from_benutzer(b, is_locked, game.host_user_id() == player.user_id),
             );
         } else {
             out.insert(
                 player.user_id,
                 PlayerBadge {
                     id: player.user_id.0,
-                    username: format!("player_{}", &player.user_id.0.simple().to_string()[..6]),
                     display_name: "Spieler".to_owned(),
                     avatar_storage_key: None,
                     gold_medal_count: 0,
                     effective_title: "Neuling".to_owned(),
-                    draft_locked: player.draft_locked,
+                    draft_locked: is_locked,
                     is_host: game.host_user_id() == player.user_id,
                 },
             );
@@ -1075,14 +1122,13 @@ fn capture_to_feed_item(
 }
 
 fn profile_to_schema(
-    benutzer: &DomainBenutzer,
+    benutzer: &domain::Benutzer,
     games_played: u32,
     captures_made: u32,
     times_caught: u32,
 ) -> UserProfile {
     UserProfile {
         id: benutzer.id().0,
-        username: benutzer.username().as_str().to_owned(),
         display_name: benutzer.display_name().as_str().to_owned(),
         avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
         gold_medal_count: benutzer.gold_medal_count(),

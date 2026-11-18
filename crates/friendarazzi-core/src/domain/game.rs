@@ -4,16 +4,18 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use error_stack::{Report, ResultExt};
-use rand::{Rng, seq::SliceRandom};
+use rand::{
+    Rng,
+    seq::{IndexedRandom, SliceRandom},
+};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
     ResultReport,
     domain::{
-        NonEmptyString,
+        BenutzerId, NonEmptyString,
         board::{Board, BoardTileAssignment, NewBoard},
-        konto::BenutzerId,
     },
 };
 
@@ -38,8 +40,6 @@ pub enum GameError {
     InvalidGridSize,
     #[error("Unbekannter Sichtbarkeitsmodus")]
     InvalidVisibilityMode,
-    #[error("Unbekannter Spielstatus")]
-    InvalidStatus,
     #[error("Unbekannte Prompt-Quelle")]
     InvalidPromptSource,
     #[error("Diese Aktion ist im aktuellen Spielstatus nicht möglich")]
@@ -77,12 +77,9 @@ impl InviteCode {
     }
 
     /// Generate a 6-character invite code by sampling without replacement so no symbol repeats.
-    pub fn generate(rng: &mut impl Rng) -> Self {
+    pub fn generate(rng: &mut (impl Rng + ?Sized)) -> Self {
         const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        let code: String = ALPHABET
-            .choose_multiple(rng, 6)
-            .map(|&b| b as char)
-            .collect();
+        let code: String = ALPHABET.sample(rng, 6).map(|&b| b as char).collect();
         Self(code)
     }
 
@@ -155,39 +152,6 @@ impl std::str::FromStr for VisibilityMode {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GameStatus {
-    Lobby,
-    Drafting,
-    Active,
-    Completed,
-}
-
-impl GameStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Lobby => "Lobby",
-            Self::Drafting => "Drafting",
-            Self::Active => "Active",
-            Self::Completed => "Completed",
-        }
-    }
-}
-
-impl std::str::FromStr for GameStatus {
-    type Err = GameError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "Lobby" => Ok(Self::Lobby),
-            "Drafting" => Ok(Self::Drafting),
-            "Active" => Ok(Self::Active),
-            "Completed" => Ok(Self::Completed),
-            _ => Err(GameError::InvalidStatus),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PromptSource {
     Custom,
     StarterDeck,
@@ -216,23 +180,31 @@ impl std::str::FromStr for PromptSource {
 
 /// Lifecycle state markers for [`GameIn`].
 pub mod state {
+    use std::collections::HashSet;
+
     use chrono::{DateTime, Utc};
 
-    use crate::domain::konto::BenutzerId;
+    use super::PromptSubmission;
+    use crate::domain::BenutzerId;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Lobby;
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Drafting;
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Drafting {
+        pub prompts: Vec<PromptSubmission>,
+        pub draft_locked: HashSet<BenutzerId>,
+    }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Active {
+        pub prompts: Vec<PromptSubmission>,
         pub started_at: DateTime<Utc>,
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Completed {
+        pub prompts: Vec<PromptSubmission>,
         pub started_at: DateTime<Utc>,
         pub ended_at: DateTime<Utc>,
         pub winner_user_id: BenutzerId,
@@ -244,7 +216,6 @@ pub mod state {
 pub struct GamePlayer {
     pub user_id: BenutzerId,
     pub joined_at: DateTime<Utc>,
-    pub draft_locked: bool,
 }
 
 /// One submitted prompt entity owned by a `Game` aggregate.
@@ -298,7 +269,6 @@ pub struct GameIn<S> {
     grid_size: GridSize,
     visibility_mode: VisibilityMode,
     players: Vec<GamePlayer>,
-    prompts: Vec<PromptSubmission>,
     created_at: DateTime<Utc>,
     state: S,
 }
@@ -394,23 +364,60 @@ impl<S> GameIn<S> {
         self.players.iter().any(|p| p.user_id == user_id)
     }
 
-    pub fn prompts(&self) -> &[PromptSubmission] {
-        &self.prompts
-    }
-
-    pub fn prompts_by_author(&self, author_user_id: BenutzerId) -> Vec<&PromptSubmission> {
-        self.prompts
-            .iter()
-            .filter(|p| p.author_user_id == author_user_id)
-            .collect()
-    }
-
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
 
     pub fn playable_tile_count(&self) -> usize {
         self.grid_size.playable_tile_count()
+    }
+
+    pub fn state(&self) -> &S {
+        &self.state
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_parts(
+        id: GameId,
+        invite_code: String,
+        host_user_id: BenutzerId,
+        title: String,
+        grid_size: u8,
+        visibility_mode: String,
+        mut players: Vec<GamePlayer>,
+        created_at: DateTime<Utc>,
+        state: S,
+    ) -> ResultReport<Self, GameError> {
+        let invite_code = InviteCode::new(invite_code)
+            .map_err(Report::new)
+            .attach(CONSTRUCTING)?;
+        let title = NonEmptyString::neu(title)
+            .change_context(GameError::EmptyTitle)
+            .attach(CONSTRUCTING)?;
+        let grid_size = GridSize::from_u8(grid_size)
+            .map_err(Report::new)
+            .attach(CONSTRUCTING)?;
+        let visibility_mode: VisibilityMode = visibility_mode
+            .parse()
+            .map_err(Report::new)
+            .attach(CONSTRUCTING)?;
+        players.sort_by(|a, b| {
+            a.joined_at
+                .cmp(&b.joined_at)
+                .then(a.user_id.cmp(&b.user_id))
+        });
+
+        Ok(Self {
+            id,
+            invite_code,
+            host_user_id,
+            title,
+            grid_size,
+            visibility_mode,
+            players,
+            created_at,
+            state,
+        })
     }
 }
 
@@ -419,7 +426,6 @@ impl LobbyGame {
         let host_player = GamePlayer {
             user_id: input.host_user_id,
             joined_at: input.created_at,
-            draft_locked: false,
         };
         Self {
             id,
@@ -429,7 +435,6 @@ impl LobbyGame {
             grid_size: input.grid_size,
             visibility_mode: input.visibility_mode,
             players: vec![host_player],
-            prompts: Vec::new(),
             created_at: input.created_at,
             state: state::Lobby,
         }
@@ -455,7 +460,6 @@ impl LobbyGame {
         self.players.push(GamePlayer {
             user_id,
             joined_at: now,
-            draft_locked: false,
         });
     }
 
@@ -471,14 +475,36 @@ impl LobbyGame {
             grid_size: self.grid_size,
             visibility_mode: self.visibility_mode,
             players: self.players,
-            prompts: self.prompts,
             created_at: self.created_at,
-            state: state::Drafting,
+            state: state::Drafting {
+                prompts: Vec::new(),
+                draft_locked: HashSet::new(),
+            },
         })
     }
 }
 
 impl DraftingGame {
+    pub fn prompts(&self) -> &[PromptSubmission] {
+        &self.state.prompts
+    }
+
+    pub fn prompts_by_author(&self, author_user_id: BenutzerId) -> Vec<&PromptSubmission> {
+        self.state
+            .prompts
+            .iter()
+            .filter(|p| p.author_user_id == author_user_id)
+            .collect()
+    }
+
+    pub fn draft_locked(&self) -> &HashSet<BenutzerId> {
+        &self.state.draft_locked
+    }
+
+    pub fn is_draft_locked(&self, user_id: BenutzerId) -> bool {
+        self.state.draft_locked.contains(&user_id)
+    }
+
     /// Replace all prompts authored by `author` and unlock their draft.
     pub fn save_author_prompts(
         &mut self,
@@ -497,11 +523,9 @@ impl DraftingGame {
             }
         }
 
-        self.prompts.retain(|p| p.author_user_id != author);
-        self.prompts.extend(submissions);
-        if let Some(player) = self.players.iter_mut().find(|p| p.user_id == author) {
-            player.draft_locked = false;
-        }
+        self.state.prompts.retain(|p| p.author_user_id != author);
+        self.state.prompts.extend(submissions);
+        self.state.draft_locked.remove(&author);
         Ok(())
     }
 
@@ -510,7 +534,7 @@ impl DraftingGame {
         mut self,
         author: BenutzerId,
         now: DateTime<Utc>,
-        rng: &mut impl Rng,
+        rng: &mut (impl Rng + ?Sized),
     ) -> ResultReport<DraftLockOutcome, GameError> {
         if !self.has_player(author) {
             return Err(Report::new(GameError::PlayerNotInGame));
@@ -518,6 +542,7 @@ impl DraftingGame {
 
         let player_ids = self.sorted_player_ids();
         let author_prompts: Vec<PromptSubmission> = self
+            .state
             .prompts
             .iter()
             .filter(|p| p.author_user_id == author)
@@ -531,12 +556,20 @@ impl DraftingGame {
             &author_prompts,
         )?;
 
-        if let Some(player) = self.players.iter_mut().find(|p| p.user_id == author) {
-            player.draft_locked = true;
-        }
+        self.state.draft_locked.insert(author);
 
-        if self.players.iter().all(|p| p.draft_locked) {
-            let boards = assemble_boards(self.id, self.grid_size, &player_ids, &self.prompts, rng)?;
+        if self
+            .players
+            .iter()
+            .all(|p| self.state.draft_locked.contains(&p.user_id))
+        {
+            let boards = assemble_boards(
+                self.id,
+                self.grid_size,
+                &player_ids,
+                &self.state.prompts,
+                rng,
+            )?;
             let active = GameIn {
                 id: self.id,
                 invite_code: self.invite_code,
@@ -545,9 +578,11 @@ impl DraftingGame {
                 grid_size: self.grid_size,
                 visibility_mode: self.visibility_mode,
                 players: self.players,
-                prompts: self.prompts,
                 created_at: self.created_at,
-                state: state::Active { started_at: now },
+                state: state::Active {
+                    prompts: self.state.prompts,
+                    started_at: now,
+                },
             };
             Ok(DraftLockOutcome::Started {
                 game: active,
@@ -560,17 +595,21 @@ impl DraftingGame {
 }
 
 impl ActiveGame {
+    pub fn prompts(&self) -> &[PromptSubmission] {
+        &self.state.prompts
+    }
+
     pub fn started_at(&self) -> DateTime<Utc> {
         self.state.started_at
     }
 
-    /// Complete an active game when a player's `board` has achieved Bingo.
+    /// Complete an active game when a player's `winner_board` has achieved Bingo.
     pub fn complete(
         self,
-        board: &Board,
+        winner_board: &Board,
         now: DateTime<Utc>,
     ) -> ResultReport<CompletedGame, GameError> {
-        if board.game_id() != self.id || !board.has_bingo() {
+        if winner_board.game_id() != self.id || !winner_board.has_bingo() {
             return Err(Report::new(GameError::BoardNotCompleted));
         }
         Ok(GameIn {
@@ -581,18 +620,22 @@ impl ActiveGame {
             grid_size: self.grid_size,
             visibility_mode: self.visibility_mode,
             players: self.players,
-            prompts: self.prompts,
             created_at: self.created_at,
             state: state::Completed {
+                prompts: self.state.prompts,
                 started_at: self.state.started_at,
                 ended_at: now,
-                winner_user_id: board.owner_user_id(),
+                winner_user_id: winner_board.owner_user_id(),
             },
         })
     }
 }
 
 impl CompletedGame {
+    pub fn prompts(&self) -> &[PromptSubmission] {
+        &self.state.prompts
+    }
+
     pub fn started_at(&self) -> DateTime<Utc> {
         self.state.started_at
     }
@@ -609,110 +652,6 @@ impl CompletedGame {
 impl Game {
     pub fn new(id: GameId, input: NewGame) -> Self {
         Self::Lobby(LobbyGame::new(id, input))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn from_parts(
-        id: GameId,
-        invite_code: String,
-        host_user_id: BenutzerId,
-        title: String,
-        grid_size: u8,
-        visibility_mode: String,
-        status: String,
-        started_at: Option<DateTime<Utc>>,
-        ended_at: Option<DateTime<Utc>>,
-        winner_user_id: Option<BenutzerId>,
-        mut players: Vec<GamePlayer>,
-        prompts: Vec<PromptSubmission>,
-        created_at: DateTime<Utc>,
-    ) -> ResultReport<Self, GameError> {
-        let invite_code = InviteCode::new(invite_code)
-            .map_err(Report::new)
-            .attach(CONSTRUCTING)?;
-        let title = NonEmptyString::neu(title)
-            .change_context(GameError::EmptyTitle)
-            .attach(CONSTRUCTING)?;
-        let grid_size = GridSize::from_u8(grid_size)
-            .map_err(Report::new)
-            .attach(CONSTRUCTING)?;
-        let visibility_mode: VisibilityMode = visibility_mode
-            .parse()
-            .map_err(Report::new)
-            .attach(CONSTRUCTING)?;
-        let status: GameStatus = status.parse().map_err(Report::new).attach(CONSTRUCTING)?;
-        players.sort_by(|a, b| {
-            a.joined_at
-                .cmp(&b.joined_at)
-                .then(a.user_id.cmp(&b.user_id))
-        });
-
-        let game = match status {
-            GameStatus::Lobby => Self::Lobby(GameIn {
-                id,
-                invite_code,
-                host_user_id,
-                title,
-                grid_size,
-                visibility_mode,
-                players,
-                prompts,
-                created_at,
-                state: state::Lobby,
-            }),
-            GameStatus::Drafting => Self::Drafting(GameIn {
-                id,
-                invite_code,
-                host_user_id,
-                title,
-                grid_size,
-                visibility_mode,
-                players,
-                prompts,
-                created_at,
-                state: state::Drafting,
-            }),
-            GameStatus::Active => Self::Active(GameIn {
-                id,
-                invite_code,
-                host_user_id,
-                title,
-                grid_size,
-                visibility_mode,
-                players,
-                prompts,
-                created_at,
-                state: state::Active {
-                    started_at: started_at
-                        .ok_or_else(|| Report::new(GameError::InvalidStateTransition))
-                        .attach(CONSTRUCTING)?,
-                },
-            }),
-            GameStatus::Completed => Self::Completed(GameIn {
-                id,
-                invite_code,
-                host_user_id,
-                title,
-                grid_size,
-                visibility_mode,
-                players,
-                prompts,
-                created_at,
-                state: state::Completed {
-                    started_at: started_at
-                        .ok_or_else(|| Report::new(GameError::InvalidStateTransition))
-                        .attach(CONSTRUCTING)?,
-                    ended_at: ended_at
-                        .ok_or_else(|| Report::new(GameError::InvalidStateTransition))
-                        .attach(CONSTRUCTING)?,
-                    winner_user_id: winner_user_id
-                        .ok_or_else(|| Report::new(GameError::InvalidStateTransition))
-                        .attach(CONSTRUCTING)?,
-                },
-            }),
-        };
-
-        Ok(game)
     }
 
     pub fn id(&self) -> GameId {
@@ -769,15 +708,6 @@ impl Game {
         }
     }
 
-    pub fn status(&self) -> GameStatus {
-        match self {
-            Self::Lobby(_) => GameStatus::Lobby,
-            Self::Drafting(_) => GameStatus::Drafting,
-            Self::Active(_) => GameStatus::Active,
-            Self::Completed(_) => GameStatus::Completed,
-        }
-    }
-
     pub fn players(&self) -> &[GamePlayer] {
         match self {
             Self::Lobby(g) => g.players(),
@@ -802,46 +732,6 @@ impl Game {
             Self::Drafting(g) => g.has_player(user_id),
             Self::Active(g) => g.has_player(user_id),
             Self::Completed(g) => g.has_player(user_id),
-        }
-    }
-
-    pub fn prompts(&self) -> &[PromptSubmission] {
-        match self {
-            Self::Lobby(g) => g.prompts(),
-            Self::Drafting(g) => g.prompts(),
-            Self::Active(g) => g.prompts(),
-            Self::Completed(g) => g.prompts(),
-        }
-    }
-
-    pub fn prompts_by_author(&self, author_user_id: BenutzerId) -> Vec<&PromptSubmission> {
-        match self {
-            Self::Lobby(g) => g.prompts_by_author(author_user_id),
-            Self::Drafting(g) => g.prompts_by_author(author_user_id),
-            Self::Active(g) => g.prompts_by_author(author_user_id),
-            Self::Completed(g) => g.prompts_by_author(author_user_id),
-        }
-    }
-
-    pub fn started_at(&self) -> Option<DateTime<Utc>> {
-        match self {
-            Self::Lobby(_) | Self::Drafting(_) => None,
-            Self::Active(g) => Some(g.started_at()),
-            Self::Completed(g) => Some(g.started_at()),
-        }
-    }
-
-    pub fn ended_at(&self) -> Option<DateTime<Utc>> {
-        match self {
-            Self::Completed(g) => Some(g.ended_at()),
-            _ => None,
-        }
-    }
-
-    pub fn winner_user_id(&self) -> Option<BenutzerId> {
-        match self {
-            Self::Completed(g) => Some(g.winner_user_id()),
-            _ => None,
         }
     }
 
@@ -928,7 +818,7 @@ pub fn assemble_boards(
     grid_size: GridSize,
     players: &[BenutzerId],
     prompts: &[PromptSubmission],
-    rng: &mut impl Rng,
+    rng: &mut (impl Rng + ?Sized),
 ) -> ResultReport<Vec<NewBoard>, GameError> {
     let n = players.len();
     if n < MIN_PLAYERS {

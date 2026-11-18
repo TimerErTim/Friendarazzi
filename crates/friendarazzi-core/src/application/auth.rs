@@ -11,7 +11,7 @@
 use error_stack::Report;
 
 use super::ResultReport;
-use crate::domain::konto::{BenutzerId, SessionId};
+use crate::domain::{BenutzerId, konto::SessionId};
 
 /// Who is executing the use case.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

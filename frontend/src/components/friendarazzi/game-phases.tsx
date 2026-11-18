@@ -1023,8 +1023,8 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                   {game.winner.displayName} gewinnt „{game.title}“!
                 </h2>
                 <p className="text-sm text-secondary">
-                  @{game.winner.username} · {game.winner.effectiveTitle} ·{" "}
-                  {game.winner.goldMedalCount} Goldmedaillen gesamt
+                  {game.winner.effectiveTitle} · {game.winner.goldMedalCount}{" "}
+                  Goldmedaillen gesamt
                 </p>
               </div>
             </div>

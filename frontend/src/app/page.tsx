@@ -1,6 +1,16 @@
 "use client";
 
-import { Award, Camera, Plus, Ticket, Trophy, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Award,
+  Camera,
+  CheckCircle2,
+  Plus,
+  Sparkles,
+  Ticket,
+  Trophy,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -13,10 +23,17 @@ import {
   VisibilityMode,
 } from "@/api/friendarazzi-api";
 import { useFriendarazziMutations, useGamesQuery } from "@/api/hooks";
+import { Wordmark } from "@/components/brand/wordmark";
 import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import {
+  CalloutNote,
+  CodeTag,
+  SparkleIcon,
+  StickerBand,
+} from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -29,12 +46,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  HatchBand,
-  MarginNote,
-  SheetNumber,
-  StampMark,
-} from "@/components/ui/paper-rule";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -45,7 +56,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { gameHref, joinHref } from "@/lib/navigation";
+import { gameHref, joinHref, paths } from "@/lib/navigation";
 
 function statusLabel(status: GameStatus): string {
   switch (status) {
@@ -63,18 +74,24 @@ function statusLabel(status: GameStatus): string {
 export default function HomePage() {
   const phase = useAuth();
 
+  if (phase.status === "anonymous") {
+    return (
+      <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
+        <GuestLanding />
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
       <PageHeader
-        register={["Friendarazzi"]}
+        register={["Friendarazzi", "Zentrale"]}
         title="Spiele & Lobbys"
-        description="Starte ein neues Foto-Jagd-Bingo mit deinen Freunden, tritt über einen Einladungscode bei oder schau dir vergangene Runden im Rückblick an."
+        description="Starte eine neue Runde, tritt per Code bei oder sieh dir vergangene Bingo-Matches im Rückblick an."
       />
 
       {phase.status === "authenticated" ? (
         <AuthenticatedHome />
-      ) : phase.status === "anonymous" ? (
-        <GuestLanding />
       ) : (
         <HomeSkeleton />
       )}
@@ -82,30 +99,185 @@ export default function HomePage() {
   );
 }
 
+const DEMO_TILES = [
+  { target: "Lena", text: "Bestellt noch ein Getränk", captured: true },
+  { target: "Max", text: "Schaut aufs falsche Handy", captured: false },
+  { target: "Sam", text: "Macht ein Gruppen-Selfie", captured: true },
+  { target: "Jule", text: "Lacht über eigenen Witz", captured: false },
+  {
+    target: "BINGO",
+    text: "Foto-Jagd im Gange!",
+    captured: true,
+    center: true,
+  },
+  { target: "Tom", text: "Erklärt etwas mit Händen", captured: false },
+  { target: "Lea", text: "Findet einen Hund zum Streicheln", captured: true },
+  { target: "Ben", text: "Bestellt Extra-Pommes", captured: false },
+  { target: "Kim", text: "Macht doppelten Peace-Move", captured: false },
+] as const;
+
 function GuestLanding() {
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Foto-Jagd-Bingo für Freundesgruppen</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm text-secondary">
-          <p>
-            Jede Person schreibt lustige Beobachtungen und typische
-            Angewohnheiten über die anderen Mitspieler. Sobald alle eingeloggt
-            sind, werden konfliktfreie Bingo-Karten gemischt – dann beginnt die
-            Jagd nach Schnappschüssen!
-          </p>
-          <div className="flex flex-wrap gap-3 pt-1">
-            <Button asChild>
-              <Link href="/anmeldung">Anmelden</Link>
-            </Button>
-            <Button variant="secondary" asChild>
-              <Link href="/registrierung">Konto erstellen</Link>
-            </Button>
+    <div className="space-y-8">
+      {/* Impactful Hero Section */}
+      <section className="brutal-shadow-lg relative overflow-hidden rounded-md border-[2.5px] border-strong bg-surface p-6 sm:p-8 lg:p-10">
+        <div className="grid items-center gap-8 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Badge variant="info">The Candid Photo-Hunt Bingo</Badge>
+              <SparkleIcon tone="primary" />
+              <SparkleIcon tone="accent" className="size-5" />
+            </div>
+
+            <div className="space-y-3">
+              <h1 className="sr-only">
+                Friendarazzi — Das soziale Foto-Jagd-Bingo
+              </h1>
+              <div aria-hidden="true">
+                <Wordmark size="hero" />
+              </div>
+              <p className="font-display text-xl tracking-tight text-ink uppercase sm:text-2xl">
+                Erwische deine Freunde in flagranti!
+              </p>
+              <p className="max-w-xl text-base font-medium text-secondary">
+                Jede Person schreibt lustige Beobachtungen und typische
+                Angewohnheiten über den Rest der Gruppe. Sobald alle einloggen,
+                mischt Friendarazzi geheime Bingo-Karten – dann zählt jeder
+                Schnappschuss!
+              </p>
+            </div>
+
+            {/* Easy Getting Started CTAs */}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Button size="lg" asChild>
+                <Link href="/anmeldung">
+                  Anmelden &amp; Loslegen
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+              <Button variant="secondary" size="lg" asChild>
+                <Link href="/registrierung">Konto erstellen</Link>
+              </Button>
+              <Button variant="ghost" size="lg" asChild>
+                <Link href={paths.join}>
+                  <Ticket aria-hidden="true" />
+                  Code einlösen
+                </Link>
+              </Button>
+            </div>
           </div>
-        </CardContent>
-      </Card>
+
+          {/* Demonstrative Live Bingo Card Preview */}
+          <div className="relative">
+            <div className="brutal-shadow rounded-md border-[2.5px] border-strong bg-primary-subtle p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-sm border-2 border-strong bg-cyan px-2 py-0.5 font-mono text-xs font-bold text-cyan-foreground uppercase">
+                  <Camera className="size-3.5" aria-hidden="true" />
+                  Tap to Capture
+                </span>
+                <span className="brutal-shadow-sm rounded-sm border-2 border-strong bg-pink px-2.5 py-0.5 font-display text-xs text-pink-foreground uppercase">
+                  Bingo!
+                </span>
+              </div>
+
+              <section
+                aria-label="Beispiel einer 3 mal 3 Friendarazzi Bingo-Karte"
+                className="grid grid-cols-3 gap-2"
+              >
+                {DEMO_TILES.map((tile, idx) => (
+                  <div
+                    key={`${tile.target}-${idx}`}
+                    className={
+                      "center" in tile && tile.center
+                        ? "brutal-shadow-sm flex min-h-20 flex-col justify-between rounded-sm border-2 border-strong bg-primary p-2 text-primary-foreground"
+                        : tile.captured
+                          ? "brutal-shadow-sm flex min-h-20 flex-col justify-between rounded-sm border-2 border-strong bg-cyan-subtle p-2 text-ink"
+                          : "flex min-h-20 flex-col justify-between rounded-sm border-2 border-strong bg-surface p-2 text-ink"
+                    }
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="rounded-sm border border-strong bg-surface px-1 py-0.5 font-mono text-[9px] font-bold uppercase">
+                        {tile.target}
+                      </span>
+                      {tile.captured ? (
+                        <CheckCircle2
+                          className="size-3.5 shrink-0 text-success"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-tight font-bold">
+                      {tile.text}
+                    </p>
+                  </div>
+                ))}
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3-Step Demonstrative Loop */}
+      <section
+        aria-label="So funktioniert Friendarazzi"
+        className="grid gap-4 md:grid-cols-3"
+      >
+        <Card>
+          <CardHeader className="bg-primary text-primary-foreground">
+            <div className="flex items-center justify-between">
+              <CodeTag tone="surface">01</CodeTag>
+              <Users className="size-5" aria-hidden="true" />
+            </div>
+            <CardTitle className="pt-1 text-primary-foreground">
+              Lobby &amp; Code
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 text-sm font-medium text-secondary">
+            Wähle <strong className="text-ink">3×3</strong>,{" "}
+            <strong className="text-ink">4×4</strong> oder{" "}
+            <strong className="text-ink">5×5</strong>, stelle den
+            Sichtbarkeitsmodus ein und teile den kurzen Einladungscode im
+            Gruppenchat.
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="bg-pink text-pink-foreground">
+            <div className="flex items-center justify-between">
+              <CodeTag tone="surface">02</CodeTag>
+              <Sparkles className="size-5" aria-hidden="true" />
+            </div>
+            <CardTitle className="pt-1 text-pink-foreground">
+              Aufträge würfeln
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 text-sm font-medium text-secondary">
+            Schreibe eigene Prompts oder nutze die{" "}
+            <strong className="text-ink">4 Quick-Start Decks</strong> (Night
+            Out, Urlaub, WG, Büro). Niemand zieht eigene oder selbst-zielende
+            Felder!
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="bg-cyan text-cyan-foreground">
+            <div className="flex items-center justify-between">
+              <CodeTag tone="surface">03</CodeTag>
+              <Trophy className="size-5" aria-hidden="true" />
+            </div>
+            <CardTitle className="pt-1 text-cyan-foreground">
+              Knipsen &amp; Bingo
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 text-sm font-medium text-secondary">
+            Beweisfotos im Browser hochladen –{" "}
+            <strong className="text-ink">Undercover</strong>,{" "}
+            <strong className="text-ink">Blurred Teaser</strong> oder{" "}
+            <strong className="text-ink">Live-Feed</strong> – inklusive 1:1
+            Zeitachse &amp; Goldmedaillen.
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }
@@ -151,47 +323,54 @@ function AuthenticatedHome() {
 
   return (
     <div className="space-y-6">
-      {/* Primary Action + Quick Join */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="size-4" aria-hidden="true" />
-          Neues Spiel erstellen
-        </Button>
+      {/* Quick Launch: Host or Join */}
+      <Card className="bg-primary-subtle">
+        <CardContent className="flex flex-wrap items-end justify-between gap-4 pt-6">
+          <div className="space-y-2">
+            <p className="font-mono text-xs font-bold tracking-wider text-secondary uppercase">
+              Schnellstart
+            </p>
+            <Button size="lg" onClick={() => setCreateOpen(true)}>
+              <Plus aria-hidden="true" />
+              Neues Spiel hosten
+            </Button>
+          </div>
 
-        <form
-          onSubmit={handleJoinSubmit}
-          className="flex flex-wrap items-end gap-2"
-        >
-          <Field label="Einladungscode">
-            <Input
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-              placeholder="z.B. A7K9P2"
-              className="w-36 font-mono uppercase"
-              maxLength={16}
-            />
-          </Field>
-          <Button type="submit" variant="secondary" size="field">
-            <Ticket className="size-4" aria-hidden="true" />
-            Beitreten
-          </Button>
-        </form>
-      </div>
+          <form
+            onSubmit={handleJoinSubmit}
+            className="flex flex-wrap items-end gap-2"
+          >
+            <Field label="Einladungscode">
+              <Input
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                placeholder="z.B. A7K9P2"
+                className="w-40 font-mono uppercase"
+                maxLength={16}
+              />
+            </Field>
+            <Button type="submit" variant="secondary" size="field">
+              <Ticket aria-hidden="true" />
+              Beitreten
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* Active Games */}
       <section className="space-y-3">
-        <div className="flex items-baseline gap-3">
-          <h2 className="font-serif text-lg font-semibold text-ink">
+        <div className="flex items-center gap-3">
+          <h2 className="font-display text-lg tracking-tight text-ink">
             Laufende Spiele
           </h2>
-          <SheetNumber>{active.length}</SheetNumber>
+          <CodeTag tone="yellow">{active.length}</CodeTag>
         </div>
 
         {active.length === 0 ? (
-          <MarginNote label="Keine aktive Runde">
+          <CalloutNote label="Keine aktive Runde" tone="cyan">
             Erstelle oben ein neues Spiel oder gib einen Einladungscode deiner
             Freunde ein.
-          </MarginNote>
+          </CalloutNote>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2">
             {active.map((game) => (
@@ -201,22 +380,22 @@ function AuthenticatedHome() {
         )}
       </section>
 
-      <HatchBand />
+      <StickerBand checker />
 
       {/* Completed Games */}
       <section className="space-y-3">
-        <div className="flex items-baseline gap-3">
-          <h2 className="font-serif text-lg font-semibold text-ink">
+        <div className="flex items-center gap-3">
+          <h2 className="font-display text-lg tracking-tight text-ink">
             Vergangene Spiele
           </h2>
-          <SheetNumber>{completed.length}</SheetNumber>
+          <CodeTag tone="cyan">{completed.length}</CodeTag>
         </div>
 
         {completed.length === 0 ? (
-          <MarginNote label="Noch kein Archiv">
+          <CalloutNote label="Noch kein Archiv">
             Abgeschlossene Spiele inklusive 1:1 Zeitachse und Fotogalerie
             erscheinen hier.
-          </MarginNote>
+          </CalloutNote>
         ) : (
           <Table>
             <TableHead>
@@ -233,13 +412,13 @@ function AuthenticatedHome() {
               {completed.map((game) => (
                 <TableRow key={game.id}>
                   <TableCell>
-                    <div className="font-medium text-ink">{game.title}</div>
-                    <div className="text-xs text-secondary">
+                    <div className="font-bold text-ink">{game.title}</div>
+                    <div className="font-mono text-xs text-secondary">
                       {game.gridSize}×{game.gridSize} · {game.playerCount}{" "}
                       Spieler
                     </div>
                   </TableCell>
-                  <TableCell className="text-secondary tabular-nums">
+                  <TableCell className="font-mono text-xs text-secondary tabular-nums">
                     {game.endedAt
                       ? new Date(game.endedAt).toLocaleDateString("de-AT")
                       : new Date(game.createdAt).toLocaleDateString("de-AT")}
@@ -248,7 +427,7 @@ function AuthenticatedHome() {
                     {game.winner ? (
                       <PlayerBadgeLink user={game.winner} compact />
                     ) : (
-                      <StampMark>Beendet</StampMark>
+                      <Badge variant="outline">Beendet</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-right">
@@ -342,27 +521,25 @@ function ActiveGameCard({ game }: { game: GameSummary }) {
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 space-y-1">
             <CardTitle className="truncate">{game.title}</CardTitle>
-            <p className="mt-1 font-mono text-xs text-secondary">
-              Code: {game.inviteCode}
-            </p>
+            <CodeTag tone="cyan">Code: {game.inviteCode}</CodeTag>
           </div>
           <Badge variant="primary">{statusLabel(game.status)}</Badge>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 text-xs text-secondary">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4">
+        <div className="flex flex-wrap items-center gap-3 font-mono text-xs font-semibold text-secondary">
           <span className="inline-flex items-center gap-1">
-            <Camera className="size-3.5" aria-hidden="true" />
+            <Camera className="size-3.5 text-ink" aria-hidden="true" />
             {game.gridSize}×{game.gridSize}
           </span>
           <span className="inline-flex items-center gap-1">
-            <Users className="size-3.5" aria-hidden="true" />
+            <Users className="size-3.5 text-ink" aria-hidden="true" />
             {game.playerCount} Spieler
           </span>
           {game.winner ? (
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1 text-ink">
               <Trophy className="size-3.5 text-warning" aria-hidden="true" />
               <Award className="size-3.5 text-warning" aria-hidden="true" />
               {game.winner.displayName}
@@ -380,10 +557,10 @@ function ActiveGameCard({ game }: { game: GameSummary }) {
 function HomeSkeleton() {
   return (
     <div aria-busy="true" className="space-y-4">
-      <Skeleton className="h-11 w-48" />
+      <Skeleton className="h-24 w-full" />
       <div className="grid gap-4 sm:grid-cols-2">
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-36 w-full" />
       </div>
     </div>
   );

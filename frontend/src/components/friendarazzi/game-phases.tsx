@@ -40,6 +40,11 @@ import {
 } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import {
+  CalloutNote,
+  CodeTag,
+  StickerBand,
+} from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -52,11 +57,6 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  MarginNote,
-  Perforation,
-  SheetNumber,
-} from "@/components/ui/paper-rule";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { absoluteUrl, joinHref } from "@/lib/navigation";
@@ -99,7 +99,6 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
   }, [game.title, game.gridSize, game.visibilityMode]);
 
   const inviteUrl = absoluteUrl(joinHref(game.inviteCode));
-
   const canStart = game.players.length >= 3;
 
   function copyInvite() {
@@ -112,18 +111,18 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
 
   return (
     <div className="space-y-6">
-      {/* Invite Card */}
+      {/* Invite Ticket Card */}
       <Card>
-        <CardHeader>
+        <CardHeader className="bg-primary-subtle">
           <CardTitle>Einladung teilen</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-subtle bg-surface-muted p-4">
+        <CardContent className="space-y-4 pt-5">
+          <div className="brutal-shadow-sm flex flex-wrap items-center justify-between gap-4 rounded-md border-2 border-strong bg-surface p-4">
             <div>
-              <p className="text-xs font-semibold tracking-wider text-secondary uppercase">
+              <p className="font-mono text-xs font-bold tracking-wider text-secondary uppercase">
                 Einladungscode
               </p>
-              <p className="font-mono text-2xl font-bold tracking-widest text-ink">
+              <p className="font-mono text-3xl font-bold tracking-widest text-ink">
                 {game.inviteCode}
               </p>
             </div>
@@ -152,7 +151,7 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
         <CardHeader>
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2">
-              <Users className="size-4 text-primary" aria-hidden="true" />
+              <Users className="size-5" aria-hidden="true" />
               Spieler ({game.players.length})
             </CardTitle>
             <Badge variant={canStart ? "success" : "warning"}>
@@ -162,12 +161,12 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
             </Badge>
           </div>
         </CardHeader>
-        <CardContent>
-          <ul className="grid gap-2 sm:grid-cols-2">
+        <CardContent className="pt-5">
+          <ul className="grid gap-3 sm:grid-cols-2">
             {game.players.map((player) => (
               <li
                 key={player.id}
-                className="rounded-md border border-subtle bg-elevated p-2"
+                className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface-muted p-2"
               >
                 <PlayerBadgeLink user={player} />
               </li>
@@ -181,7 +180,7 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
         <CardHeader>
           <CardTitle>Spieleinstellungen</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pt-5">
           {isHost ? (
             <form
               className="space-y-4"
@@ -279,25 +278,29 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
               </div>
             </form>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs text-secondary uppercase">Raster</dt>
-                  <dd className="font-semibold text-ink">
+                <div className="rounded-sm border-2 border-strong bg-surface-muted p-3">
+                  <dt className="font-mono text-xs font-bold text-secondary uppercase">
+                    Raster
+                  </dt>
+                  <dd className="font-display text-lg text-ink">
                     {game.gridSize} × {game.gridSize}
                   </dd>
                 </div>
-                <div>
-                  <dt className="text-xs text-secondary uppercase">Modus</dt>
-                  <dd className="font-semibold text-ink">
+                <div className="rounded-sm border-2 border-strong bg-surface-muted p-3">
+                  <dt className="font-mono text-xs font-bold text-secondary uppercase">
+                    Modus
+                  </dt>
+                  <dd className="font-bold text-ink">
                     {visibilityLabel(game.visibilityMode)}
                   </dd>
                 </div>
               </dl>
-              <MarginNote label="Warten auf Host">
+              <CalloutNote label="Warten auf Host" tone="cyan">
                 Der Host kann die Entwurfsphase starten, sobald mindestens 3
                 Freunde beigetreten sind.
-              </MarginNote>
+              </CalloutNote>
             </div>
           )}
         </CardContent>
@@ -329,7 +332,6 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
   const [slots, setSlots] = useState<DraftSlot[]>([]);
   const initializedRef = useRef(false);
 
-  // Build deterministic slot list from quotas + existing saved drafts.
   useEffect(() => {
     if (initializedRef.current && slots.length > 0) return;
     const savedByTarget = new Map<
@@ -456,29 +458,29 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>Entwurfsphase – Status</CardTitle>
-            <SheetNumber>
+            <CodeTag tone="yellow">
               {game.players.filter((p) => p.draftLocked).length} /{" "}
               {game.players.length} bereit
-            </SheetNumber>
+            </CodeTag>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-5">
           <ul className="flex flex-wrap gap-2">
             {game.players.map((p) => (
               <li
                 key={p.id}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-sm border px-2.5 py-1.5 text-xs font-medium",
+                  "inline-flex items-center gap-2 rounded-sm border-2 border-strong px-3 py-1.5 text-xs font-bold",
                   p.draftLocked
-                    ? "border-success/40 bg-success/10 text-ink"
-                    : "border-subtle bg-surface-muted text-secondary",
+                    ? "bg-success/15 text-ink"
+                    : "bg-surface-muted text-secondary",
                 )}
               >
                 <PlayerAvatar user={p} size="sm" showMedalBadge={false} />
                 <span>{p.displayName}</span>
                 {p.draftLocked ? (
                   <CheckCircle2
-                    className="size-3.5 text-success"
+                    className="size-4 text-success"
                     aria-hidden="true"
                   />
                 ) : null}
@@ -490,14 +492,14 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
 
       {/* Quick-Start Deck Toolbar */}
       <Card>
-        <CardHeader>
+        <CardHeader className="bg-cyan-subtle">
           <CardTitle className="flex items-center gap-2">
-            <Sparkles className="size-4 text-primary" aria-hidden="true" />
+            <Sparkles className="size-5" aria-hidden="true" />
             Quick-Start Decks
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-secondary">
+        <CardContent className="space-y-3 pt-5">
+          <p className="text-sm font-medium text-secondary">
             Wähle ein Paket und fülle leere Felder mit Namen deiner Freunde –
             oder würfle einzelne Felder neu aus.
           </p>
@@ -553,12 +555,12 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-3 pt-5">
                 {targetSlots.map((slot, index) => (
                   <div key={slot.key} className="flex items-center gap-2">
-                    <SheetNumber className="w-6 shrink-0 text-center">
+                    <CodeTag tone="yellow" className="w-8 justify-center">
                       {index + 1}
-                    </SheetNumber>
+                    </CodeTag>
                     <Input
                       value={slot.text}
                       disabled={isLocked}
@@ -615,15 +617,15 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
       ) : null}
 
       {isLocked ? (
-        <Alert variant="success">
+        <Alert variant="success" icon={<CheckCircle2 className="size-4" />}>
           Deine Aufträge ({filledCount}/{slots.length}) sind eingeloggt. Sobald
           alle anderen bereit sind, werden die Bingo-Bretter automatisch
           ausgeteilt!
         </Alert>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-subtle bg-surface p-4">
-          <span className="text-sm text-secondary tabular-nums">
-            {filledCount} von {slots.length} Aufträgen ausgefüllt
+        <div className="brutal-shadow flex flex-wrap items-center justify-between gap-3 rounded-md border-[2.5px] border-strong bg-surface p-4">
+          <span className="font-mono text-sm font-bold text-ink tabular-nums">
+            {filledCount} / {slots.length} Aufträge ausgefüllt
           </span>
           <div className="flex flex-wrap gap-3">
             <Button
@@ -681,9 +683,9 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   const board = game.myBoard;
   if (!board) {
     return (
-      <MarginNote label="Brett wird geladen">
+      <CalloutNote label="Brett wird geladen" tone="yellow">
         Dein Bingo-Brett wird vorbereitet …
-      </MarginNote>
+      </CalloutNote>
     );
   }
 
@@ -708,9 +710,9 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Badge variant="primary">Aktive Jagd</Badge>
-          <Badge variant="outline">
+          <Badge variant="info">
             {game.visibilityMode === VisibilityMode.Undercover ? (
               <EyeOff className="size-3" aria-hidden="true" />
             ) : (
@@ -719,14 +721,14 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
             {visibilityLabel(game.visibilityMode)}
           </Badge>
         </div>
-        <span className="text-xs text-secondary tabular-nums">
+        <CodeTag tone="yellow">
           {board.tiles.filter((t) => t.isCaptured).length} /{" "}
           {board.tiles.length} Felder
-        </span>
+        </CodeTag>
       </div>
 
       {/* Bingo Grid */}
-      <div className={cn("grid gap-2", gridColsClass)}>
+      <div className={cn("grid gap-2.5", gridColsClass)}>
         {board.tiles.map((tile) => {
           return (
             <button
@@ -741,11 +743,11 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
                 }
               }}
               className={cn(
-                "relative flex min-h-24 flex-col justify-between overflow-hidden rounded-md border p-2 text-left transition-colors sm:min-h-28 sm:p-2.5",
-                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                "relative flex min-h-26 flex-col justify-between overflow-hidden rounded-md border-[2.5px] border-strong p-2.5 text-left sm:min-h-32 sm:p-3",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                 tile.isCaptured
-                  ? "border-success/50 bg-success/10"
-                  : "border-control bg-surface hover:bg-surface-muted",
+                  ? "brutal-shadow-sm bg-cyan-subtle"
+                  : "brutal-press cursor-pointer bg-surface hover:bg-primary-subtle",
               )}
             >
               {tile.imageStorageKey ? (
@@ -759,23 +761,22 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
               ) : null}
 
               <div className="relative z-10 flex items-start justify-between gap-1">
-                <span className="inline-flex items-center gap-1 rounded-sm bg-elevated/90 px-1.5 py-0.5 text-[10px] font-semibold text-ink">
+                <span className="inline-flex items-center rounded-sm border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary-foreground uppercase">
                   {tile.targetUser.displayName}
                 </span>
                 {tile.isCaptured ? (
-                  <CheckCircle2
-                    className="size-4 shrink-0 text-success"
-                    aria-hidden="true"
-                  />
+                  <span className="inline-flex size-6 items-center justify-center rounded-sm border-2 border-strong bg-surface text-success">
+                    <CheckCircle2 className="size-4" aria-hidden="true" />
+                  </span>
                 ) : (
                   <Camera
-                    className="size-4 shrink-0 text-secondary"
+                    className="size-4 shrink-0 text-ink"
                     aria-hidden="true"
                   />
                 )}
               </div>
 
-              <p className="relative z-10 mt-1 line-clamp-3 text-xs leading-snug font-medium text-ink sm:text-[13px]">
+              <p className="relative z-10 mt-2 line-clamp-3 text-xs leading-snug font-bold text-ink sm:text-sm">
                 {tile.promptText}
               </p>
             </button>
@@ -783,17 +784,17 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
         })}
       </div>
 
-      {/* Player Roster with Crosslinked Avatars */}
+      {/* Player Roster */}
       <Card>
         <CardHeader>
           <CardTitle>Mitspieler</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <div className="flex flex-wrap gap-3">
             {game.players.map((p) => (
               <div
                 key={p.id}
-                className="rounded-md border border-subtle bg-elevated px-2 py-1"
+                className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface-muted px-2.5 py-1"
               >
                 <PlayerBadgeLink user={p} compact />
               </div>
@@ -802,36 +803,36 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
         </CardContent>
       </Card>
 
-      <Perforation />
+      <StickerBand checker />
 
       {/* Activity Feed according to VisibilityMode */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-serif text-lg font-semibold text-ink">
+          <h2 className="font-display text-lg tracking-tight text-ink">
             Gruppen-Aktivität
           </h2>
-          <SheetNumber>{game.feed.length}</SheetNumber>
+          <CodeTag tone="cyan">{game.feed.length}</CodeTag>
         </div>
 
         {game.visibilityMode === VisibilityMode.Undercover ? (
-          <MarginNote label="Undercover-Modus">
+          <CalloutNote label="Undercover-Modus" tone="pink">
             Alle Beweisfotos bleiben geheim, bis jemand Bingo ruft. Deine
             eigenen Schnappschüsse siehst du direkt auf deinem Brett.
-          </MarginNote>
+          </CalloutNote>
         ) : game.feed.length === 0 ? (
-          <MarginNote label="Noch ruhig">
+          <CalloutNote label="Noch ruhig">
             Noch keine Beweisfotos hochgeladen – schnapp dir dein erstes Motiv!
-          </MarginNote>
+          </CalloutNote>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {game.feed.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => setLightboxCapture(item)}
-                className="group overflow-hidden rounded-md border border-subtle bg-surface text-left transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="brutal-press group flex cursor-pointer flex-col overflow-hidden rounded-md border-[2.5px] border-strong bg-surface p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
               >
-                <div className="aspect-video overflow-hidden bg-surface-muted">
+                <div className="aspect-video w-full overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
                   <AuthenticatedImage
                     storageKey={
                       item.isBlurred
@@ -843,12 +844,12 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
                     className="h-full w-full"
                   />
                 </div>
-                <div className="space-y-1 p-3">
-                  <div className="flex items-center justify-between gap-2 text-xs text-secondary">
-                    <span className="font-semibold text-ink">
+                <div className="space-y-1.5 pt-2.5">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="font-bold text-ink">
                       {item.catcher.displayName}
                     </span>
-                    <span className="tabular-nums">
+                    <span className="font-mono text-secondary tabular-nums">
                       {new Date(item.capturedAt).toLocaleTimeString("de-AT", {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -856,9 +857,11 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
                     </span>
                   </div>
                   {item.isBlurred ? (
-                    <Badge variant="warning">Ziel & Auftrag verborgen</Badge>
+                    <Badge variant="warning">
+                      Ziel &amp; Auftrag verborgen
+                    </Badge>
                   ) : (
-                    <p className="line-clamp-2 text-xs text-ink">
+                    <p className="line-clamp-2 text-xs font-medium text-ink">
                       {item.promptText}
                     </p>
                   )}
@@ -891,12 +894,12 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
           </DialogHeader>
 
           <div className="space-y-4">
-            <label className="flex min-h-11 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-control bg-surface-muted p-6 text-center transition-colors hover:bg-surface">
-              <Camera className="size-6 text-primary" aria-hidden="true" />
-              <span className="text-sm font-medium text-ink">
+            <label className="brutal-press flex min-h-11 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-control bg-primary-subtle p-6 text-center hover:bg-primary/25">
+              <Camera className="size-7 text-ink" aria-hidden="true" />
+              <span className="text-sm font-bold text-ink">
                 Kamera öffnen oder Foto auswählen
               </span>
-              <span className="text-xs text-secondary">
+              <span className="font-mono text-xs text-secondary">
                 JPEG, PNG oder WebP (wird automatisch optimiert)
               </span>
               <input
@@ -912,12 +915,12 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
             </label>
 
             {previewUrl ? (
-              <div className="overflow-hidden rounded-md border border-subtle bg-surface-muted">
+              <div className="brutal-shadow-sm overflow-hidden rounded-md border-2 border-strong bg-surface p-1.5">
                 {/* biome-ignore lint/performance/noImgElement: local File preview blob URL */}
                 <img
                   src={previewUrl}
                   alt="Vorschau"
-                  className="max-h-64 w-full object-contain"
+                  className="max-h-64 w-full rounded-sm object-contain"
                 />
               </div>
             ) : null}
@@ -1004,34 +1007,34 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
     <div className="space-y-8">
       {/* Winner Crown & Gold Medal Banner */}
       {game.winner ? (
-        <Card className="border-warning/60 bg-warning/10">
+        <Card className="bg-primary-subtle">
           <CardContent className="flex flex-wrap items-center justify-between gap-4 py-6">
             <div className="flex items-center gap-4">
               <PlayerAvatar user={game.winner} size="lg" />
-              <div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="warning" className="gap-1">
-                    <Crown className="size-3 text-warning" aria-hidden="true" />
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="primary" className="gap-1">
+                    <Crown className="size-3.5" aria-hidden="true" />
                     BINGO-SIEGER
                   </Badge>
-                  <Badge variant="warning" className="gap-1">
-                    <Award className="size-3 text-warning" aria-hidden="true" />
+                  <Badge variant="info" className="gap-1">
+                    <Award className="size-3.5" aria-hidden="true" />
                     +1 Goldmedaille
                   </Badge>
                 </div>
-                <h2 className="mt-1 font-serif text-2xl font-semibold text-ink">
+                <h2 className="font-display text-2xl tracking-tight text-ink">
                   {game.winner.displayName} gewinnt „{game.title}“!
                 </h2>
-                <p className="text-sm text-secondary">
+                <p className="font-mono text-xs font-semibold text-secondary">
                   {game.winner.effectiveTitle} · {game.winner.goldMedalCount}{" "}
                   Goldmedaillen gesamt
                 </p>
               </div>
             </div>
             {game.startedAt && game.endedAt ? (
-              <div className="flex items-center gap-1.5 text-xs text-secondary tabular-nums">
+              <div className="inline-flex items-center gap-1.5 rounded-sm border-2 border-strong bg-surface px-2.5 py-1 font-mono text-xs font-bold text-ink tabular-nums">
                 <Timer className="size-4" aria-hidden="true" />
-                Beendet am {new Date(game.endedAt).toLocaleString("de-AT")}
+                {new Date(game.endedAt).toLocaleString("de-AT")}
               </div>
             ) : null}
           </CardContent>
@@ -1041,21 +1044,18 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
       {/* Automated Post-Game Superlatives */}
       {game.superlatives.length > 0 ? (
         <section className="space-y-3">
-          <h2 className="font-serif text-lg font-semibold text-ink">
+          <h2 className="font-display text-lg tracking-tight text-ink">
             Auszeichnungen
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {game.superlatives.map((sup) => {
               const meta = superlativeMeta(sup.kind, sup.metricValue);
               const Icon = meta.icon;
               return (
                 <Card key={sup.kind}>
                   <CardContent className="space-y-2 pt-4">
-                    <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-secondary uppercase">
-                      <Icon
-                        className="size-4 text-primary"
-                        aria-hidden="true"
-                      />
+                    <div className="flex items-center gap-2 font-mono text-xs font-bold tracking-wide text-secondary uppercase">
+                      <Icon className="size-4 text-ink" aria-hidden="true" />
                       <span>{meta.label}</span>
                     </div>
                     <PlayerBadgeLink
@@ -1081,27 +1081,27 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
       {/* Full Game Photo Gallery */}
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="font-serif text-lg font-semibold text-ink">
+          <h2 className="font-display text-lg tracking-tight text-ink">
             Spiel-Galerie
           </h2>
-          <SheetNumber>{game.feed.length} Fotos</SheetNumber>
+          <CodeTag tone="yellow">{game.feed.length} Fotos</CodeTag>
         </div>
 
         {game.feed.length === 0 ? (
-          <MarginNote label="Keine Fotos">
+          <CalloutNote label="Keine Fotos">
             In diesem Spiel wurden keine Fotos eingereicht.
-          </MarginNote>
+          </CalloutNote>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {game.feed.map((cap) => (
               <div
                 key={cap.id}
-                className="overflow-hidden rounded-md border border-subtle bg-surface"
+                className="brutal-shadow-sm flex flex-col overflow-hidden rounded-md border-2 border-strong bg-surface p-2"
               >
                 <button
                   type="button"
                   onClick={() => setSelectedCapture(cap)}
-                  className="aspect-square w-full overflow-hidden bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className="aspect-square w-full cursor-pointer overflow-hidden rounded-sm border-2 border-strong bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                 >
                   <AuthenticatedImage
                     storageKey={cap.imageStorageKey ?? cap.thumbnailStorageKey}
@@ -1109,13 +1109,13 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                     className="h-full w-full transition-transform hover:scale-105"
                   />
                 </button>
-                <div className="space-y-1.5 p-2.5">
-                  <p className="line-clamp-2 text-xs font-medium text-ink">
+                <div className="space-y-2 pt-2.5">
+                  <p className="line-clamp-2 text-xs font-bold text-ink">
                     {cap.promptText}
                   </p>
                   <div className="flex items-center justify-between gap-1">
                     <PlayerAvatar user={cap.catcher} size="sm" />
-                    <span className="text-[11px] text-secondary tabular-nums">
+                    <span className="font-mono text-[11px] font-semibold text-secondary tabular-nums">
                       {new Date(cap.capturedAt).toLocaleTimeString("de-AT", {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -1129,11 +1129,11 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
         )}
       </section>
 
-      <Perforation />
+      <StickerBand checker />
 
       {/* All Unlocked Boards */}
       <section className="space-y-4">
-        <h2 className="font-serif text-lg font-semibold text-ink">
+        <h2 className="font-display text-lg tracking-tight text-ink">
           Alle aufgedeckten Bingo-Bretter
         </h2>
         <div className="grid gap-6 lg:grid-cols-2">
@@ -1143,11 +1143,11 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                 <div className="flex items-center justify-between gap-2">
                   <PlayerBadgeLink user={board.owner} compact />
                   {board.hasBingo ? (
-                    <Badge variant="warning">Bingo!</Badge>
+                    <Badge variant="primary">Bingo!</Badge>
                   ) : null}
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pt-5">
                 <div
                   className={cn(
                     "grid gap-1.5",
@@ -1162,10 +1162,8 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                     <div
                       key={tile.id}
                       className={cn(
-                        "relative flex min-h-16 flex-col justify-between overflow-hidden rounded-sm border p-1.5 text-[11px]",
-                        tile.isCaptured
-                          ? "border-success/50 bg-success/10"
-                          : "border-subtle bg-surface-muted",
+                        "relative flex min-h-18 flex-col justify-between overflow-hidden rounded-sm border-2 border-strong p-1.5 text-[11px]",
+                        tile.isCaptured ? "bg-cyan-subtle" : "bg-surface-muted",
                       )}
                     >
                       {tile.imageStorageKey ? (
@@ -1177,7 +1175,7 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                           />
                         </div>
                       ) : null}
-                      <span className="relative z-10 line-clamp-3 leading-tight font-medium text-ink">
+                      <span className="relative z-10 line-clamp-3 leading-tight font-bold text-ink">
                         {tile.promptText}
                       </span>
                     </div>

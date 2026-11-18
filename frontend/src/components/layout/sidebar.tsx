@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { Wordmark } from "@/components/brand/wordmark";
+import { SparkleIcon } from "@/components/ui/brutal-elements";
 import { cn } from "@/lib/cn";
 import type { NavCategory, NavItem } from "@/lib/navigation";
 import { isNavItemActive } from "@/lib/navigation";
@@ -22,46 +24,47 @@ export function Sidebar({ categories, homeItem, pathname }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-subtle bg-surface transition-transform",
+        "fixed inset-y-0 left-0 z-50 flex w-68 flex-col border-r-[2.5px] border-strong bg-surface transition-transform",
         "-translate-x-full lg:static lg:translate-x-0",
         "peer-checked:translate-x-0",
       )}
     >
-      <div className="flex h-full flex-col overflow-y-auto px-4 py-6">
-        <div className="mb-6 px-2">
+      <div className="flex h-full flex-col overflow-y-auto px-4 py-5">
+        <div className="mb-6 border-b-2 border-strong pb-4">
           <Link
             href={homeItem.href}
-            className="inline-flex min-h-11 items-center rounded-sm font-serif text-base font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            className="inline-flex min-h-11 items-center rounded-sm px-1 py-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             aria-label="Friendarazzi — Startseite"
           >
-            Friendarazzi
+            <Wordmark size="sm" showMark />
           </Link>
         </div>
 
-        <div className="mb-8 px-2">
+        <div className="mb-6">
           <Link
             href={homeItem.href}
+            aria-current={homeActive ? "page" : undefined}
             className={cn(
-              "flex min-h-11 w-full items-center gap-3 rounded-sm px-3 py-2 text-sm font-medium transition-colors",
-              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+              "flex min-h-11 w-full items-center gap-3 rounded-sm border-2 px-3 py-2 text-sm font-bold transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
               homeActive
-                ? "bg-primary text-primary-foreground"
-                : "text-ink hover:bg-surface-muted",
+                ? "brutal-shadow-sm border-strong bg-primary text-primary-foreground"
+                : "border-transparent text-ink hover:border-strong hover:bg-surface-muted",
             )}
           >
-            <HomeIcon className="size-5" />
-            {homeItem.label}
+            <HomeIcon className="size-5 shrink-0" aria-hidden="true" />
+            <span>{homeItem.label}</span>
           </Link>
         </div>
 
         {categories.length > 0 ? (
-          <nav aria-label="Hauptnavigation" className="flex-1 space-y-8">
+          <nav aria-label="Hauptnavigation" className="flex-1 space-y-6">
             {categories.map((category) => (
               <div key={category.label} className="space-y-2">
-                <h3 className="px-2 text-xs font-semibold tracking-wider text-secondary uppercase">
+                <h3 className="px-2 font-mono text-[11px] font-bold tracking-[0.08em] text-secondary uppercase">
                   {category.label}
                 </h3>
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   {category.items.map((item) => (
                     <SidebarLink
                       key={item.id}
@@ -74,17 +77,20 @@ export function Sidebar({ categories, homeItem, pathname }: SidebarProps) {
             ))}
           </nav>
         ) : null}
+
+        <div className="mt-6 rounded-md border-2 border-strong bg-cyan-subtle p-3">
+          <div className="flex items-center gap-2">
+            <SparkleIcon tone="accent" className="size-5" />
+            <span className="font-display text-xs tracking-tight text-ink uppercase">
+              Foto-Jagd-Bingo
+            </span>
+          </div>
+          <p className="mt-1 text-xs font-medium text-secondary">
+            Schnappschüsse sammeln, Reihen füllen, Freunde erwischen.
+          </p>
+        </div>
       </div>
     </aside>
-  );
-}
-
-function NavMarkierung() {
-  return (
-    <span
-      aria-hidden="true"
-      className="h-4 w-0.5 shrink-0 rounded-sm bg-primary"
-    />
   );
 }
 
@@ -97,16 +103,15 @@ function SidebarLink({ item, pathname }: { item: NavItem; pathname: string }) {
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-h-11 w-full items-center gap-3 rounded-sm px-3 py-2 text-sm transition-colors",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        "flex min-h-11 w-full items-center gap-3 rounded-sm border-2 px-3 py-2 text-sm font-bold transition-colors",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
         active
-          ? "bg-primary/10 font-semibold text-ink"
-          : "text-ink hover:bg-surface-muted",
+          ? "brutal-shadow-sm border-strong bg-primary text-primary-foreground"
+          : "border-transparent text-ink hover:border-strong hover:bg-surface-muted",
       )}
     >
-      {active ? <NavMarkierung /> : null}
-      <Icon className="size-5" />
-      {item.label}
+      <Icon className="size-5 shrink-0" aria-hidden="true" />
+      <span>{item.label}</span>
     </Link>
   );
 }

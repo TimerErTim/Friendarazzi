@@ -18,8 +18,8 @@ import { SetBreadcrumbLabel } from "@/components/layout/page-chrome";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
-import { MarginNote } from "@/components/ui/paper-rule";
 import { Skeleton } from "@/components/ui/skeleton";
 import { gameHref, paths } from "@/lib/navigation";
 import { useQueryParam } from "@/lib/use-query-param";
@@ -50,7 +50,6 @@ export default function GamePage() {
     }
   }, [phase.status, router]);
 
-  // If navigated directly to `/games` without `?id=`, automatically open latest active game.
   useEffect(() => {
     if (id === "" && gamesList.data && gamesList.data.length > 0) {
       const target =
@@ -64,8 +63,8 @@ export default function GamePage() {
 
   if (id === null || detail.isLoading || (id === "" && gamesList.isLoading)) {
     return (
-      <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
-        <Skeleton className="h-10 w-64" />
+      <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
+        <Skeleton className="h-12 w-64" />
         <Skeleton className="h-48 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
@@ -74,11 +73,11 @@ export default function GamePage() {
 
   if (!id) {
     return (
-      <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
-        <MarginNote label="Kein Spiel gewählt">
+      <div className="mx-auto w-full max-w-3xl space-y-4 p-4 sm:p-6">
+        <CalloutNote label="Kein Spiel gewählt" tone="yellow">
           Du bist aktuell in keinem Spiel. Starte ein neues Spiel auf der
           Übersichtsseite.
-        </MarginNote>
+        </CalloutNote>
         <Button asChild>
           <Link href={paths.home}>Zur Übersicht</Link>
         </Button>
@@ -88,7 +87,7 @@ export default function GamePage() {
 
   if (detail.isError || !detail.data) {
     return (
-      <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
+      <div className="mx-auto w-full max-w-3xl space-y-4 p-4 sm:p-6">
         <Alert variant="error">
           {apiErrorMessage(detail.error, {
             unauthorized: "Bitte melde dich an.",
@@ -105,10 +104,10 @@ export default function GamePage() {
   const game = detail.data;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
       <SetBreadcrumbLabel label={game.title} />
       <PageHeader
-        register={["Friendarazzi", "Spiel"]}
+        register={["Friendarazzi", "Match"]}
         title={game.title}
         plate={game.inviteCode}
         description={`${game.gridSize}×${game.gridSize} Bingo · ${game.players.length} Spieler`}

@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/layout/page-header";
+import { CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   gameHref,
   joinHref,
@@ -14,11 +16,6 @@ import {
   userProfileHref,
 } from "@/lib/navigation";
 
-/**
- * Static export fallback: supports pretty share URLs (`/join/<code>`, `/games/<id>`,
- * `/users/<id>`) by redirecting to the query-param static pages, and serves a real
- * 404 page for everything else.
- */
 export default function NotFoundPage() {
   const router = useRouter();
   const [redirecting, setRedirecting] = useState(false);
@@ -46,22 +43,28 @@ export default function NotFoundPage() {
 
   if (redirecting) {
     return (
-      <div className="mx-auto w-full max-w-xl p-6 text-sm text-secondary">
+      <div className="mx-auto w-full max-w-xl p-6 font-mono text-sm font-bold text-secondary">
         Weiterleitung …
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-xl space-y-6 p-4 sm:p-6">
       <PageHeader
-        register={["Friendarazzi"]}
+        register={["Friendarazzi", "Fehler"]}
         title="Seite nicht gefunden"
+        plate="404"
         description="Diese Seite existiert nicht oder wurde verschoben."
       />
-      <Button asChild>
-        <Link href={paths.home}>Zur Startseite</Link>
-      </Button>
+      <Card>
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 pt-6">
+          <CodeTag tone="pink">HTTP 404</CodeTag>
+          <Button asChild>
+            <Link href={paths.home}>Zur Startseite</Link>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

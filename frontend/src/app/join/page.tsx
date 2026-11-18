@@ -42,7 +42,7 @@ export default function JoinPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg space-y-6 p-6">
+    <div className="mx-auto w-full max-w-lg space-y-6 p-4 sm:p-6">
       <PageHeader
         register={["Friendarazzi", "Einladung"]}
         title="Spiel beitreten"
@@ -51,11 +51,11 @@ export default function JoinPage() {
 
       {phase.status === "anonymous" ? (
         <Card>
-          <CardHeader>
+          <CardHeader className="bg-primary-subtle">
             <CardTitle>Anmeldung erforderlich</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-secondary">
+          <CardContent className="space-y-4 pt-5">
+            <p className="text-sm font-medium text-secondary">
               Bitte melde dich an oder erstelle ein Konto, um dieser Lobby
               beizutreten.
             </p>
@@ -77,13 +77,13 @@ export default function JoinPage() {
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value.toUpperCase())}
                 placeholder="z.B. A7K9P2"
-                className="font-mono uppercase"
+                className="font-mono text-base font-bold tracking-widest uppercase"
                 maxLength={16}
               />
             </Field>
 
             {preview.isLoading ? (
-              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-28 w-full" />
             ) : preview.isError && activeCode ? (
               <Alert variant="error">
                 {apiErrorMessage(preview.error, {
@@ -91,16 +91,16 @@ export default function JoinPage() {
                 })}
               </Alert>
             ) : preview.data ? (
-              <div className="space-y-3 rounded-md border border-subtle bg-surface-muted p-4">
+              <div className="brutal-shadow-sm space-y-4 rounded-md border-2 border-strong bg-cyan-subtle p-4">
                 <div className="flex items-start justify-between gap-2">
                   <div>
-                    <h2 className="font-serif text-lg font-semibold text-ink">
+                    <h2 className="font-display text-lg text-ink">
                       {preview.data.title}
                     </h2>
-                    <p className="text-xs text-secondary">
+                    <p className="font-mono text-xs font-semibold text-secondary">
                       {preview.data.gridSize}×{preview.data.gridSize} Bingo ·{" "}
                       <span className="inline-flex items-center gap-1">
-                        <Users className="size-3" aria-hidden="true" />
+                        <Users className="size-3.5" aria-hidden="true" />
                         {preview.data.playerCount} Spieler
                       </span>
                     </p>
@@ -118,10 +118,11 @@ export default function JoinPage() {
 
                 <Button
                   className="w-full"
+                  size="lg"
                   disabled={mutations.joinGame.isPending}
                   onClick={() => void handleJoin()}
                 >
-                  <Ticket className="size-4" aria-hidden="true" />
+                  <Ticket aria-hidden="true" />
                   {mutations.joinGame.isPending
                     ? "Tritt bei …"
                     : "Jetzt beitreten"}

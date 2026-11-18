@@ -10,11 +10,6 @@ export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
-/**
- * A dialog is a sheet laid over the page. The overlay darkens the desk with the ink
- * colour rather than a black scrim, so the paper underneath still reads as paper;
- * the sheet itself gets the overlay shadow because it genuinely floats.
- */
 export function DialogContent({
   className,
   children,
@@ -22,11 +17,11 @@ export function DialogContent({
 }: ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-ink/25" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-ink/55" />
       <DialogPrimitive.Content
         className={cn(
-          "paper-overlay fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2",
-          "space-y-4 rounded-md border border-subtle bg-elevated p-6",
+          "brutal-shadow-lg fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto",
+          "space-y-4 rounded-md border-[2.5px] border-strong bg-elevated p-6",
           "focus-visible:outline-none",
           className,
         )}
@@ -36,9 +31,9 @@ export function DialogContent({
         <DialogPrimitive.Close
           aria-label="Schließen"
           className={cn(
-            "absolute top-2 right-2 inline-flex size-11 items-center justify-center rounded-sm",
-            "text-secondary transition-colors hover:bg-surface-muted hover:text-ink",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+            "absolute top-3 right-3 inline-flex size-11 cursor-pointer items-center justify-center rounded-sm border-2 border-control bg-surface",
+            "text-ink transition-colors hover:bg-primary hover:text-primary-foreground",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
           )}
         >
           <X className="size-4" />
@@ -49,14 +44,14 @@ export function DialogContent({
 }
 
 export function DialogHeader({ className, ...props }: ComponentProps<"div">) {
-  return <div className={cn("space-y-1 pr-10", className)} {...props} />;
+  return <div className={cn("space-y-1 pr-12", className)} {...props} />;
 }
 
 export function DialogFooter({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex flex-col-reverse gap-2 border-t border-subtle pt-4 sm:flex-row sm:justify-end",
+        "flex flex-col-reverse gap-2 border-t-2 border-strong pt-4 sm:flex-row sm:justify-end",
         className,
       )}
       {...props}
@@ -64,7 +59,6 @@ export function DialogFooter({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-/** The sheet's title: the logbook's hand, same face as a card title. */
 export function DialogTitle({
   className,
   ...props
@@ -72,7 +66,7 @@ export function DialogTitle({
   return (
     <DialogPrimitive.Title
       className={cn(
-        "font-serif text-[17px] leading-snug font-semibold tracking-tight",
+        "font-display text-lg leading-snug tracking-tight text-ink",
         className,
       )}
       {...props}
@@ -86,7 +80,7 @@ export function DialogDescription({
 }: ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
-      className={cn("text-[13px] text-secondary", className)}
+      className={cn("text-sm text-secondary", className)}
       {...props}
     />
   );

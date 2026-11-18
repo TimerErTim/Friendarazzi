@@ -9,10 +9,9 @@ export const DropdownMenu = DropdownMenuPrimitive.Root;
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger;
 export const DropdownMenuGroup = DropdownMenuPrimitive.Group;
 
-/** A menu is a small sheet torn off the page: a hairline, a border, and it floats. */
 export function DropdownMenuContent({
   className,
-  sideOffset = 4,
+  sideOffset = 6,
   ...props
 }: ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
@@ -20,7 +19,7 @@ export function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
         className={cn(
-          "paper-overlay z-50 min-w-40 overflow-hidden rounded-md border border-subtle bg-elevated p-1",
+          "brutal-shadow z-50 min-w-44 overflow-hidden rounded-md border-2 border-strong bg-elevated p-1",
           className,
         )}
         {...props}
@@ -37,11 +36,8 @@ export function DropdownMenuItem({
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        // A menu item is defined by its padding, not a fixed height: 8 + 20 + 8 = 36
-        // drawn, so `min-h-11` gives it a real 44px target without an overlay. A
-        // menu is a stack, so an overlay would also overlap its neighbours.
-        "relative flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-2 py-2 text-sm text-ink select-none",
-        "focus:bg-surface-muted focus-visible:outline-none",
+        "relative flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-2.5 py-2 text-sm font-semibold text-ink select-none",
+        "focus:bg-primary focus:text-primary-foreground focus-visible:outline-none",
         "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
         inset && "pl-8",
         className,
@@ -51,7 +47,6 @@ export function DropdownMenuItem({
   );
 }
 
-/** A menu's section heading: tracked caps, like a label on a form. */
 export function DropdownMenuLabel({
   className,
   ...props
@@ -59,7 +54,7 @@ export function DropdownMenuLabel({
   return (
     <DropdownMenuPrimitive.Label
       className={cn(
-        "px-2 py-1.5 text-[10px] font-semibold tracking-[0.09em] text-secondary uppercase",
+        "px-2.5 py-1.5 text-[11px] font-bold tracking-[0.07em] text-secondary uppercase",
         className,
       )}
       {...props}
@@ -73,7 +68,7 @@ export function DropdownMenuSeparator({
 }: ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
   return (
     <DropdownMenuPrimitive.Separator
-      className={cn("-mx-1 my-1 h-px bg-subtle", className)}
+      className={cn("-mx-1 my-1 h-0.5 bg-strong", className)}
       {...props}
     />
   );

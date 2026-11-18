@@ -5,25 +5,18 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 /**
- * Buttons, in the order the logbook uses them.
+ * Neubrutalist tactile buttons: heavy contour, hard offset shadow, and active
+ * press depression (`translate(2px, 2px)`).
  *
- * `primary` is the one action a screen exists for: solid hunter green, paper-white
- * label. `secondary` is the quiet alternative next to it — a hairline that only
- * becomes present on hover, exactly as a printed form's second button behaves.
- * `ghost` is an inline action inside content. `destructive` is a hairline in the
- * failure red, never a solid red block: deleting a record is not the point of the
- * page.
- *
- * Corners are `rounded-sm` (4px). Nothing here is a pill; the paper is angular and
- * the shape is not decoration.
+ * `primary` uses Electric Yellow with stark ink text (15.3:1 contrast) and is the
+ * one dominant CTA per screen. `secondary` is crisp surface paper with a bold
+ * contour. `ghost` stays flat until hovered. `destructive` is outlined in impact red.
  */
 const buttonVariants = cva(
   [
-    // `relative` is part of the base because every size but `lg` reaches the touch
-    // minimum through a `before` overlay, never by drawing taller than its row.
-    "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-sm",
-    "text-sm font-medium whitespace-nowrap transition-colors",
-    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+    "relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-sm",
+    "text-sm font-bold tracking-tight whitespace-nowrap",
+    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
     "disabled:cursor-not-allowed disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   ].join(" "),
@@ -31,33 +24,19 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-primary text-primary-foreground hover:bg-primary-hover active:bg-primary-hover",
+          "brutal-press border-2 border-control bg-primary text-primary-foreground hover:bg-primary-hover",
         secondary:
-          "border border-strong bg-elevated text-ink hover:border-ink/40 hover:bg-surface-muted",
-        ghost: "text-ink hover:bg-surface-muted",
+          "brutal-press border-2 border-control bg-surface text-ink hover:bg-surface-muted",
+        ghost:
+          "border-2 border-transparent text-ink transition-colors hover:border-control hover:bg-surface-muted",
         destructive:
-          "border border-impact/40 bg-transparent text-impact hover:border-impact hover:bg-impact/10",
+          "brutal-press border-2 border-impact bg-surface text-impact hover:bg-impact/10",
       },
       size: {
-        // The touch minimum is the *hit area*, never the drawn box. Two traps make a
-        // naive `-inset-y` overlay a lie:
-        //   1. `inset` resolves against the padding box, so a 1px border silently
-        //      shrinks the pseudo box by 2px.
-        //   2. `inset-y` alone leaves `left/right: auto`, so the box collapses to
-        //      zero width in a flex container and nothing is hit-testable at all.
-        // Hence `inset-x-0` plus an inset sized for a *contoured* control; the
-        // horizontal inset stays 0 so a button never steals a neighbour's taps.
-        sm: "h-8 px-2.5 text-[13px] before:absolute before:inset-x-0 before:-inset-y-[8px] before:content-['']",
-        md: "h-10 px-4 before:absolute before:inset-x-0 before:-inset-y-[4px] before:content-['']",
-        // The full 44px touch minimum, drawn as such.
-        lg: "h-11 px-6 text-base",
-        // The height of a field, not of a button: `Input`, `Select`, and `Textarea`
-        // are replaced elements drawn at 44px, so a button in a `FormRow` has to be
-        // drawn at the same height to sit on the same line. No overlay — it is
-        // already the touch minimum.
+        sm: "h-8 px-3 text-xs before:absolute before:inset-x-0 before:-inset-y-[9px] before:content-['']",
+        md: "h-10 px-4 before:absolute before:inset-x-0 before:-inset-y-[5px] before:content-['']",
+        lg: "h-12 px-6 text-base",
         field: "h-11 px-4",
-        // Drawn at `md` size so it aligns with its neighbours; the hit area grows on
-        // both axes, since an icon is not wide enough to reach 44 on its own.
         icon: "size-10 before:absolute before:-inset-[5px] before:content-['']",
       },
     },

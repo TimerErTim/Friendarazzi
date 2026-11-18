@@ -35,34 +35,34 @@ export function PhotoLightbox({
               ? "Verpixelter Teaser"
               : (capture.promptText ?? "Beweisfoto")}
           </DialogTitle>
-          <DialogDescription className="flex items-center gap-1.5 tabular-nums">
+          <DialogDescription className="flex items-center gap-1.5 font-mono text-xs tabular-nums">
             <Clock className="size-3.5" aria-hidden="true" />
             {new Date(capture.capturedAt).toLocaleString("de-AT")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="overflow-hidden rounded-md border border-subtle bg-surface-muted">
-          <AuthenticatedImage
-            storageKey={
-              capture.isBlurred
-                ? capture.thumbnailStorageKey
-                : (capture.imageStorageKey ?? capture.thumbnailStorageKey)
-            }
-            alt={capture.promptText ?? "Beweisfoto"}
-            blurred={capture.isBlurred}
-            className="max-h-[60vh] w-full object-contain"
-          />
+        {/* Polaroid frame around the photo */}
+        <div className="brutal-shadow-sm rounded-md border-[2.5px] border-strong bg-surface p-2">
+          <div className="overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
+            <AuthenticatedImage
+              storageKey={
+                capture.isBlurred
+                  ? capture.thumbnailStorageKey
+                  : (capture.imageStorageKey ?? capture.thumbnailStorageKey)
+              }
+              alt={capture.promptText ?? "Beweisfoto"}
+              blurred={capture.isBlurred}
+              className="max-h-[60vh] w-full object-contain"
+            />
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-subtle pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-strong pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <PlayerBadgeLink user={capture.catcher} compact subtitle="Fänger" />
             {capture.target ? (
               <>
-                <ArrowRight
-                  className="size-4 text-secondary"
-                  aria-hidden="true"
-                />
+                <ArrowRight className="size-4 text-ink" aria-hidden="true" />
                 <PlayerBadgeLink
                   user={capture.target}
                   compact

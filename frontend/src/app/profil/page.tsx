@@ -17,11 +17,11 @@ import { UserGalleryTabs } from "@/components/friendarazzi/user-gallery-tabs";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { StickerBand } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { HatchBand } from "@/components/ui/paper-rule";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -68,7 +68,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-4xl space-y-6 p-4 sm:p-6">
       <PageHeader
         register={["Konto", "Profil"]}
         title="Mein Profil"
@@ -82,33 +82,29 @@ export default function ProfilePage() {
         </div>
       ) : (
         <>
-          {/* Prestige & Avatar Card */}
-          <Card>
+          <Card className="bg-primary-subtle">
             <CardContent className="flex flex-wrap items-center justify-between gap-6 pt-6">
               <div className="flex items-center gap-4">
                 <PlayerAvatar user={profile} size="lg" linkToProfile={false} />
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-serif text-xl font-semibold text-ink">
+                    <h2 className="font-display text-xl tracking-tight text-ink">
                       {profile.displayName}
                     </h2>
-                    <Badge variant="warning" className="gap-1">
-                      <Award
-                        className="size-3.5 text-warning"
-                        aria-hidden="true"
-                      />
+                    <Badge variant="primary" className="gap-1">
+                      <Award className="size-3.5" aria-hidden="true" />
                       {profile.goldMedalCount} Goldmedaillen
                     </Badge>
-                    <Badge variant="primary">{profile.effectiveTitle}</Badge>
+                    <Badge variant="info">{profile.effectiveTitle}</Badge>
                   </div>
-                  <p className="text-xs text-secondary tabular-nums">
+                  <p className="font-mono text-xs font-semibold text-secondary tabular-nums">
                     {profile.gamesPlayed} Spiele · {profile.capturesMade} Fotos
                     geschossen · {profile.timesCaught}× erwischt
                   </p>
                 </div>
               </div>
 
-              <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border border-strong bg-elevated px-4 text-sm font-medium text-ink transition-colors hover:bg-surface-muted">
+              <label className="brutal-press inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border-2 border-control bg-surface px-4 text-sm font-bold text-ink hover:bg-surface-muted">
                 <Camera className="size-4" aria-hidden="true" />
                 {mutations.uploadAvatar.isPending
                   ? "Lädt hoch …"
@@ -124,7 +120,6 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Edit Profile Card */}
           <Card>
             <CardHeader>
               <CardTitle>Profil bearbeiten</CardTitle>
@@ -190,11 +185,10 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          <HatchBand />
+          <StickerBand checker />
 
-          {/* Native Phone-Style Caught / Captured Photo Tabs */}
           <section className="space-y-3">
-            <h2 className="font-serif text-lg font-semibold text-ink">
+            <h2 className="font-display text-lg tracking-tight text-ink">
               Fotomomente
             </h2>
             <UserGalleryTabs

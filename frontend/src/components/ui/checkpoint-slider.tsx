@@ -3,19 +3,11 @@
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import { cn } from "@/lib/cn";
 
-/**
- * A named checkpoint on the track. `farbe` is a colour supplied by the caller, not
- * a design token, so it is rendered as given.
- */
 export type Checkpoint = {
   id: string;
-  /** Position on the value scale. */
   wert: number;
-  /** Caller-supplied band colour, for example `#3f6b8a`. */
   farbe: string;
-  /** Name announced when this checkpoint is nearest to the thumb. */
   label: string;
-  /** Compact annotation drawn at this checkpoint's track position. */
   anzeige?: string;
 };
 
@@ -27,27 +19,13 @@ type CheckpointSliderProps = {
   min: number;
   max: number;
   step?: number;
-  /** Accessible name of the slider. */
   label: string;
-  /** Unit appended to the read-out and to `aria-valuetext`. */
   einheit?: string;
   disabled?: boolean;
-  /** Keep the scale interactive while hiding an unresolvable value's thumb. */
   thumbHidden?: boolean;
   className?: string;
 };
 
-/**
- * Continuous slider whose track is divided into the coloured bands between
- * master-data checkpoints, like the stop bar of a colour picker.
- *
- * The thumb moves freely: the value is a distance, not a stake, so it must not snap.
- * Bands and tick marks are decoration; the thumb announces the distance plus the
- * nearest stake, so the control is usable without seeing the colours.
- *
- * The band between two stakes carries the colour of the stake below it, which makes
- * each band mean "from this stake up to the next one".
- */
 export function CheckpointSlider({
   checkpoints,
   value,
@@ -63,22 +41,10 @@ export function CheckpointSlider({
   className,
 }: CheckpointSliderProps) {
   const span = max - min;
-
   const sorted = [...checkpoints].sort((a, b) => a.wert - b.wert);
   const position = (wert: number) =>
     span === 0 ? 0 : Math.min(100, Math.max(0, ((wert - min) / span) * 100));
 
-  /*
-   * The track is a colour ramp through the stake colours, not a row of flat bands:
-   * the gradient blends from one stake to the next, the way a colour-picker stop
-   * bar does. Before the first stake and after the last one the ramp holds that
-   * stake's colour, so the track never ends in an unrelated hue.
-   *
-   * Positions come from each stake's `wert`, so unevenly spaced Pflöcke produce
-   * unevenly wide sections. With no stake the track stays plain `secondary`; the
-   * control still works, because the distance is the value and the stakes are only
-   * a reference.
-   */
   const farbe =
     sorted.length === 0
       ? "var(--bg-surface-muted)"
@@ -90,33 +56,31 @@ export function CheckpointSlider({
           `${sorted[sorted.length - 1]?.farbe} 100%`,
         ].join(", ")})`;
 
-  const nächster = sorted.reduce<Checkpoint | null>((bisher, eintrag) => {
-    if (!bisher) {
-      return eintrag;
-    }
-    return Math.abs(eintrag.wert - value) < Math.abs(bisher.wert - value)
-      ? eintrag
-      : bisher;
+  const nearest = sorted.reduce<Checkpoint | null>((best, entry) => {
+    if (!best) return entry;
+    return Math.abs(entry.wert - value) < Math.abs(best.wert - value)
+      ? entry
+      : best;
   }, null);
 
-  const einheitText = einheit ? ` ${einheit}` : "";
-  const wertText = `${value}${einheitText}`;
-  const valuetext = nächster
-    ? `${wertText}, nächster Pflock ${nächster.label}`
-    : wertText;
+  const unitText = einheit ? ` ${einheit}` : "";
+  const valueText = `${value}${unitText}`;
+  const valuetext = nearest
+    ? `${valueText}, nächster Punkt ${nearest.label}`
+    : valueText;
 
   return (
     <div className={cn("w-full", className)}>
       <div className="relative h-5">
-        {sorted.map((eintrag) =>
-          eintrag.anzeige ? (
+        {sorted.map((entry) =>
+          entry.anzeige ? (
             <span
-              key={eintrag.id}
+              key={entry.id}
               aria-hidden="true"
-              className="absolute -translate-x-1/2 whitespace-nowrap text-xs tabular-nums text-secondary"
-              style={{ left: `${position(eintrag.wert)}%` }}
+              className="absolute -translate-x-1/2 font-mono text-xs whitespace-nowrap text-secondary tabular-nums"
+              style={{ left: `${position(entry.wert)}%` }}
             >
-              {eintrag.anzeige}
+              {entry.anzeige}
             </span>
           ) : null,
         )}
@@ -129,35 +93,27 @@ export function CheckpointSlider({
         disabled={disabled}
         value={[value]}
         onValueChange={([next]) => {
-          if (typeof next === "number") {
-            onValueChange(next);
-          }
+          if (typeof next === "number") onValueChange(next);
         }}
         onValueCommit={([next]) => {
-          if (typeof next === "number") {
-            onValueCommit?.(next);
-          }
+          if (typeof next === "number") onValueCommit?.(next);
         }}
         min={min}
         max={max}
         step={step}
       >
-        <SliderPrimitive.Track className="relative h-3 w-full grow overflow-hidden rounded-sm border border-subtle">
+        <SliderPrimitive.Track className="relative h-3.5 w-full grow overflow-hidden rounded-sm border-2 border-control">
           <span
             aria-hidden="true"
             className="absolute inset-0"
             style={{ background: farbe }}
           />
-          {/*
-            Stops are drawn in the foreground colour, not in white: a stake colour
-            may be pale (Weiß) or saturated (Rot), and the tick has to survive both.
-          */}
           <span aria-hidden="true" className="absolute inset-0">
-            {sorted.map((eintrag) => (
+            {sorted.map((entry) => (
               <span
-                key={eintrag.id}
-                className="absolute top-0 h-full w-px bg-ink/40"
-                style={{ left: `${position(eintrag.wert)}%` }}
+                key={entry.id}
+                className="absolute top-0 h-full w-0.5 bg-strong"
+                style={{ left: `${position(entry.wert)}%` }}
               />
             ))}
           </span>
@@ -168,14 +124,10 @@ export function CheckpointSlider({
           tabIndex={thumbHidden ? -1 : undefined}
           className={cn(
             thumbHidden && "invisible",
-            // The same round, inked bullet as `Slider`, so both sliders read alike.
-            // The contour is ink rather than primary: the track underneath is a ramp
-            // of caller-supplied stake colours, and ink survives every one of them.
-            "relative block size-5 cursor-grab rounded-full border-2 border-ink bg-surface",
-            "after:absolute after:inset-0 after:m-auto after:size-1.5 after:rounded-full",
-            "after:bg-ink after:content-['']",
+            "brutal-shadow-sm relative block size-5 cursor-grab rounded-full border-2 border-control bg-surface",
+            "after:absolute after:inset-0 after:m-auto after:size-2 after:rounded-full after:bg-ink after:content-['']",
             "before:absolute before:-inset-[16px] before:content-['']",
-            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
             "active:cursor-grabbing disabled:pointer-events-none disabled:cursor-not-allowed",
           )}
         />

@@ -7,13 +7,14 @@ import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 
 import { ApiError, apiErrorMessage } from "@/api/errors";
 import { useAuthMutations } from "@/api/hooks";
+import { Wordmark } from "@/components/brand/wordmark";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
+import { StickerBand } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { HatchBand } from "@/components/ui/paper-rule";
 import { PasswordInput } from "@/components/ui/password-input";
 
 const PASSWORD_MIN = 8;
@@ -23,20 +24,11 @@ function useMailToken() {
   return useSearchParams().get("token") ?? "";
 }
 
-/** The password policy of the domain, counted in characters, not bytes. */
 function passwordWithinPolicy(password: string) {
   const length = Array.from(password).length;
   return length >= PASSWORD_MIN && length <= PASSWORD_MAX;
 }
 
-/**
- * Where a failure belongs.
- *
- * A form's own submission error is printed on the sheet, immediately above the
- * action that caused it: wrong credentials, a throttled request, a refused write.
- * A failure of the *page* — the confirmation or recovery link in the URL is spent —
- * sits above the sheet, because no re-submission of the same form can fix it.
- */
 type AuthFailure = {
   scope: "form" | "page";
   message: string;
@@ -46,7 +38,6 @@ type AuthFailureMessages = {
   unauthorized?: string;
   badRequest?: string;
   tooManyRequests?: string;
-  /** A `400` the browser cannot cause: the mailed link is spent. */
   invalidLink?: string;
   fallback: string;
 };
@@ -56,8 +47,6 @@ function authFailure(
   messages: AuthFailureMessages,
 ): AuthFailure | null {
   if (!error) return null;
-  // The password policy is checked in the browser, so a refused submission with a
-  // policy-conforming password can only be a spent link.
   if (
     messages.invalidLink &&
     error instanceof ApiError &&
@@ -95,24 +84,11 @@ function AuthAlert({
 type AuthPageProps = {
   title: string;
   description: ReactNode;
-  /** A failure of the page as a whole, printed above the sheet. */
   pageError?: string | null;
-  /** The page's links; `HatchBand` closes the page before them. */
   footer?: ReactNode;
   children: ReactNode;
 };
 
-/**
- * The frame of an auth page: a narrow column of the logbook.
- *
- * Signing in is one sheet with a handful of lines, so the page is a single narrow
- * column and the title block shares the sheet's measure. A full-width open page
- * would leave the header floating above a small card.
- *
- * The footer is the page's own register line, closed by the hachure wall — the
- * documented break before a footer. It is rendered once and *only* when it has
- * links, so no page ends in a rule followed by nothing.
- */
 function AuthPage({
   title,
   description,
@@ -122,8 +98,12 @@ function AuthPage({
 }: AuthPageProps) {
   return (
     <div className="mx-auto w-full max-w-md space-y-6 p-6">
+      <div className="flex justify-center py-2">
+        <Wordmark size="md" showMark />
+      </div>
+
       <PageHeader
-        register={["Konto"]}
+        register={["Konto", "Zugang"]}
         title={title}
         description={description}
       />
@@ -134,8 +114,8 @@ function AuthPage({
 
       {footer ? (
         <>
-          <HatchBand dense height="md" />
-          <footer className="flex flex-col gap-1 text-sm text-secondary">
+          <StickerBand checker height="sm" />
+          <footer className="flex flex-col gap-1 text-sm font-medium text-secondary">
             {footer}
           </footer>
         </>
@@ -148,7 +128,7 @@ function AuthLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link
       href={href}
-      className="inline-flex min-h-11 items-center rounded-sm text-ink underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      className="inline-flex min-h-11 items-center rounded-sm font-bold text-ink underline decoration-2 underline-offset-4 hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
     >
       {children}
     </Link>
@@ -194,7 +174,7 @@ export function LoginPage() {
       }
     >
       <Card>
-        <CardContent>
+        <CardContent className="pt-6">
           <form className="space-y-5" onSubmit={submit}>
             <Field label="E-Mail-Adresse">
               <Input
@@ -244,9 +224,6 @@ export function RegistrationPage() {
   const [sent, setSent] = useState(false);
   const finishing = Boolean(token);
 
-  // Compared once per keystroke of either field, never per render: the two values
-  // are the only inputs, so `useMemo` is the whole of the check. The message waits
-  // until both fields have something in them, so it does not fire on the first key.
   const mismatch = useMemo(
     () =>
       password.length > 0 &&
@@ -264,7 +241,6 @@ export function RegistrationPage() {
   });
 
   const finishFailure = authFailure(auth.registerFinish.error, {
-    // A `400` for a policy-conforming password is a spent confirmation link.
     invalidLink: passwordWithinPolicy(password)
       ? "Der Bestätigungslink ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen Link an."
       : undefined,
@@ -282,8 +258,6 @@ export function RegistrationPage() {
 
   function finish(event: FormEvent) {
     event.preventDefault();
-    // Belt and braces: the button is disabled while the two differ, and nothing but
-    // the chosen password ever reaches the request.
     if (mismatch) return;
     auth.registerFinish.mutate(
       { token, passwort: password },
@@ -317,7 +291,7 @@ export function RegistrationPage() {
       }
     >
       <Card>
-        <CardContent>
+        <CardContent className="pt-6">
           {!finishing ? (
             <form className="space-y-5" onSubmit={start}>
               <Field
@@ -474,7 +448,7 @@ export function PasswordPage() {
       }
     >
       <Card>
-        <CardContent>
+        <CardContent className="pt-6">
           {!resetting ? (
             <form className="space-y-5" onSubmit={request}>
               <Field

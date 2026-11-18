@@ -106,7 +106,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             alertVariants({
               variant: toast.tone === "error" ? "error" : "success",
             }),
-            "paper-overlay pointer-events-auto w-fit max-w-full",
+            "brutal-shadow-lg pointer-events-auto w-fit max-w-full",
           );
           const content = (
             <>

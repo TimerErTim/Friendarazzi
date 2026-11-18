@@ -27,11 +27,11 @@ const PALETTE =
   /\b(?:bg|text|border|from|to|via|ring|outline|divide|placeholder|fill|stroke|accent|caret)-(?:zinc|gray|slate|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/;
 
 /**
- * The shadcn-era names this system replaced. `text-primary` is deliberately absent:
- * it is the brand colour now, and ink is `text-ink`.
+ * Retired shadcn-era and Sleek Paperstyle names replaced by the neubrutalist system.
+ * `text-primary` is deliberately absent; ink is `text-ink`.
  */
 const LEGACY =
-  /\b(?:bg|text|border|from|to|via|ring|outline|divide|placeholder|fill|stroke|accent|caret|decoration)-(?:foreground|background|muted-foreground|destructive|surface-elevated|placeholder|border-strong|contour|border|ring)\b|\bborder-border\b/;
+  /\b(?:bg|text|border|from|to|via|ring|outline|divide|placeholder|fill|stroke|accent|caret|decoration)-(?:foreground|background|muted-foreground|destructive|surface-elevated|placeholder|border-strong|contour|border|ring)\b|\bborder-border\b|\b(?:rule-ticks|rule-ticks-quiet|dog-ear|ruler-edge|millimetre-grid|paper-overlay|paper-rule)\b/;
 
 const failures = [];
 

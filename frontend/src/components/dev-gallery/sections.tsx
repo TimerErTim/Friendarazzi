@@ -83,7 +83,7 @@ export function ButtonSection() {
       id="button"
       index="06"
       title="Button"
-      description="Genau eine primäre Aktion pro Bildschirm. Sie ist die einzige gefüllte Fläche in Jägergrün; alles daneben bleibt Kontur. Destruktives steht nie vorne."
+      description="Genau eine primäre Aktion pro Bildschirm: Elektrogelb mit starker Kontur und hartem Schatten. Alles daneben bleibt Fläche oder Kontur."
     >
       <Example caption="Varianten">
         <Button>Erfassen</Button>
@@ -175,7 +175,7 @@ export function CardSection() {
       id="card"
       index="09"
       title="Card"
-      description="Ein Blatt Papier: Haarlinie, ein Hauch Schatten, ein Titelblock mit Trennlinie. Der Titel steht in Lora, alles andere in Inter."
+      description="Eine Sticker-Karte: starke Kontur, harter Schatten, Titelblock in Archivo Black."
     >
       <Card>
         <CardHeader>
@@ -209,7 +209,7 @@ export function FormSection() {
       id="form"
       index="10"
       title="Formular"
-      description="Flache Felder mit feiner Kontur, die bei Fokus nach Jägergrün wechselt. Jedes Feld hat ein sichtbares Label; Fehler stehen darunter und ersetzen den Hinweis."
+      description="Kontraststarke Felder mit fester 44-px-Höhe und harter Kontur. Fehler ersetzen den Hinweis direkt unter dem Feld."
     >
       <Field label="Referenz" hint="Kurze Kennung des Eintrags">
         <Input defaultValue="Ref. 12" />
@@ -425,8 +425,8 @@ export function MiscSection() {
     >
       <div className="space-y-3">
         <p className="text-sm">
-          Fließtext in Inter. Die Zeile bleibt bei etwa 68 Zeichen, damit das
-          Auge den nächsten Satz findet.
+          Fließtext in Space Grotesk. Die Zeile bleibt bei etwa 68 Zeichen,
+          damit das Auge den nächsten Satz findet.
         </p>
         <p className="text-sm text-secondary">
           Nebentext für Hinweise, Einheiten und Zeitstempel.

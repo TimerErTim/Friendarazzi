@@ -1,11 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
 import { useAuthMutations } from "@/api/hooks";
-import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { paths } from "@/lib/navigation";
 
 export default function OptionsPage() {
   const phase = useAuth();
@@ -52,12 +53,20 @@ export default function OptionsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 p-4 sm:p-6">
-      <PageHeader
-        register={["Konto", "Einstellungen"]}
-        title="Optionen"
-        description="Weitere Kontooptionen folgen bei Bedarf."
-      />
+    <div className="mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
+            Konto-Optionen
+          </h1>
+          <p className="text-sm font-medium text-secondary">
+            Verwalte deinen Account und deine Sitzung.
+          </p>
+        </div>
+        <Button variant="secondary" size="sm" asChild>
+          <Link href={paths.profil}>Zum Profil</Link>
+        </Button>
+      </div>
 
       <Card>
         <CardHeader className="bg-impact/10">

@@ -74,6 +74,37 @@ export function userProfileHref(userId: string): string {
   return `${paths.users}?id=${encodeURIComponent(userId)}`;
 }
 
+export const primaryNavItems: NavItem[] = [
+  {
+    id: "home",
+    label: "Lobbys",
+    href: paths.home,
+    icon: Home,
+    recursive: false,
+  },
+  {
+    id: "games",
+    label: "Match",
+    href: paths.games,
+    icon: Camera,
+    recursive: true,
+  },
+  {
+    id: "join",
+    label: "Beitreten",
+    href: paths.join,
+    icon: Ticket,
+    recursive: true,
+  },
+  {
+    id: "profil",
+    label: "Profil",
+    href: paths.profil,
+    icon: UserRound,
+    recursive: true,
+  },
+];
+
 export const sidebarCategories: NavCategory[] = [
   {
     label: "Friendarazzi",

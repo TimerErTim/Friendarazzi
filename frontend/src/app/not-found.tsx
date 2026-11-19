@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { PageHeader } from "@/components/layout/page-header";
 import { CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -50,19 +49,21 @@ export default function NotFoundPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-6 p-4 sm:p-6">
-      <PageHeader
-        register={["Friendarazzi", "Fehler"]}
-        title="Seite nicht gefunden"
-        plate="404"
-        description="Diese Seite existiert nicht oder wurde verschoben."
-      />
+    <div className="mx-auto flex w-full max-w-lg flex-col justify-center px-4 py-16">
       <Card>
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 pt-6">
+        <CardContent className="space-y-4 pt-6 text-center">
           <CodeTag tone="pink">HTTP 404</CodeTag>
-          <Button asChild>
-            <Link href={paths.home}>Zur Startseite</Link>
-          </Button>
+          <h1 className="font-display text-3xl tracking-tight text-ink">
+            Seite nicht gefunden
+          </h1>
+          <p className="text-sm font-medium text-secondary">
+            Diese Seite existiert nicht oder wurde verschoben.
+          </p>
+          <div className="pt-2">
+            <Button size="lg" asChild>
+              <Link href={paths.home}>Zur Startseite</Link>
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

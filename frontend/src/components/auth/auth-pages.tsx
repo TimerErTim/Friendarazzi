@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, CircleAlert } from "lucide-react";
+import { Camera, CheckCircle2, CircleAlert, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
@@ -8,14 +8,14 @@ import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { ApiError, apiErrorMessage } from "@/api/errors";
 import { useAuthMutations } from "@/api/hooks";
 import { Wordmark } from "@/components/brand/wordmark";
-import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
-import { StickerBand } from "@/components/ui/brutal-elements";
+import { SparkleIcon } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
+import { cn } from "@/lib/cn";
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
@@ -81,7 +81,8 @@ function AuthAlert({
   );
 }
 
-type AuthPageProps = {
+type AuthStudioProps = {
+  mode: "login" | "register" | "password";
   title: string;
   description: ReactNode;
   pageError?: string | null;
@@ -89,37 +90,115 @@ type AuthPageProps = {
   children: ReactNode;
 };
 
-function AuthPage({
+/**
+ * Two-column neubrutalist Auth Studio: vibrant campaign poster on the left,
+ * focused card with mode switcher on the right (no paper dividers).
+ */
+function AuthStudio({
+  mode,
   title,
   description,
   pageError,
   footer,
   children,
-}: AuthPageProps) {
+}: AuthStudioProps) {
   return (
-    <div className="mx-auto w-full max-w-md space-y-6 p-6">
-      <div className="flex justify-center py-2">
-        <Wordmark size="md" showMark />
+    <div className="mx-auto flex w-full max-w-5xl items-center px-4 py-8 sm:px-6 lg:py-14">
+      <div className="grid w-full items-stretch gap-6 lg:grid-cols-[0.95fr_1.05fr]">
+        {/* Left Campaign Poster */}
+        <aside className="brutal-shadow-lg hidden flex-col justify-between rounded-md border-[2.5px] border-strong bg-primary p-8 text-primary-foreground lg:flex">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <span className="rounded-sm border-2 border-strong bg-surface px-2.5 py-1 font-mono text-xs font-bold text-ink uppercase">
+                Photo-Hunt Bingo
+              </span>
+              <SparkleIcon tone="accent" />
+            </div>
+
+            <div className="space-y-3">
+              <Wordmark size="lg" />
+              <p className="font-display text-2xl leading-tight uppercase">
+                Schnapp deine Freunde in flagranti!
+              </p>
+              <p className="text-sm font-bold">
+                Erstelle eine Lobby, würfle Aufträge und hol dir die
+                Goldmedaille direkt im Browser.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-8 grid grid-cols-2 gap-3">
+            <div className="brutal-shadow-sm -rotate-2 rounded-sm border-2 border-strong bg-surface p-2.5 text-ink">
+              <div className="flex aspect-video items-center justify-center rounded-sm border-2 border-strong bg-cyan-subtle">
+                <Camera className="size-7 text-ink" aria-hidden="true" />
+              </div>
+              <p className="mt-2 font-mono text-[11px] font-bold uppercase">
+                Tap to Capture
+              </p>
+            </div>
+            <div className="brutal-shadow-sm rotate-2 rounded-sm border-2 border-strong bg-surface p-2.5 text-ink">
+              <div className="flex aspect-video items-center justify-center rounded-sm border-2 border-strong bg-pink-subtle">
+                <Sparkles className="size-7 text-ink" aria-hidden="true" />
+              </div>
+              <p className="mt-2 font-mono text-[11px] font-bold uppercase">
+                Undercover Mode
+              </p>
+            </div>
+          </div>
+        </aside>
+
+        {/* Right Form Card */}
+        <div className="flex flex-col justify-center space-y-5">
+          {mode !== "password" ? (
+            <nav
+              aria-label="Anmeldeart wählen"
+              className="brutal-shadow-sm grid grid-cols-2 gap-1 rounded-md border-2 border-strong bg-surface-muted p-1"
+            >
+              <Link
+                href="/anmeldung"
+                className={cn(
+                  "flex min-h-11 items-center justify-center rounded-sm border-2 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                  mode === "login"
+                    ? "border-strong bg-primary text-primary-foreground"
+                    : "border-transparent text-ink hover:bg-surface",
+                )}
+              >
+                Anmelden
+              </Link>
+              <Link
+                href="/registrierung"
+                className={cn(
+                  "flex min-h-11 items-center justify-center rounded-sm border-2 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                  mode === "register"
+                    ? "border-strong bg-primary text-primary-foreground"
+                    : "border-transparent text-ink hover:bg-surface",
+                )}
+              >
+                Registrieren
+              </Link>
+            </nav>
+          ) : null}
+
+          <div className="space-y-1.5">
+            <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
+              {title}
+            </h1>
+            <p className="text-sm font-medium text-secondary">{description}</p>
+          </div>
+
+          {pageError ? <AuthAlert variant="error" message={pageError} /> : null}
+
+          <Card>
+            <CardContent className="pt-6">{children}</CardContent>
+          </Card>
+
+          {footer ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-secondary">
+              {footer}
+            </div>
+          ) : null}
+        </div>
       </div>
-
-      <PageHeader
-        register={["Konto", "Zugang"]}
-        title={title}
-        description={description}
-      />
-
-      {pageError ? <AuthAlert variant="error" message={pageError} /> : null}
-
-      {children}
-
-      {footer ? (
-        <>
-          <StickerBand checker height="sm" />
-          <footer className="flex flex-col gap-1 text-sm font-medium text-secondary">
-            {footer}
-          </footer>
-        </>
-      ) : null}
     </div>
   );
 }
@@ -128,7 +207,7 @@ function AuthLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link
       href={href}
-      className="inline-flex min-h-11 items-center rounded-sm font-bold text-ink underline decoration-2 underline-offset-4 hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      className="inline-flex min-h-11 items-center rounded-sm px-1 font-bold text-ink underline decoration-2 underline-offset-4 hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
     >
       {children}
     </Link>
@@ -158,59 +237,46 @@ export function LoginPage() {
   }
 
   return (
-    <AuthPage
-      title="Anmelden"
-      description="Melden Sie sich mit Ihrer E-Mail-Adresse und Ihrem Passwort bei Friendarazzi an."
-      footer={
-        <>
-          <p>
-            Noch kein Konto?{" "}
-            <AuthLink href="/registrierung">Registrieren</AuthLink>
-          </p>
-          <p>
-            <AuthLink href="/passwort">Passwort vergessen?</AuthLink>
-          </p>
-        </>
-      }
+    <AuthStudio
+      mode="login"
+      title="Willkommen zurück"
+      description="Melde dich mit deiner E-Mail-Adresse und deinem Passwort an."
+      footer={<AuthLink href="/passwort">Passwort vergessen?</AuthLink>}
     >
-      <Card>
-        <CardContent className="pt-6">
-          <form className="space-y-5" onSubmit={submit}>
-            <Field label="E-Mail-Adresse">
-              <Input
-                autoComplete="email"
-                type="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </Field>
+      <form className="space-y-5" onSubmit={submit}>
+        <Field label="E-Mail-Adresse">
+          <Input
+            autoComplete="email"
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </Field>
 
-            <Field label="Passwort">
-              <PasswordInput
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </Field>
+        <Field label="Passwort">
+          <PasswordInput
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </Field>
 
-            {failure?.scope === "form" ? (
-              <AuthAlert variant="error" message={failure.message} />
-            ) : null}
+        {failure?.scope === "form" ? (
+          <AuthAlert variant="error" message={failure.message} />
+        ) : null}
 
-            <Button
-              type="submit"
-              size="field"
-              className="w-full"
-              disabled={auth.login.isPending}
-            >
-              {auth.login.isPending ? "Wird angemeldet …" : "Anmelden"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </AuthPage>
+        <Button
+          type="submit"
+          size="field"
+          className="w-full"
+          disabled={auth.login.isPending}
+        >
+          {auth.login.isPending ? "Wird angemeldet …" : "Anmelden"}
+        </Button>
+      </form>
+    </AuthStudio>
   );
 }
 
@@ -266,118 +332,107 @@ export function RegistrationPage() {
   }
 
   return (
-    <AuthPage
-      title={finishing ? "Registrierung abschließen" : "Registrieren"}
+    <AuthStudio
+      mode="register"
+      title={finishing ? "Registrierung abschließen" : "Konto erstellen"}
       description={
         finishing
-          ? "Ihre E-Mail-Adresse ist bestätigt. Legen Sie jetzt das Passwort für Ihr Konto fest."
+          ? "Deine E-Mail-Adresse ist bestätigt. Lege jetzt dein Passwort fest."
           : "In zwei Schritten: Adresse bestätigen, dann Passwort festlegen."
       }
       pageError={finishFailure?.scope === "page" ? finishFailure.message : null}
       footer={
-        <>
-          <p>
-            Bereits registriert? <AuthLink href="/anmeldung">Anmelden</AuthLink>
-          </p>
-          {finishing ? (
-            <p>
-              Kein gültiger Link?{" "}
-              <AuthLink href="/registrierung">
-                Neuen Bestätigungslink anfordern
-              </AuthLink>
-            </p>
-          ) : null}
-        </>
+        finishing ? (
+          <AuthLink href="/registrierung">
+            Neuen Bestätigungslink anfordern
+          </AuthLink>
+        ) : undefined
       }
     >
-      <Card>
-        <CardContent className="pt-6">
-          {!finishing ? (
-            <form className="space-y-5" onSubmit={start}>
-              <Field
-                label="E-Mail-Adresse"
-                hint="Sie erhalten einen Link zur Bestätigung."
-              >
-                <Input
-                  autoComplete="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </Field>
+      {!finishing ? (
+        <form className="space-y-5" onSubmit={start}>
+          <Field
+            label="E-Mail-Adresse"
+            hint="Du erhältst einen Link zur Bestätigung."
+          >
+            <Input
+              autoComplete="email"
+              type="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </Field>
 
-              {sent ? (
-                <AuthAlert
-                  variant="success"
-                  message="Sie erhalten eine E-Mail mit dem Bestätigungslink."
-                />
-              ) : null}
+          {sent ? (
+            <AuthAlert
+              variant="success"
+              message="Sie erhalten eine E-Mail mit dem Bestätigungslink."
+            />
+          ) : null}
 
-              {startFailure ? (
-                <AuthAlert variant="error" message={startFailure.message} />
-              ) : null}
+          {startFailure ? (
+            <AuthAlert variant="error" message={startFailure.message} />
+          ) : null}
 
-              <Button
-                type="submit"
-                size="field"
-                className="w-full"
-                disabled={auth.registerStart.isPending}
-              >
-                {auth.registerStart.isPending
-                  ? "Wird gesendet …"
-                  : "Bestätigungslink anfordern"}
-              </Button>
-            </form>
-          ) : (
-            <form className="space-y-5" onSubmit={finish}>
-              <Field label="Passwort" hint="8 bis 128 Zeichen.">
-                <PasswordInput
-                  autoComplete="new-password"
-                  minLength={PASSWORD_MIN}
-                  maxLength={PASSWORD_MAX}
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </Field>
+          <Button
+            type="submit"
+            size="field"
+            className="w-full"
+            disabled={auth.registerStart.isPending}
+          >
+            {auth.registerStart.isPending
+              ? "Wird gesendet …"
+              : "Bestätigungslink anfordern"}
+          </Button>
+        </form>
+      ) : (
+        <form className="space-y-5" onSubmit={finish}>
+          <Field label="Passwort" hint="8 bis 128 Zeichen.">
+            <PasswordInput
+              autoComplete="new-password"
+              minLength={PASSWORD_MIN}
+              maxLength={PASSWORD_MAX}
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </Field>
 
-              <Field
-                label="Passwort bestätigen"
-                error={
-                  mismatch ? "Die Passwörter stimmen nicht überein." : undefined
-                }
-              >
-                <PasswordInput
-                  autoComplete="new-password"
-                  minLength={PASSWORD_MIN}
-                  maxLength={PASSWORD_MAX}
-                  required
-                  aria-invalid={mismatch || undefined}
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                />
-              </Field>
+          <Field
+            label="Passwort bestätigen"
+            error={
+              mismatch ? "Die Passwörter stimmen nicht überein." : undefined
+            }
+          >
+            <PasswordInput
+              autoComplete="new-password"
+              minLength={PASSWORD_MIN}
+              maxLength={PASSWORD_MAX}
+              required
+              aria-invalid={mismatch || undefined}
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+            />
+          </Field>
 
-              {finishFailure?.scope === "form" ? (
-                <AuthAlert variant="error" message={finishFailure.message} />
-              ) : null}
+          {finishFailure?.scope === "form" ? (
+            <AuthAlert variant="error" message={finishFailure.message} />
+          ) : null}
 
-              <Button
-                type="submit"
-                size="field"
-                className="w-full"
-                disabled={auth.registerFinish.isPending || mismatch}
-              >
-                {auth.registerFinish.isPending
-                  ? "Wird erstellt …"
-                  : "Konto erstellen"}
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
-    </AuthPage>
+          <Button
+            type="submit"
+            size="field"
+            className="w-full"
+            disabled={auth.registerFinish.isPending || mismatch}
+          >
+            {auth.registerFinish.isPending
+              ? "Wird erstellt …"
+              : "Konto erstellen"}
+          </Button>
+        </form>
+      )}
+    </AuthStudio>
   );
 }
 
@@ -423,100 +478,90 @@ export function PasswordPage() {
   }
 
   return (
-    <AuthPage
+    <AuthStudio
+      mode="password"
       title={resetting ? "Neues Passwort" : "Passwort wiederherstellen"}
       description={
         resetting
-          ? "Legen Sie ein neues Passwort für Ihr Konto fest."
-          : "Wir senden Ihnen einen Link, mit dem Sie ein neues Passwort festlegen."
+          ? "Lege ein neues Passwort für dein Konto fest."
+          : "Wir senden dir einen Link, mit dem du ein neues Passwort festlegst."
       }
       pageError={resetFailure?.scope === "page" ? resetFailure.message : null}
       footer={
         <>
-          <p>
-            <AuthLink href="/anmeldung">Zur Anmeldung</AuthLink>
-          </p>
+          <AuthLink href="/anmeldung">Zurück zur Anmeldung</AuthLink>
           {resetting ? (
-            <p>
-              Kein gültiger Link?{" "}
-              <AuthLink href="/passwort">
-                Neuen Wiederherstellungslink anfordern
-              </AuthLink>
-            </p>
+            <AuthLink href="/passwort">Neuen Link anfordern</AuthLink>
           ) : null}
         </>
       }
     >
-      <Card>
-        <CardContent className="pt-6">
-          {!resetting ? (
-            <form className="space-y-5" onSubmit={request}>
-              <Field
-                label="E-Mail-Adresse"
-                hint="Falls ein Konto zu dieser Adresse gehört, erhalten Sie eine E-Mail."
-              >
-                <Input
-                  autoComplete="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </Field>
+      {!resetting ? (
+        <form className="space-y-5" onSubmit={request}>
+          <Field
+            label="E-Mail-Adresse"
+            hint="Falls ein Konto zu dieser Adresse gehört, erhalten Sie eine E-Mail."
+          >
+            <Input
+              autoComplete="email"
+              type="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+          </Field>
 
-              {sent ? (
-                <AuthAlert
-                  variant="success"
-                  message="Falls ein Konto zu dieser Adresse gehört, erhalten Sie eine E-Mail mit weiteren Schritten."
-                />
-              ) : null}
+          {sent ? (
+            <AuthAlert
+              variant="success"
+              message="Falls ein Konto zu dieser Adresse gehört, erhalten Sie eine E-Mail mit weiteren Schritten."
+            />
+          ) : null}
 
-              {requestFailure ? (
-                <AuthAlert variant="error" message={requestFailure.message} />
-              ) : null}
+          {requestFailure ? (
+            <AuthAlert variant="error" message={requestFailure.message} />
+          ) : null}
 
-              <Button
-                type="submit"
-                size="field"
-                className="w-full"
-                disabled={auth.forgotPassword.isPending}
-              >
-                {auth.forgotPassword.isPending
-                  ? "Wird gesendet …"
-                  : "Wiederherstellungslink anfordern"}
-              </Button>
-            </form>
-          ) : (
-            <form className="space-y-5" onSubmit={reset}>
-              <Field label="Neues Passwort" hint="8 bis 128 Zeichen.">
-                <PasswordInput
-                  autoComplete="new-password"
-                  minLength={PASSWORD_MIN}
-                  maxLength={PASSWORD_MAX}
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </Field>
+          <Button
+            type="submit"
+            size="field"
+            className="w-full"
+            disabled={auth.forgotPassword.isPending}
+          >
+            {auth.forgotPassword.isPending
+              ? "Wird gesendet …"
+              : "Wiederherstellungslink anfordern"}
+          </Button>
+        </form>
+      ) : (
+        <form className="space-y-5" onSubmit={reset}>
+          <Field label="Neues Passwort" hint="8 bis 128 Zeichen.">
+            <PasswordInput
+              autoComplete="new-password"
+              minLength={PASSWORD_MIN}
+              maxLength={PASSWORD_MAX}
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </Field>
 
-              {resetFailure?.scope === "form" ? (
-                <AuthAlert variant="error" message={resetFailure.message} />
-              ) : null}
+          {resetFailure?.scope === "form" ? (
+            <AuthAlert variant="error" message={resetFailure.message} />
+          ) : null}
 
-              <Button
-                type="submit"
-                size="field"
-                className="w-full"
-                disabled={auth.resetPassword.isPending}
-              >
-                {auth.resetPassword.isPending
-                  ? "Wird geändert …"
-                  : "Passwort ändern"}
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
-    </AuthPage>
+          <Button
+            type="submit"
+            size="field"
+            className="w-full"
+            disabled={auth.resetPassword.isPending}
+          >
+            {auth.resetPassword.isPending
+              ? "Wird geändert …"
+              : "Passwort ändern"}
+          </Button>
+        </form>
+      )}
+    </AuthStudio>
   );
 }

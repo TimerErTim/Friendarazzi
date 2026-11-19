@@ -269,6 +269,13 @@ body {
     -8px 0;
 }
 
+/* Masking-tape strip for polaroid photo frames (inspired by the banners). */
+.tape-strip {
+  background-color: var(--bg-surface-muted);
+  border: 2px solid var(--border-strong);
+  box-shadow: 1px 1px 0 var(--shadow-ink);
+}
+
 /* Native select chevron masked so it inherits currentColor in both themes. */
 .select-chevron {
   position: relative;

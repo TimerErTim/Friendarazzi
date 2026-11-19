@@ -40,11 +40,7 @@ import {
 } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import {
-  CalloutNote,
-  CodeTag,
-  StickerBand,
-} from "@/components/ui/brutal-elements";
+import { CalloutNote, CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -57,7 +53,8 @@ import {
 } from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import { absoluteUrl, joinHref } from "@/lib/navigation";
 
@@ -76,6 +73,33 @@ export function visibilityLabel(mode: VisibilityMode): string {
       return "Blurred Teaser (verpixelt)";
   }
 }
+
+const LOBBY_GRIDS = [
+  { size: "3", title: "3 × 3", sub: "Schnell" },
+  { size: "4", title: "4 × 4", sub: "Mittel" },
+  { size: "5", title: "5 × 5", sub: "Marathon" },
+] as const;
+
+const LOBBY_MODES = [
+  {
+    mode: VisibilityMode.Undercover,
+    title: "Undercover",
+    desc: "Bis Bingo geheim",
+    icon: EyeOff,
+  },
+  {
+    mode: VisibilityMode.BlurredTeaser,
+    title: "Blurred Teaser",
+    desc: "Verpixelt ohne Ziel",
+    icon: Sparkles,
+  },
+  {
+    mode: VisibilityMode.LiveFeed,
+    title: "Live-Feed",
+    desc: "Sofort im Feed",
+    icon: Eye,
+  },
+] as const;
 
 // ------------------------------------------------------------------ Lobby Phase
 
@@ -100,6 +124,7 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
 
   const inviteUrl = absoluteUrl(joinHref(game.inviteCode));
   const canStart = game.players.length >= 3;
+  const openSlots = Math.max(0, 3 - game.players.length);
 
   function copyInvite() {
     if (typeof navigator !== "undefined" && navigator.clipboard) {
@@ -110,19 +135,16 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Invite Ticket Card */}
-      <Card>
-        <CardHeader className="bg-primary-subtle">
-          <CardTitle>Einladung teilen</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-5">
-          <div className="brutal-shadow-sm flex flex-wrap items-center justify-between gap-4 rounded-md border-2 border-strong bg-surface p-4">
+    <div className="grid items-start gap-6 lg:grid-cols-[1.05fr_0.95fr]">
+      {/* Left Column: Share Ticket + Crew Roster */}
+      <div className="space-y-6">
+        <div className="brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-surface">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-strong bg-primary p-5 text-primary-foreground">
             <div>
-              <p className="font-mono text-xs font-bold tracking-wider text-secondary uppercase">
-                Einladungscode
+              <p className="font-mono text-xs font-bold tracking-wider uppercase">
+                Freunde einladen
               </p>
-              <p className="font-mono text-3xl font-bold tracking-widest text-ink">
+              <p className="font-mono text-3xl font-bold tracking-[0.2em]">
                 {game.inviteCode}
               </p>
             </div>
@@ -130,7 +152,7 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
               {copied ? (
                 <>
                   <Check className="size-4 text-success" aria-hidden="true" />
-                  Link kopiert
+                  Link kopiert!
                 </>
               ) : (
                 <>
@@ -140,50 +162,61 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
               )}
             </Button>
           </div>
-          <p className="font-mono text-xs break-all text-secondary">
-            {inviteUrl}
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Player Roster */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2">
-            <CardTitle className="flex items-center gap-2">
-              <Users className="size-5" aria-hidden="true" />
-              Spieler ({game.players.length})
-            </CardTitle>
-            <Badge variant={canStart ? "success" : "warning"}>
-              {canStart
-                ? "Bereit (3+)"
-                : `Noch ${3 - game.players.length} nötig`}
-            </Badge>
+          <div className="bg-surface-muted px-5 py-3">
+            <p className="font-mono text-xs break-all text-secondary">
+              {inviteUrl}
+            </p>
           </div>
-        </CardHeader>
-        <CardContent className="pt-5">
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {game.players.map((player) => (
-              <li
-                key={player.id}
-                className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface-muted p-2"
-              >
-                <PlayerBadgeLink user={player} />
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Host Settings or Guest Read-Only Summary */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="size-5" aria-hidden="true" />
+                Crew ({game.players.length})
+              </CardTitle>
+              <Badge variant={canStart ? "success" : "warning"}>
+                {canStart ? "Bereit (3+)" : `Noch ${openSlots} nötig`}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-5">
+            <ul className="grid gap-3 sm:grid-cols-2">
+              {game.players.map((player) => (
+                <li
+                  key={player.id}
+                  className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface-muted p-2"
+                >
+                  <PlayerBadgeLink user={player} />
+                </li>
+              ))}
+              {["slot-1", "slot-2", "slot-3"]
+                .slice(0, openSlots)
+                .map((slotId) => (
+                  <li
+                    key={slotId}
+                    className="flex min-h-14 items-center justify-center rounded-md border-2 border-dashed border-strong bg-canvas px-3 py-2 font-mono text-xs font-bold text-secondary"
+                  >
+                    Warte auf Mitspieler …
+                  </li>
+                ))}
+            </ul>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Right Column: Host Console or Guest Rules Card */}
       <Card>
-        <CardHeader>
-          <CardTitle>Spieleinstellungen</CardTitle>
+        <CardHeader className="bg-cyan-subtle">
+          <CardTitle>
+            {isHost ? "Host-Regiepult" : "Regeln dieser Runde"}
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4 pt-5">
+        <CardContent className="space-y-5 pt-5">
           {isHost ? (
             <form
-              className="space-y-4"
+              className="space-y-5"
               onSubmit={(e) => {
                 e.preventDefault();
                 feedback.verwerfen();
@@ -203,44 +236,79 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                 );
               }}
             >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Spieltitel">
-                  <Input
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    required
-                  />
-                </Field>
-                <Field label="Rastergröße">
-                  <Select
-                    value={gridSize}
-                    onChange={(e) => setGridSize(e.target.value)}
-                  >
-                    <option value="3">3 × 3 (Schnell)</option>
-                    <option value="4">4 × 4 (Mittel)</option>
-                    <option value="5">5 × 5 (Marathon)</option>
-                  </Select>
-                </Field>
-              </div>
-
-              <Field label="Sichtbarkeitsmodus">
-                <Select
-                  value={visibilityMode}
-                  onChange={(e) =>
-                    setVisibilityMode(e.target.value as VisibilityMode)
-                  }
-                >
-                  <option value={VisibilityMode.Undercover}>
-                    Undercover – Fotos bis Bingo verborgen
-                  </option>
-                  <option value={VisibilityMode.LiveFeed}>
-                    Live-Feed – Fotos erscheinen sofort
-                  </option>
-                  <option value={VisibilityMode.BlurredTeaser}>
-                    Blurred Teaser – Verpixelter Hinweis ohne Ziel
-                  </option>
-                </Select>
+              <Field label="Spieltitel">
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  required
+                />
               </Field>
+
+              <fieldset className="space-y-2">
+                <legend className="text-xs font-bold tracking-[0.06em] text-ink uppercase">
+                  Rastergröße
+                </legend>
+                <div className="grid grid-cols-3 gap-2">
+                  {LOBBY_GRIDS.map((opt) => {
+                    const selected = gridSize === opt.size;
+                    return (
+                      <button
+                        key={opt.size}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setGridSize(opt.size)}
+                        className={cn(
+                          "brutal-press flex min-h-14 cursor-pointer flex-col items-start justify-center rounded-sm border-2 border-control p-2.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                          selected
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-surface text-ink hover:bg-surface-muted",
+                        )}
+                      >
+                        <span className="font-display text-sm">
+                          {opt.title}
+                        </span>
+                        <span className="text-[11px] font-semibold">
+                          {opt.sub}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              <fieldset className="space-y-2">
+                <legend className="text-xs font-bold tracking-[0.06em] text-ink uppercase">
+                  Sichtbarkeitsmodus
+                </legend>
+                <div className="grid gap-2">
+                  {LOBBY_MODES.map((opt) => {
+                    const Icon = opt.icon;
+                    const selected = visibilityMode === opt.mode;
+                    return (
+                      <button
+                        key={opt.mode}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => setVisibilityMode(opt.mode)}
+                        className={cn(
+                          "brutal-press flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-sm border-2 border-control px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                          selected
+                            ? "bg-cyan text-cyan-foreground"
+                            : "bg-surface text-ink hover:bg-surface-muted",
+                        )}
+                      >
+                        <span className="inline-flex items-center gap-2 text-sm font-bold">
+                          <Icon className="size-4" aria-hidden="true" />
+                          {opt.title}
+                        </span>
+                        <span className="font-mono text-xs font-semibold">
+                          {opt.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
 
               {mutations.updateSettings.isError ? (
                 <Alert variant="error">
@@ -258,22 +326,26 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                 </Alert>
               ) : null}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  disabled={mutations.updateSettings.isPending}
-                >
-                  Einstellungen speichern
-                </Button>
+              <div className="flex flex-col gap-2.5 border-t-2 border-strong pt-4">
                 <Button
                   type="button"
+                  size="lg"
+                  className="w-full"
                   disabled={!canStart || mutations.startDrafting.isPending}
                   onClick={() => mutations.startDrafting.mutate(game.id)}
                 >
                   {mutations.startDrafting.isPending
                     ? "Startet …"
                     : "Entwurfsphase starten"}
+                </Button>
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  size="field"
+                  className="w-full"
+                  disabled={mutations.updateSettings.isPending}
+                >
+                  Einstellungen speichern
                 </Button>
               </div>
             </form>
@@ -297,9 +369,9 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                   </dd>
                 </div>
               </dl>
-              <CalloutNote label="Warten auf Host" tone="cyan">
-                Der Host kann die Entwurfsphase starten, sobald mindestens 3
-                Freunde beigetreten sind.
+              <CalloutNote label="Warten auf Host" tone="yellow">
+                Der Host startet die Entwurfsphase, sobald mindestens 3 Freunde
+                beigetreten sind.
               </CalloutNote>
             </div>
           )}
@@ -453,86 +525,100 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
 
   return (
     <div className="space-y-6">
-      {/* Player Lock Progress */}
-      <Card>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Entwurfsphase – Status</CardTitle>
-            <CodeTag tone="yellow">
-              {game.players.filter((p) => p.draftLocked).length} /{" "}
-              {game.players.length} bereit
-            </CodeTag>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-5">
-          <ul className="flex flex-wrap gap-2">
-            {game.players.map((p) => (
-              <li
-                key={p.id}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-sm border-2 border-strong px-3 py-1.5 text-xs font-bold",
-                  p.draftLocked
-                    ? "bg-success/15 text-ink"
-                    : "bg-surface-muted text-secondary",
-                )}
-              >
-                <PlayerAvatar user={p} size="sm" showMedalBadge={false} />
-                <span>{p.displayName}</span>
-                {p.draftLocked ? (
-                  <CheckCircle2
-                    className="size-4 text-success"
-                    aria-hidden="true"
-                  />
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
+      {/* Group Lock Strip + Quick-Start Deck Picker */}
+      <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>Crew-Status</CardTitle>
+              <CodeTag tone="yellow">
+                {game.players.filter((p) => p.draftLocked).length} /{" "}
+                {game.players.length} bereit
+              </CodeTag>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <ul className="flex flex-wrap gap-2">
+              {game.players.map((p) => (
+                <li
+                  key={p.id}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-sm border-2 border-strong px-2.5 py-1 text-xs font-bold",
+                    p.draftLocked
+                      ? "bg-success/15 text-ink"
+                      : "bg-surface-muted text-secondary",
+                  )}
+                >
+                  <PlayerAvatar user={p} size="sm" showMedalBadge={false} />
+                  <span>{p.displayName}</span>
+                  {p.draftLocked ? (
+                    <CheckCircle2
+                      className="size-4 text-success"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
 
-      {/* Quick-Start Deck Toolbar */}
-      <Card>
-        <CardHeader className="bg-cyan-subtle">
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="size-5" aria-hidden="true" />
-            Quick-Start Decks
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-5">
-          <p className="text-sm font-medium text-secondary">
-            Wähle ein Paket und fülle leere Felder mit Namen deiner Freunde –
-            oder würfle einzelne Felder neu aus.
-          </p>
-          <div className="flex flex-wrap items-end gap-3">
-            <Field label="Starter-Paket" className="min-w-52 flex-1">
-              <Select
-                value={selectedDeckSlug}
-                onChange={(e) => setSelectedDeckSlug(e.target.value)}
-                disabled={isLocked}
+        <Card>
+          <CardHeader className="bg-cyan-subtle">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="size-5" aria-hidden="true" />
+                Quick-Start Decks
+              </CardTitle>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={isLocked || !activeDeck}
+                onClick={autofillEmpty}
               >
-                {(decks.data ?? []).map((deck) => (
-                  <option key={deck.id} value={deck.slug}>
-                    {deck.name} – {deck.description}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Button
-              type="button"
-              variant="secondary"
-              size="field"
-              disabled={isLocked || !activeDeck}
-              onClick={autofillEmpty}
-            >
-              <Dices className="size-4" aria-hidden="true" />
-              Leere Felder füllen
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                <Dices className="size-4" aria-hidden="true" />
+                Leere Felder füllen
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {(decks.data ?? []).map((deck) => {
+                const selected = deck.slug === selectedDeckSlug;
+                return (
+                  <button
+                    key={deck.id}
+                    type="button"
+                    disabled={isLocked}
+                    aria-pressed={selected}
+                    onClick={() => setSelectedDeckSlug(deck.slug)}
+                    className={cn(
+                      "brutal-press flex min-h-12 cursor-pointer flex-col justify-center rounded-sm border-2 border-control px-2.5 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50",
+                      "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                      selected
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-surface text-ink hover:bg-surface-muted",
+                    )}
+                  >
+                    <span className="truncate text-xs font-bold">
+                      {deck.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {activeDeck ? (
+              <p className="text-xs font-medium text-secondary">
+                {activeDeck.description}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
 
-      {/* Per-Friend Equal-Distribution Slots */}
-      <div className="space-y-4">
+      {/* Prompt Workshop Grid */}
+      <div className="grid gap-5 lg:grid-cols-2">
         {game.myQuotas.map((quota) => {
           const targetSlots = slots.filter(
             (s) => s.targetUserId === quota.targetUser.id,
@@ -541,7 +627,7 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
 
           return (
             <Card key={quota.targetUser.id}>
-              <CardHeader>
+              <CardHeader className="bg-surface-muted">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <PlayerBadgeLink user={quota.targetUser} />
                   <Badge
@@ -555,7 +641,7 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3 pt-5">
+              <CardContent className="space-y-3 pt-4">
                 {targetSlots.map((slot, index) => (
                   <div key={slot.key} className="flex items-center gap-2">
                     <CodeTag tone="yellow" className="w-8 justify-center">
@@ -623,10 +709,15 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
           ausgeteilt!
         </Alert>
       ) : (
-        <div className="brutal-shadow flex flex-wrap items-center justify-between gap-3 rounded-md border-[2.5px] border-strong bg-surface p-4">
-          <span className="font-mono text-sm font-bold text-ink tabular-nums">
-            {filledCount} / {slots.length} Aufträge ausgefüllt
-          </span>
+        <div className="brutal-shadow-lg sticky bottom-20 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border-[2.5px] border-strong bg-surface p-4 md:bottom-4">
+          <div className="flex items-center gap-3">
+            <CodeTag tone="cyan">
+              {filledCount} / {slots.length}
+            </CodeTag>
+            <span className="text-sm font-bold text-ink">
+              Aufträge ausgefüllt
+            </span>
+          </div>
           <div className="flex flex-wrap gap-3">
             <Button
               type="button"
@@ -689,6 +780,11 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
     );
   }
 
+  const capturedCount = board.tiles.filter((t) => t.isCaptured).length;
+  const totalCount = board.tiles.length;
+  const pct =
+    totalCount > 0 ? Math.round((capturedCount / totalCount) * 100) : 0;
+
   const gridColsClass =
     game.gridSize === 3
       ? "grid-cols-3"
@@ -708,169 +804,175 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="primary">Aktive Jagd</Badge>
-          <Badge variant="info">
-            {game.visibilityMode === VisibilityMode.Undercover ? (
-              <EyeOff className="size-3" aria-hidden="true" />
-            ) : (
-              <Eye className="size-3" aria-hidden="true" />
-            )}
-            {visibilityLabel(game.visibilityMode)}
-          </Badge>
-        </div>
-        <CodeTag tone="yellow">
-          {board.tiles.filter((t) => t.isCaptured).length} /{" "}
-          {board.tiles.length} Felder
-        </CodeTag>
-      </div>
-
-      {/* Bingo Grid */}
-      <div className={cn("grid gap-2.5", gridColsClass)}>
-        {board.tiles.map((tile) => {
-          return (
-            <button
-              key={tile.id}
-              type="button"
-              disabled={tile.isCaptured}
-              onClick={() => {
-                if (!tile.isCaptured) {
-                  mutations.submitCapture.reset();
-                  setSelectedFile(null);
-                  setSelectedTile(tile);
-                }
-              }}
-              className={cn(
-                "relative flex min-h-26 flex-col justify-between overflow-hidden rounded-md border-[2.5px] border-strong p-2.5 text-left sm:min-h-32 sm:p-3",
-                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-                tile.isCaptured
-                  ? "brutal-shadow-sm bg-cyan-subtle"
-                  : "brutal-press cursor-pointer bg-surface hover:bg-primary-subtle",
-              )}
-            >
-              {tile.imageStorageKey ? (
-                <div className="absolute inset-0 opacity-25">
-                  <AuthenticatedImage
-                    storageKey={tile.imageStorageKey}
-                    alt={tile.promptText}
-                    className="h-full w-full"
-                  />
-                </div>
-              ) : null}
-
-              <div className="relative z-10 flex items-start justify-between gap-1">
-                <span className="inline-flex items-center rounded-sm border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary-foreground uppercase">
-                  {tile.targetUser.displayName}
-                </span>
-                {tile.isCaptured ? (
-                  <span className="inline-flex size-6 items-center justify-center rounded-sm border-2 border-strong bg-surface text-success">
-                    <CheckCircle2 className="size-4" aria-hidden="true" />
-                  </span>
+    <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+      {/* Left: Hero Bingo Board */}
+      <div className="space-y-4">
+        <div className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="primary">Aktive Jagd</Badge>
+              <Badge variant="info">
+                {game.visibilityMode === VisibilityMode.Undercover ? (
+                  <EyeOff className="size-3" aria-hidden="true" />
                 ) : (
-                  <Camera
-                    className="size-4 shrink-0 text-ink"
-                    aria-hidden="true"
-                  />
+                  <Eye className="size-3" aria-hidden="true" />
                 )}
-              </div>
-
-              <p className="relative z-10 mt-2 line-clamp-3 text-xs leading-snug font-bold text-ink sm:text-sm">
-                {tile.promptText}
-              </p>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Player Roster */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Mitspieler</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4">
-          <div className="flex flex-wrap gap-3">
-            {game.players.map((p) => (
-              <div
-                key={p.id}
-                className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface-muted px-2.5 py-1"
-              >
-                <PlayerBadgeLink user={p} compact />
-              </div>
-            ))}
+                {visibilityLabel(game.visibilityMode)}
+              </Badge>
+            </div>
+            <CodeTag tone="yellow">
+              {capturedCount} / {totalCount} Felder
+            </CodeTag>
           </div>
-        </CardContent>
-      </Card>
-
-      <StickerBand checker />
-
-      {/* Activity Feed according to VisibilityMode */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg tracking-tight text-ink">
-            Gruppen-Aktivität
-          </h2>
-          <CodeTag tone="cyan">{game.feed.length}</CodeTag>
+          <Progress value={pct} aria-label="Spielfortschritt" />
         </div>
 
-        {game.visibilityMode === VisibilityMode.Undercover ? (
-          <CalloutNote label="Undercover-Modus" tone="pink">
-            Alle Beweisfotos bleiben geheim, bis jemand Bingo ruft. Deine
-            eigenen Schnappschüsse siehst du direkt auf deinem Brett.
-          </CalloutNote>
-        ) : game.feed.length === 0 ? (
-          <CalloutNote label="Noch ruhig">
-            Noch keine Beweisfotos hochgeladen – schnapp dir dein erstes Motiv!
-          </CalloutNote>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {game.feed.map((item) => (
+        <div className={cn("grid gap-2.5", gridColsClass)}>
+          {board.tiles.map((tile) => {
+            return (
               <button
-                key={item.id}
+                key={tile.id}
                 type="button"
-                onClick={() => setLightboxCapture(item)}
-                className="brutal-press group flex cursor-pointer flex-col overflow-hidden rounded-md border-[2.5px] border-strong bg-surface p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                disabled={tile.isCaptured}
+                onClick={() => {
+                  if (!tile.isCaptured) {
+                    mutations.submitCapture.reset();
+                    setSelectedFile(null);
+                    setSelectedTile(tile);
+                  }
+                }}
+                className={cn(
+                  "relative flex min-h-26 flex-col justify-between overflow-hidden rounded-md border-[2.5px] border-strong p-2.5 text-left sm:min-h-32 sm:p-3",
+                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                  tile.isCaptured
+                    ? "brutal-shadow-sm bg-cyan-subtle"
+                    : "brutal-press cursor-pointer bg-surface hover:bg-primary-subtle",
+                )}
               >
-                <div className="aspect-video w-full overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
-                  <AuthenticatedImage
-                    storageKey={
-                      item.isBlurred
-                        ? item.thumbnailStorageKey
-                        : (item.imageStorageKey ?? item.thumbnailStorageKey)
-                    }
-                    alt={item.promptText ?? "Teaser"}
-                    blurred={item.isBlurred}
-                    className="h-full w-full"
-                  />
-                </div>
-                <div className="space-y-1.5 pt-2.5">
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="font-bold text-ink">
-                      {item.catcher.displayName}
-                    </span>
-                    <span className="font-mono text-secondary tabular-nums">
-                      {new Date(item.capturedAt).toLocaleTimeString("de-AT", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
+                {tile.imageStorageKey ? (
+                  <div className="absolute inset-0 opacity-30">
+                    <AuthenticatedImage
+                      storageKey={tile.imageStorageKey}
+                      alt={tile.promptText}
+                      className="h-full w-full"
+                    />
                   </div>
-                  {item.isBlurred ? (
-                    <Badge variant="warning">
-                      Ziel &amp; Auftrag verborgen
-                    </Badge>
+                ) : null}
+
+                <div className="relative z-10 flex items-start justify-between gap-1">
+                  <span className="inline-flex items-center rounded-sm border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary-foreground uppercase">
+                    {tile.targetUser.displayName}
+                  </span>
+                  {tile.isCaptured ? (
+                    <span className="inline-flex size-6 items-center justify-center rounded-sm border-2 border-strong bg-surface text-success">
+                      <CheckCircle2 className="size-4" aria-hidden="true" />
+                    </span>
                   ) : (
-                    <p className="line-clamp-2 text-xs font-medium text-ink">
-                      {item.promptText}
-                    </p>
+                    <Camera
+                      className="size-4 shrink-0 text-ink"
+                      aria-hidden="true"
+                    />
                   )}
                 </div>
+
+                <p className="relative z-10 mt-2 line-clamp-3 text-xs leading-snug font-bold text-ink sm:text-sm">
+                  {tile.promptText}
+                </p>
               </button>
-            ))}
-          </div>
-        )}
-      </section>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Right: Live Crew + Activity Stream */}
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="size-5" aria-hidden="true" />
+              Mitspieler
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="flex flex-wrap gap-2">
+              {game.players.map((p) => (
+                <div
+                  key={p.id}
+                  className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface-muted px-2 py-1"
+                >
+                  <PlayerBadgeLink user={p} compact />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="bg-pink-subtle">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle>Live-Aktivität</CardTitle>
+              <CodeTag tone="cyan">{game.feed.length}</CodeTag>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-4">
+            {game.visibilityMode === VisibilityMode.Undercover ? (
+              <CalloutNote label="Undercover aktiv" tone="pink">
+                Alle Beweisfotos bleiben bis zum Bingo geheim. Deine eigenen
+                Treffer siehst du direkt auf deinem Brett.
+              </CalloutNote>
+            ) : game.feed.length === 0 ? (
+              <CalloutNote label="Noch ruhig">
+                Noch keine Beweisfotos hochgeladen – schnapp dir dein erstes
+                Motiv!
+              </CalloutNote>
+            ) : (
+              <div className="space-y-3">
+                {game.feed.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setLightboxCapture(item)}
+                    className="brutal-press flex w-full cursor-pointer items-center gap-3 rounded-md border-2 border-strong bg-surface p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <div className="size-16 shrink-0 overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
+                      <AuthenticatedImage
+                        storageKey={
+                          item.isBlurred
+                            ? item.thumbnailStorageKey
+                            : (item.imageStorageKey ?? item.thumbnailStorageKey)
+                        }
+                        alt={item.promptText ?? "Teaser"}
+                        blurred={item.isBlurred}
+                        className="h-full w-full"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="truncate font-bold text-ink">
+                          {item.catcher.displayName}
+                        </span>
+                        <span className="font-mono text-secondary tabular-nums">
+                          {new Date(item.capturedAt).toLocaleTimeString(
+                            "de-AT",
+                            { hour: "2-digit", minute: "2-digit" },
+                          )}
+                        </span>
+                      </div>
+                      {item.isBlurred ? (
+                        <Badge variant="warning">Teaser verpixelt</Badge>
+                      ) : (
+                        <p className="line-clamp-2 text-xs font-medium text-ink">
+                          {item.promptText}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Camera / Upload Capture Dialog */}
       <Dialog
@@ -1005,15 +1107,15 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
 
   return (
     <div className="space-y-8">
-      {/* Winner Crown & Gold Medal Banner */}
+      {/* Winner Podium Banner */}
       {game.winner ? (
-        <Card className="bg-primary-subtle">
-          <CardContent className="flex flex-wrap items-center justify-between gap-4 py-6">
+        <div className="brutal-shadow-lg rounded-md border-[2.5px] border-strong bg-primary p-6 text-primary-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <PlayerAvatar user={game.winner} size="lg" />
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="primary" className="gap-1">
+                  <Badge variant="outline" className="gap-1">
                     <Crown className="size-3.5" aria-hidden="true" />
                     BINGO-SIEGER
                   </Badge>
@@ -1022,23 +1124,23 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                     +1 Goldmedaille
                   </Badge>
                 </div>
-                <h2 className="font-display text-2xl tracking-tight text-ink">
+                <h2 className="font-display text-2xl tracking-tight sm:text-3xl">
                   {game.winner.displayName} gewinnt „{game.title}“!
                 </h2>
-                <p className="font-mono text-xs font-semibold text-secondary">
+                <p className="font-mono text-xs font-bold">
                   {game.winner.effectiveTitle} · {game.winner.goldMedalCount}{" "}
                   Goldmedaillen gesamt
                 </p>
               </div>
             </div>
             {game.startedAt && game.endedAt ? (
-              <div className="inline-flex items-center gap-1.5 rounded-sm border-2 border-strong bg-surface px-2.5 py-1 font-mono text-xs font-bold text-ink tabular-nums">
+              <div className="inline-flex items-center gap-1.5 rounded-sm border-2 border-strong bg-surface px-3 py-1 font-mono text-xs font-bold text-ink tabular-nums">
                 <Timer className="size-4" aria-hidden="true" />
                 {new Date(game.endedAt).toLocaleString("de-AT")}
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       ) : null}
 
       {/* Automated Post-Game Superlatives */}
@@ -1078,114 +1180,116 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
         captures={game.feed}
       />
 
-      {/* Full Game Photo Gallery */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg tracking-tight text-ink">
-            Spiel-Galerie
-          </h2>
-          <CodeTag tone="yellow">{game.feed.length} Fotos</CodeTag>
-        </div>
+      {/* Tabbed Recap: Gallery vs All Unlocked Boards */}
+      <Tabs defaultValue="gallery">
+        <TabsList>
+          <TabsTrigger value="gallery">
+            Spiel-Galerie ({game.feed.length})
+          </TabsTrigger>
+          <TabsTrigger value="boards">
+            Aufgedeckte Bretter ({game.allBoards.length})
+          </TabsTrigger>
+        </TabsList>
 
-        {game.feed.length === 0 ? (
-          <CalloutNote label="Keine Fotos">
-            In diesem Spiel wurden keine Fotos eingereicht.
-          </CalloutNote>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {game.feed.map((cap) => (
-              <div
-                key={cap.id}
-                className="brutal-shadow-sm flex flex-col overflow-hidden rounded-md border-2 border-strong bg-surface p-2"
-              >
-                <button
-                  type="button"
-                  onClick={() => setSelectedCapture(cap)}
-                  className="aspect-square w-full cursor-pointer overflow-hidden rounded-sm border-2 border-strong bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                >
-                  <AuthenticatedImage
-                    storageKey={cap.imageStorageKey ?? cap.thumbnailStorageKey}
-                    alt={cap.promptText ?? "Beweisfoto"}
-                    className="h-full w-full transition-transform hover:scale-105"
-                  />
-                </button>
-                <div className="space-y-2 pt-2.5">
-                  <p className="line-clamp-2 text-xs font-bold text-ink">
-                    {cap.promptText}
-                  </p>
-                  <div className="flex items-center justify-between gap-1">
-                    <PlayerAvatar user={cap.catcher} size="sm" />
-                    <span className="font-mono text-[11px] font-semibold text-secondary tabular-nums">
-                      {new Date(cap.capturedAt).toLocaleTimeString("de-AT", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <StickerBand checker />
-
-      {/* All Unlocked Boards */}
-      <section className="space-y-4">
-        <h2 className="font-display text-lg tracking-tight text-ink">
-          Alle aufgedeckten Bingo-Bretter
-        </h2>
-        <div className="grid gap-6 lg:grid-cols-2">
-          {game.allBoards.map((board) => (
-            <Card key={board.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-2">
-                  <PlayerBadgeLink user={board.owner} compact />
-                  {board.hasBingo ? (
-                    <Badge variant="primary">Bingo!</Badge>
-                  ) : null}
-                </div>
-              </CardHeader>
-              <CardContent className="pt-5">
+        <TabsContent value="gallery" className="pt-2">
+          {game.feed.length === 0 ? (
+            <CalloutNote label="Keine Fotos">
+              In diesem Spiel wurden keine Fotos eingereicht.
+            </CalloutNote>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {game.feed.map((cap) => (
                 <div
-                  className={cn(
-                    "grid gap-1.5",
-                    game.gridSize === 3
-                      ? "grid-cols-3"
-                      : game.gridSize === 4
-                        ? "grid-cols-4"
-                        : "grid-cols-5",
-                  )}
+                  key={cap.id}
+                  className="brutal-shadow-sm flex flex-col overflow-hidden rounded-md border-2 border-strong bg-surface p-2"
                 >
-                  {board.tiles.map((tile) => (
-                    <div
-                      key={tile.id}
-                      className={cn(
-                        "relative flex min-h-18 flex-col justify-between overflow-hidden rounded-sm border-2 border-strong p-1.5 text-[11px]",
-                        tile.isCaptured ? "bg-cyan-subtle" : "bg-surface-muted",
-                      )}
-                    >
-                      {tile.imageStorageKey ? (
-                        <div className="absolute inset-0 opacity-30">
-                          <AuthenticatedImage
-                            storageKey={tile.imageStorageKey}
-                            alt={tile.promptText}
-                            className="h-full w-full"
-                          />
-                        </div>
-                      ) : null}
-                      <span className="relative z-10 line-clamp-3 leading-tight font-bold text-ink">
-                        {tile.promptText}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCapture(cap)}
+                    className="aspect-square w-full cursor-pointer overflow-hidden rounded-sm border-2 border-strong bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <AuthenticatedImage
+                      storageKey={
+                        cap.imageStorageKey ?? cap.thumbnailStorageKey
+                      }
+                      alt={cap.promptText ?? "Beweisfoto"}
+                      className="h-full w-full transition-transform hover:scale-105"
+                    />
+                  </button>
+                  <div className="space-y-2 pt-2.5">
+                    <p className="line-clamp-2 text-xs font-bold text-ink">
+                      {cap.promptText}
+                    </p>
+                    <div className="flex items-center justify-between gap-1">
+                      <PlayerAvatar user={cap.catcher} size="sm" />
+                      <span className="font-mono text-[11px] font-semibold text-secondary tabular-nums">
+                        {new Date(cap.capturedAt).toLocaleTimeString("de-AT", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </span>
                     </div>
-                  ))}
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="boards" className="pt-2">
+          <div className="grid gap-6 lg:grid-cols-2">
+            {game.allBoards.map((board) => (
+              <Card key={board.id}>
+                <CardHeader>
+                  <div className="flex items-center justify-between gap-2">
+                    <PlayerBadgeLink user={board.owner} compact />
+                    {board.hasBingo ? (
+                      <Badge variant="primary">Bingo!</Badge>
+                    ) : null}
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-5">
+                  <div
+                    className={cn(
+                      "grid gap-1.5",
+                      game.gridSize === 3
+                        ? "grid-cols-3"
+                        : game.gridSize === 4
+                          ? "grid-cols-4"
+                          : "grid-cols-5",
+                    )}
+                  >
+                    {board.tiles.map((tile) => (
+                      <div
+                        key={tile.id}
+                        className={cn(
+                          "relative flex min-h-18 flex-col justify-between overflow-hidden rounded-sm border-2 border-strong p-1.5 text-[11px]",
+                          tile.isCaptured
+                            ? "bg-cyan-subtle"
+                            : "bg-surface-muted",
+                        )}
+                      >
+                        {tile.imageStorageKey ? (
+                          <div className="absolute inset-0 opacity-30">
+                            <AuthenticatedImage
+                              storageKey={tile.imageStorageKey}
+                              alt={tile.promptText}
+                              className="h-full w-full"
+                            />
+                          </div>
+                        ) : null}
+                        <span className="relative z-10 line-clamp-3 leading-tight font-bold text-ink">
+                          {tile.promptText}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
 
       <PhotoLightbox
         capture={selectedCapture}

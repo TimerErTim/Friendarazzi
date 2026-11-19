@@ -13,13 +13,11 @@ const archivoBlack = Archivo_Black({
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-space-grotesk",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
 });
 
 const basePath = (process.env.NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH ?? "").replace(

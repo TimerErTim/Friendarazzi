@@ -109,7 +109,7 @@ const LOBBY_MODES = [
 export function LobbyPhase({ game }: { game: GameDetail }) {
   const me = useBenutzerQuery();
   const mutations = useFriendarazziMutations();
-  const { mutate: updateSettings, isPending: isSavingSettings } =
+  const { mutateAsync: updateSettingsAsync, isPending: isSavingSettings } =
     mutations.updateSettings;
   const isHost = me.data?.id === game.hostUserId;
 
@@ -122,11 +122,14 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
 
   const isEditingTitleRef = useRef(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedRef = useRef({
+  const startDraftingRef = useRef(false);
+  const settingsSaveRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const savedSettingsRef = useRef({
     title: game.title,
     gridSize: String(game.gridSize),
     visibilityMode: game.visibilityMode,
   });
+  const lastSavedRef = useRef(savedSettingsRef.current);
 
   useEffect(() => {
     if (!isEditingTitleRef.current) {
@@ -134,11 +137,12 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
     }
     setGridSize(String(game.gridSize));
     setVisibilityMode(game.visibilityMode);
-    lastSavedRef.current = {
+    savedSettingsRef.current = {
       title: game.title,
       gridSize: String(game.gridSize),
       visibilityMode: game.visibilityMode,
     };
+    lastSavedRef.current = savedSettingsRef.current;
   }, [game.title, game.gridSize, game.visibilityMode]);
 
   useEffect(() => {
@@ -150,35 +154,45 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
   const commitSettings = useCallback(
     (nextTitle: string, nextGridSize: string, nextMode: VisibilityMode) => {
       const trimmedTitle = nextTitle.trim();
-      if (!trimmedTitle) return;
-      const prev = lastSavedRef.current;
-      if (
-        prev.title === trimmedTitle &&
-        prev.gridSize === nextGridSize &&
-        prev.visibilityMode === nextMode
-      ) {
-        return;
-      }
-      lastSavedRef.current = {
+      if (!trimmedTitle) return settingsSaveRef.current;
+      const next = {
         title: trimmedTitle,
         gridSize: nextGridSize,
         visibilityMode: nextMode,
       };
-      updateSettings(
-        {
-          gameId: game.id,
-          input: {
-            title: trimmedTitle,
-            gridSize: Number(nextGridSize),
-            visibilityMode: nextMode,
-          },
-        },
-        {
-          onSuccess: () => setJustSaved(true),
-        },
-      );
+      const prev = lastSavedRef.current;
+      if (
+        prev.title === next.title &&
+        prev.gridSize === next.gridSize &&
+        prev.visibilityMode === next.visibilityMode
+      ) {
+        return settingsSaveRef.current;
+      }
+
+      lastSavedRef.current = next;
+      settingsSaveRef.current = settingsSaveRef.current.then(async () => {
+        try {
+          await updateSettingsAsync({
+            gameId: game.id,
+            input: {
+              title: next.title,
+              gridSize: Number(next.gridSize),
+              visibilityMode: next.visibilityMode,
+            },
+          });
+          savedSettingsRef.current = next;
+          setJustSaved(true);
+          return true;
+        } catch {
+          if (lastSavedRef.current === next) {
+            lastSavedRef.current = savedSettingsRef.current;
+          }
+          return false;
+        }
+      });
+      return settingsSaveRef.current;
     },
-    [game.id, updateSettings],
+    [game.id, updateSettingsAsync],
   );
 
   useEffect(() => {
@@ -195,9 +209,26 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
     setTitle(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
       isEditingTitleRef.current = false;
-      commitSettings(val, gridSize, visibilityMode);
+      void commitSettings(val, gridSize, visibilityMode);
     }, 500);
+  }
+
+  async function handleStartDrafting() {
+    if (startDraftingRef.current) return;
+    startDraftingRef.current = true;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = null;
+    isEditingTitleRef.current = false;
+    try {
+      if (!(await commitSettings(title, gridSize, visibilityMode))) return;
+      await mutations.startDrafting.mutateAsync(game.id);
+    } catch {
+      // The mutation state renders the existing error message.
+    } finally {
+      startDraftingRef.current = false;
+    }
   }
 
   return (
@@ -386,7 +417,7 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                   size="lg"
                   className="w-full"
                   disabled={!canStart || mutations.startDrafting.isPending}
-                  onClick={() => mutations.startDrafting.mutate(game.id)}
+                  onClick={() => void handleStartDrafting()}
                 >
                   {mutations.startDrafting.isPending
                     ? "Startet …"

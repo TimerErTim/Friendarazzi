@@ -81,8 +81,8 @@ if "${compose[@]}" exec -T mailserver test -s "$key_file" 2>/dev/null; then
 else
   "${compose[@]}" exec -T mailserver setup config dkim domain "$mail_domain"
   echo "   generated a key for ${mail_domain} (selector: mail)"
-  echo "   restart the container so outgoing mail is signed with it:"
-  echo "     ${compose[*]} restart mailserver"
+  echo "   recreate the container so OpenDKIM loads the generated tables:"
+  echo "     ${compose[*]} up -d --force-recreate mailserver"
 fi
 
 echo

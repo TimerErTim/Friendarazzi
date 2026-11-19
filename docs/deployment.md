@@ -1,185 +1,178 @@
 # Docker Compose deployment
 
-This runbook covers the Compose-managed API, Caddy HTTPS, the docker-mailserver relay, and the VPS deployment workflow. Docker Engine and the Docker Compose plugin are installed and run on the host independently of `mise`; the VPS needs neither `mise` nor a compiler. CI builds the release binary, wraps it in the runtime image, and pushes it to GitHub Container Registry. Deploying pulls that image by commit tag.
+This runbook covers the Compose-managed single-replica API, Caddy HTTPS with measured maintenance mode, the docker-mailserver relay, pre-release SQLite snapshots, OpenObserve observability, and the automated release pipeline. Docker Engine and the Docker Compose plugin run on the VPS independently of `mise`; the VPS needs neither `mise` nor a compiler. CI builds and tests the release binary once, publishes the immutable `sha-<commit>` Docker image to GHCR, and both GitHub Pages and the VPS deploy from that same commit.
 
 ## Operator-owned prerequisites
 
-- A VPS with Docker Engine and Docker Compose plugin v2.24 or newer, Git, `curl`, and outbound access to GitHub and `ghcr.io`. The account used for deployment must be able to access the checked-out repository and run Docker Compose. No distro-specific commands are required. The VPS runs no `mise` and no compiler; the deploy task runs on the machine that holds the SSH key.
-- The `friendarazzi-server` package on GHCR must be set to public once, after the first `image` job publishes it. Public is what lets the VPS pull anonymously with no stored registry credentials.
-- A full (not shallow) deploy checkout at `/opt/friendarazzi/repo` on the VPS, with `data/` and `secrets/` beside it at `/opt/friendarazzi`. It must have an `origin` remote the deploy account can fetch from and an initial known-good revision deployed before automatic deployments are enabled.
-- Public DNS for the API hostname pointing to the VPS; inbound TCP 80/443 (and optional UDP 443 for HTTP/3) for Caddy. This is not an nginx deployment.
-- The Pages origin, API hostname, and authoritative DNS console access. These production values are operator-supplied and do not belong in Git. There is no signing key to manage: the server generates one per process.
-- Configure the GitHub `production` environment with variables `VPS_HOST`, `VPS_USER`, and `API_DOMAIN`, plus secrets `VPS_SSH_PRIVATE_KEY` and `VPS_SSH_KNOWN_HOSTS`. The custom SSH private key must be restricted to the deployment account; the known-host entry must be obtained and verified out of band, not populated with `ssh-keyscan` during a workflow. Ensure the VPS deploy account can read the repository. Protect the environment with the desired approval gate before enabling the workflow.
-- GitHub Actions must also have the existing `FRIENDARAZZI_API_URL` repository variable for Pages. Pull requests never deploy; a `main` push after `pr/base` and `release-check` succeed deploys, and Pages deploys that same export. Release publication depends on deployment success. `workflow_dispatch` runs the identical pipeline from any branch, deploys the same artefacts and skips only release validation and publication, so a pull request can be deployed and tried before it merges; `:main` is not moved by such a run.
+- A VPS with Docker Engine, Docker Compose plugin v2.24 or newer, Git, `curl`, `flock` (`util-linux`), and outbound access to GitHub and `ghcr.io`. The deployment account must be able to read/update the repository checkout and run Docker Compose.
+- The `friendarazzi-server` package on GHCR must be set to public once after the first `deploy/image` run so the VPS pulls anonymously without stored registry credentials.
+- Public DNS for `API_DOMAIN` pointing to the VPS; inbound TCP 80/443 (and optional UDP 443 for HTTP/3) for Caddy; inbound/outbound TCP 25, 465, and 587 for `docker-mailserver`.
+- GitHub `production` environment configured with variables `VPS_HOST` and `VPS_USER` (plus optional `API_DOMAIN` to cross-check the VPS `.env`), and secrets `VPS_SSH_PRIVATE_KEY` and `VPS_SSH_KNOWN_HOSTS` (verified out of band, never populated via `ssh-keyscan` in CI).
+- GitHub repository variable `FRIENDARAZZI_API_URL` configured for the static Pages build.
 
-## Manual installation and persistence (AC-1, AC-2, AC-3, AC-5)
+## Canonical VPS layout (`deploy/layout.env`)
 
-From the repository checkout on the VPS:
+The directory layout is defined once in [`deploy/layout.env`](../deploy/layout.env) and consumed by `deploy:vps`, `mail-bootstrap.sh`, and `deploy/compose.sh`:
 
-1. Copy `.env.example` to `.env` and set `API_DOMAIN` to the public API hostname, `FRONTEND_ORIGIN` to the exact Pages/custom-domain origin (scheme included, no path), and `MAIL_ABSENDER` to the envelope sender. `.env` is ignored by Git. It belongs at `/opt/friendarazzi/.env`, beside the checkout.
-2. **No signing key is provisioned.** The server generates a fresh Ed25519 key per process and stores each session's public half on its own row, so verification never needs a configured key. Existing sessions keep verifying across a restart: each token is checked against the key its row carries. Nothing logs users out when the process restarts, and there is no key file to mount, rotate, or back up. The one consequence is that a session row's key no longer verifies after its row is deleted — a deleted row is already a 401 by design (AC-17).
-3. Create `data/sqlite` and `data/media` and ensure both are writable by container UID 10001. These bind mounts persist independently of container/image replacement. Create `secrets/mail.env` with the relay credentials. The expected layout is `/opt/friendarazzi/{data,secrets,repo}`: `data/` and `secrets/` sit beside the checkout, not inside it, and `deploy:vps` exports `FRIENDARAZZI_HOST_ROOT` so Compose resolves them. Mail accounts, mail state, and the DKIM key persist in `data/mail/mail-data`, `data/mail/mail-state`, and `data/mail/mail-config`, so they are bind mounts on the VPS disk like `data/sqlite` and `data/media`. Caddy's ACME account/certificates persist in the named `caddy_data` volume, and `certsync` republishes them into the `mail_certs` volume; keep both named volumes when operating the stack.
-4. Start the stack from a published image. The image is public, so the VPS pulls anonymously and stores no registry credentials. From a checkout with `VPS_HOST`, `VPS_USER`, and `API_DOMAIN` set, run `mise run deploy:vps ghcr.io/<owner>/friendarazzi-server:sha-<commit> <commit>`; that is the same path an automated deployment takes, and it records `.deploy/known-good-image`, `.deploy/known-good-digest`, and `.deploy/known-good-revision` once the health check passes. Every start also writes `FRIENDARAZZI_IMAGE` and `FRIENDARAZZI_HOST_ROOT` into `/opt/friendarazzi/.env` and links `/opt/friendarazzi/repo/.env` to it, so after any deployment a plain `docker compose up -d` in `/opt/friendarazzi/repo` restarts exactly the deployed stack. For a first bootstrap without the task, on the VPS `export FRIENDARAZZI_IMAGE` to that reference and `export FRIENDARAZZI_HOST_ROOT=/opt/friendarazzi`, then from `/opt/friendarazzi/repo` run `docker compose --env-file /opt/friendarazzi/.env pull backend` and `docker compose --env-file /opt/friendarazzi/.env up -d`, then `curl --fail https://$API_DOMAIN/api/health`, and record the rollback target by hand from that reference and `git rev-parse HEAD`. Both flags matter for a manual run: without `FRIENDARAZZI_HOST_ROOT` Compose refuses to render, and a missing `secrets/mail.env` stops it too, and without `--env-file` it reads `.env` from the checkout rather than from `/opt/friendarazzi`. `deploy:vps` supplies both. Caddy obtains and renews the API certificate automatically through HTTP/TLS validation; keep ports 80 and 443 available to Caddy.
-
-The API listens on the Compose network at `0.0.0.0:3000`; it is not published directly to the host. Caddy is the only public HTTP(S) entry point and forwards API traffic to the backend. CORS and mailed links use `FRONTEND_ORIGIN`; token issuer uses `API_DOMAIN`.
-
-Hetzner-managed daily VPS backups are the selected backup mechanism (AC-3). Confirm the provider backup includes the VPS disk paths containing `data/sqlite` and `data/media`, plus `data/mail/` and the Compose named volumes `caddy_data`, `caddy_config`, and `mail_certs` (typically under Docker's host data root). App paths here are bind-mounted on the VPS disk; Docker named volumes are also on that disk but must be included by the provider snapshot. No restic sidecar, S3 target, SQLite copy job, or backup retention/RPO is configured by this deployment. Provider snapshots are host-level recovery points, not an application-aware backup guarantee or a tested database/object-store restore. The separate application backup/restore drill and its recovery objectives remain unverified and out of scope here; perform and record a coordinated restore drill before relying on it for application recovery.
-## Mail (AC-4, #24 AC-6)
-
-The mail server is part of the stack, not an optional profile: the MVP sends registration and
-password recovery mail, so a deployment without a working relay is not a working deployment.
-`compose.yaml` starts it unconditionally and fixes the topology of the hop, because a relay host or
-TLS mode left to the operator drifts from the service it talks to and only fails at send time.
-
-**One hostname, one certificate.** `API_DOMAIN` is the API hostname *and* the mail server's FQDN.
-Caddy obtains the Let's Encrypt certificate for it, and `certsync` copies that pair to a stable
-path (`/certs/active.crt`, `/certs/active.key`) for the mail server, which runs with
-`SSL_TYPE=manual`. There is no second hostname and no second certificate to keep in step. The mail
-*domain* is derived by dropping the first label (`api.friendarazzi.app` → `friendarazzi.app`), and the DNS
-records below belong to that derived domain.
-
-Because the mail server presents a certificate that names the public FQDN, the backend's hop is a
-real TLS hop: it dials `API_DOMAIN` on port `587` with `start-tls`, and hostname verification
-succeeds. That name resolves inside the Compose bridge through a network alias, so the connection
-never leaves the bridge even though the name is public. The submission listener requires STARTTLS
-before it accepts a login, so plaintext submission is not an option even internally.
-
-**The ports are public now.** `25`, `587`, and `465` are published on the host. That is a real
-change from a loopback-only relay: brute-force attempts against `587` are expected, which is why
-fail2ban is enabled (with `NET_ADMIN`, its nftables backend needs the capability), and why a PTR
-record matters. Do not expose `8080`: that was Stalwart's admin UI and has no successor.
-
-### Certificate renewal
-
-Caddy renews on its own. `certsync` re-reads the certificate every five minutes and republishes the
-pair only when its content changed. docker-mailserver runs its own changedetector, which polls
-`SSL_CERT_PATH` and `SSL_KEY_PATH` (every 2 s by default, `DMS_CONFIG_POLL`) and — when either hash
-differs — re-copies the pair to its internal `/etc/dms/tls/`, then reloads Postfix and Dovecot. No
-cron job, restart hook, or operator action is needed; a renewal reaches the listeners without either
-container being recreated.
-
-Two details make that reliable, and both are load-bearing:
-
-- The pair is published by writing `*.tmp` and renaming into `/certs`, which is mounted as a whole
-  directory. A single-file bind mount of `active.crt` would keep pointing at the old inode after a
-  rename, so the mail server would never see the new certificate.
-- The reload happens inside the mail server, not in `certsync`. Nothing needs to signal the
-  container; changing the file is the signal.
-
-If the mail server logs a certificate error, check in this order:
-
-1. `docker compose logs certsync` — it prints `no certificate for <domain> ... yet` until Caddy has
-   obtained one, which is expected on a first boot.
-2. `docker compose exec mailserver openssl x509 -noout -subject -enddate -in /certs/active.crt` —
-   confirm the subject names `API_DOMAIN` and the date is in the future.
-3. `docker compose logs mailserver | grep -i ssl` — a reload failure names the file it rejected.
-
-### Bootstrap the account and the DKIM key
-
-Run this **on the VPS**, once, after the stack is up. It is an operator script, never a CI step:
-creating a mailbox and a signing key is a one-time decision.
-
-```sh
-bash tasks/scripts/mail-bootstrap.sh
+```text
+/opt/friendarazzi/                 # FRIENDARAZZI_HOST_ROOT (VPS_HOST_ROOT_DEFAULT)
+├── .env                           # Operator-owned config (read-only to deploy scripts)
+├── repo/                          # Full (non-shallow) Git checkout at the deployed SHA
+├── data/
+│   ├── sqlite/                    # friendarazzi.db (writable by container UID 10001)
+│   ├── media/                     # Object store uploads (writable by container UID 10001)
+│   ├── mail/                      # docker-mailserver mail-data, mail-state, mail-config
+│   └── openobserve/               # OpenObserve persistent storage (/data)
+├── secrets/
+│   ├── mail.env                   # Operator-owned SMTP credentials
+│   └── openobserve.env            # Operator-owned OpenObserve root credentials
+├── state/                         # Deploy state outside the mutable checkout
+│   ├── deploy.env                 # Deploy-written FRIENDARAZZI_IMAGE, HOST_ROOT, REVISION
+│   ├── deploy.lock                # flock exclusive lock serializing deployments
+│   ├── deployed-image             # Last successfully deployed image tag
+│   ├── deployed-digest            # Registry digest of last deployed image
+│   ├── deployed-revision          # Commit SHA of last deployed revision
+│   ├── maintenance.log            # Measured maintenance windows (start, end, duration, sha, snapshot)
+│   └── caddy/
+│       └── maintenance.enabled    # Presence triggers Caddy 503 + Retry-After
+└── backups/
+    └── sqlite/                    # Timestamped, SHA-tagged pre-release SQLite snapshots
 ```
 
-It reads `API_DOMAIN` and `MAIL_ABSENDER` from `/opt/friendarazzi/.env` and the submission credentials
-from `/opt/friendarazzi/secrets/mail.env`, then:
+Because `state/`, `data/`, `secrets/`, and `backups/` live outside `repo/`, re-cloning or running `git clean` inside `repo/` never destroys deployment state, secrets, snapshots, or application data.
 
-- creates the submission account with `setup email add` (and leaves an existing one untouched, so
-  re-running cannot silently reset a password),
-- generates a DKIM key for the mail domain with `setup config dkim domain …` (and leaves an
-  existing key untouched, so re-running cannot rotate a key that is already in DNS),
-- prints the exact DKIM, SPF, DMARC, MX, and PTR records to publish.
+## Initial VPS installation and boot persistence
 
-The credentials live only in the ignored `secrets/mail.env`:
+1. Clone a full (non-shallow) checkout into `/opt/friendarazzi/repo` and create the host directories:
 
-```
-FRIENDARAZZI_SMTP_BENUTZERNAME=<submission account>
-FRIENDARAZZI_SMTP_PASSWORT=<submission password>
-```
+   ```sh
+   mkdir -p /opt/friendarazzi/data/{sqlite,media,mail/mail-data,mail/mail-state,mail/mail-config,openobserve} \
+            /opt/friendarazzi/{secrets,state/caddy,backups/sqlite}
+   chown -R 10001:10001 /opt/friendarazzi/data/sqlite /opt/friendarazzi/data/media
+   chmod 700 /opt/friendarazzi/secrets
+   ```
 
-`MAIL_ABSENDER` belongs in `.env` beside `API_DOMAIN`. Do not set `FRIENDARAZZI_SMTP_HOST`,
-`FRIENDARAZZI_SMTP_PORT`, or `FRIENDARAZZI_SMTP_VERSCHLUESSELUNG` anywhere: Compose fixes them, and a
-stray value only makes the backend disagree with the service beside it.
+2. Copy [`.env.example`](../.env.example) to `/opt/friendarazzi/.env` and set `API_DOMAIN`, `FRONTEND_ORIGIN`, and `MAIL_ABSENDER`. Deploy scripts never rewrite `/opt/friendarazzi/.env`.
+3. Create `/opt/friendarazzi/secrets/mail.env` and `/opt/friendarazzi/secrets/openobserve.env` (see sections below).
+4. **No signing key file is required.** The server generates an Ed25519 key per process and stores each session's public half on its session row, so existing sessions keep verifying across restarts.
+5. Deploy a published image using `mise run deploy:vps ghcr.io/<owner>/friendarazzi-server:sha-<commit>` (or trigger the workflow). For manual Compose commands on the VPS after a deployment, use the wrapper so both `/opt/friendarazzi/.env` and `/opt/friendarazzi/state/deploy.env` are loaded:
 
-Spoof protection is off by default in the mail server, so the submission account may send as
-`MAIL_ABSENDER` even when that address is not its own mailbox. That is deliberate: one account
-carries every transactional mail, and the envelope sender is a product decision, not a mailbox.
+   ```sh
+   bash /opt/friendarazzi/repo/deploy/compose.sh ps
+   bash /opt/friendarazzi/repo/deploy/compose.sh logs -f backend caddy
+   ```
 
-### DNS records to publish
+6. Install [`deploy/friendarazzi.service`](../deploy/friendarazzi.service) so the stack starts automatically on host reboot:
 
-Add these by hand in the authoritative DNS console; the bootstrap script prints the exact values and
-never writes DNS itself.
+   ```sh
+   sudo cp /opt/friendarazzi/repo/deploy/friendarazzi.service /etc/systemd/system/friendarazzi.service
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now friendarazzi.service
+   ```
 
-| Record | Name | Value |
-|---|---|---|
-| `A` / `AAAA` | `api.friendarazzi.app` | already points at the VPS (Caddy needs it) |
-| `MX` | `friendarazzi.app` | `10 api.friendarazzi.app.` |
-| `TXT` | `friendarazzi.app` | `v=spf1 mx ~all` |
-| `TXT` | `mail._domainkey.friendarazzi.app` | the `v=DKIM1; k=rsa; p=…` value the script prints |
-| `TXT` | `_dmarc.friendarazzi.app` | `v=DMARC1; p=none; rua=mailto:dmarc@friendarazzi.app` |
-| `PTR` | (provider network console, not the zone) | the VPS IP resolves back to `api.friendarazzi.app` |
+   All containers in [`compose.yaml`](../compose.yaml) also configure `restart: unless-stopped` and bounded `json-file` log rotation (`max-size: 10m`, `max-file: 5`). Never run `docker compose down -v` in production: it removes Caddy's named certificate and state volumes (`caddy_data`, `caddy_config`, `mail_certs`).
 
-Start SPF at `~all` and DMARC at `p=none`: both report without rejecting, so a first delivery
-failure is diagnosable rather than silently bounced. Tighten to `-all` and `p=quarantine` once
-delivery to a public mailbox is confirmed. The PTR record is set in the provider's network console,
-not in the DNS zone, and without it large providers reject or heavily penalise this relay.
+## Release sequence and synchronized deploy
 
-### Verify submission
+- Pull requests never deploy.
+- On a push to `main`, `ci` (`pr/base`) and `release-check` must both pass before `deploy/image` builds and pushes `ghcr.io/<owner>/friendarazzi-server:sha-<commit>` (plus the human-browsing `:main` tag).
+- Both `deploy/pages` (GitHub Pages static export) and `deploy/backend` (VPS Compose deploy) wait for `deploy/image` to succeed and deploy artifacts built from that exact commit SHA. There is no second backend replica, staging environment, or frontend/backend compatibility matrix; brief UI/API mismatches during the short rollout window are expected.
+- `deploy/release` publishes the GitHub release only after `ci`, `release-check`, `deploy/pages`, and `deploy/backend` all succeed.
+- `workflow_dispatch` runs the same `ci -> deploy/image -> {deploy/pages, deploy/backend}` pipeline from any branch (skipping `release-check` and `deploy/release`) without moving `:main`.
+- Concurrent VPS deployments are serialized with a non-blocking `flock` on `/opt/friendarazzi/state/deploy.lock`; a second concurrent run exits immediately with a clear error message.
 
-`GET /api/health/mail` reports the verdict of a probe that logs in to the submission listener and
-hangs up. Each read that finds no verdict, a failed one, or an `Ok` older than a minute starts a
-fresh probe in the background, so the container healthcheck keeps it current.
-`docker compose logs backend` reports `SMTP-Relay erreichbar; Mailversand ist verfügbar` when it
-first succeeds. `deploy:vps` now **fails** when this verdict has not turned `Ok` within about two
-minutes, before the revision is recorded as known-good, so an unverified relay cannot become a
-rollback target. To check by hand:
+## Measured maintenance window
 
-```sh
-curl --fail "https://$API_DOMAIN/api/health/mail"
-```
+During backend replacement, Caddy serves an explicit `503 Service Unavailable` with `Retry-After: 30` (and CORS headers for `FRONTEND_ORIGIN`) whenever `/opt/friendarazzi/state/caddy/maintenance.enabled` exists:
 
-A `status` of `Failed` carries a `detail` naming the failing step (credentials or reachability).
-`Unknown` means the first probe has not reported yet; ask again.
+1. `deploy:vps` checks out the target SHA, updates `state/deploy.env`, pulls the new backend image, and updates/reloads supporting services **before** enabling maintenance mode.
+2. It creates `state/caddy/maintenance.enabled`, records the start timestamp, and verifies Caddy returns `503` with `Retry-After`.
+3. It stops the old `backend` container, creates and verifies the pre-release SQLite snapshot, starts the new `backend` container (which runs `molting` migrations on startup), and verifies `/api/health`, `/api/version`, `/api/health/mail`, and OpenObserve `/healthz` before removing `maintenance.enabled`.
+4. After removing `maintenance.enabled`, it records the start time, end time, and duration in `state/maintenance.log` and in the deploy output, then verifies public HTTPS and OpenObserve signal ingestion.
 
-`GET /api/health` still answers the bare string `OK` and does not depend on mail at all: a broken
-relay must never stop the API from serving (NFR-5). The container healthcheck, however, requires
-both, which is what surfaces a broken relay to `docker compose ps`.
+### Manual maintenance toggle and recovery
 
-**Outbound delivery is separate from submission.** A healthy verdict only proves the backend reached
-the relay. Whether the relay can deliver to a public mailbox is a different hop and shows up in the
-mail server's own logs (`docker compose exec mailserver setup debug show-mail-logs`). Two failures
-are common on a fresh VPS:
+If a deployment aborts during maintenance mode (for example, a failed snapshot or health check), `maintenance.enabled` stays in place so traffic receives `503` rather than broken responses.
 
-- `Network is unreachable (os error 101)` on an IPv6 target: the host has no working IPv6 route
-  while the MX lookup returned an AAAA record. Either fix IPv6 on the host or make the mail server
-  prefer IPv4 (it already runs with `POSTFIX_INET_PROTOCOLS=ipv4` for the same reason).
-- A connect timeout on port 25 to a large provider's MX: many VPS providers block outbound TCP 25
-  by default to limit spam. Ask the provider to unblock it, or relay outbound mail through a
-  smarthost the provider allows. Publishing inbound 25 does not fix outbound delivery. The
-  backend's own submission port is unaffected.
+- Enable manually: `touch /opt/friendarazzi/state/caddy/maintenance.enabled`
+- Disable manually after verifying health: `rm -f /opt/friendarazzi/state/caddy/maintenance.enabled`
+- Inspect measured history: `cat /opt/friendarazzi/state/maintenance.log`
 
-**Mail is mandatory as of the MVP.** Reverting to a private pilot without mail means the mail
-server stops being started, and Compose must then also stop declaring the SMTP variables, because
-the backend would otherwise point at a service that does not exist.
+## Pre-release SQLite snapshot
 
-## Automated deployment (AC-1–AC-6)
+Before any release starts the new backend container (and before `molting` migrations run), `deploy:vps` stops `backend` and creates a consistent SQLite snapshot in `/opt/friendarazzi/backups/sqlite/friendarazzi-<YYYYMMDDTHHMMSSZ>-<sha12>.db`:
 
-On an eligible push to `main`, `pr/base` has already compiled the release profile for that revision and uploaded two artefacts: the server binary and the static export. `deploy/pages` deploys the export as built. `deploy/image` wraps that binary in the runtime image and pushes it to `ghcr.io/<owner>/friendarazzi-server`, tagged `sha-<full commit>` and, for humans browsing the registry, `main`. `deploy/backend` then calls `mise run deploy:vps <reference> <commit>`, the same task an operator runs. It validates that the reference is `ghcr.io/<owner>/friendarazzi-server:sha-<commit>` and that the tag matches the revision, streams the remote half over SSH, and there fetches every branch, checks out that revision, pulls the image, applies the services, and checks `https://API_DOMAIN/api/health`. Nothing compiles on the VPS or in the deploy step: what runs is the binary the gate tested, addressed by the commit it was built from. `deploy/release` is gated on both deployments. PR runs have no deployment job.
+- Created using `sqlite3 ... ".backup ..."` inside the pulled `friendarazzi-server` image as UID `10001` (not a raw file copy of a live database).
+- Verified both inside the backup step and by re-opening the written host file read-only with `PRAGMA integrity_check;` (`ok`) and `SELECT count(*) FROM sqlite_master;`.
+- If snapshot creation or verification fails, deployment stops immediately without starting the new release or running migrations.
 
-A `workflow_dispatch` run takes exactly this path from whatever branch it is dispatched on and skips only `release-check` and `deploy/release`, so a pull request can be deployed and exercised before it merges. Nothing restricts the revision to `main`; the tag-and-revision agreement is what keeps a deployment self-consistent. Only a `main` push moves the human-facing `:main` tag.
+The SQLite snapshot is an extra pre-migration safeguard; it does not replace host/provider-level backups.
 
-The only reference any consumer uses is the `sha-<commit>` tag. `:main` is pushed for humans and nothing pulls it; `deploy:vps` rejects it, as it rejects a digest reference and a short sha. A `sha-<commit>` tag is written once per commit and never re-pointed, so the recorded rollback target names an exact revision.
+## Version endpoint (`GET /api/version`)
 
-Before enabling mail for an automated deployment, the operator must have completed the DNS and bootstrap gate described above: MX, SPF, DKIM, and DMARC published, the submission account created, and the PTR record set. The workflow does not touch DNS or open mail ports; Compose publishes them. The mail server starts with the rest of the stack, and a deployment whose relay verdict is not `ok` fails rather than warning, so a broken relay cannot be recorded as a known-good revision.
+The backend exposes `GET /api/version` returning:
 
-## Recovery notes
+- `version`: `CARGO_PKG_VERSION`
+- `buildTime`: UTC compile-time RFC 3339 timestamp
+- `commit`: compile-time Git commit SHA when supplied (`FRIENDARAZZI_BUILD_COMMIT` / `GITHUB_SHA` / `git rev-parse HEAD`), or `null`
 
-- Application state is the SQLite bind mount plus object-store bind mount; restore them together from the same host-level recovery point and preserve ownership/permissions. Do not copy a live SQLite database file as an application backup and call it consistent.
-- Mail state and Caddy certificate/account state live separately in their own persistent mount/volume. A fresh Caddy volume can trigger new ACME issuance and rate limits; retain it.
-- The deploy task rolls back the image and the checked-out revision; it does not roll back database migrations or restore application data. Verify rollback health and inspect logs with `docker compose logs backend caddy`.
-- Rolling back needs `.deploy/known-good-image`; a deployment that fails before one exists reports that no rollback target is recorded instead of starting an empty image. To roll back by hand, read that file and run `mise run deploy:vps "$(cat .deploy/known-good-image)" "$(cat .deploy/known-good-revision)"` with the production values set, or on the VPS set `FRIENDARAZZI_IMAGE` in `/opt/friendarazzi/.env` to the recorded reference and run `docker compose pull backend && docker compose up -d backend` in `/opt/friendarazzi/repo`.
-- `.deploy/known-good-digest` records the registry digest the tag resolved to. It is a tripwire, not authentication: if a `sha-<commit>` tag were ever re-pushed, the digest would change and be visible there on the next deploy.
-- A local stack builds from this checkout with the override: `mise run build:server`, then `docker compose -f compose.yaml -f compose.build.yaml up -d --build`. The deployment never passes `compose.build.yaml`, so a deploy can pull but cannot build.
-- Never run `docker compose down -v` on production: it removes named Caddy state volumes.
+It exposes no environment variables or secrets. `deploy:vps` verifies `/api/version` reports the expected `commit` before lifting maintenance mode.
+
+## OpenObserve observability
+
+[`compose.yaml`](../compose.yaml) runs OpenObserve (`public.ecr.aws/zinclabs/openobserve:v1.1.2`) alongside Caddy and the backend:
+
+- **Exposure & auth**: OpenObserve binds strictly to `127.0.0.1:5080` on the VPS; it is never exposed publicly. Access the UI over an SSH tunnel:
+
+  ```sh
+  ssh -N -L 5080:127.0.0.1:5080 <VPS_USER>@<VPS_HOST>
+  # Open http://127.0.0.1:5080 in your browser
+  ```
+
+- **Credentials (`/opt/friendarazzi/secrets/openobserve.env`)**:
+
+  ```env
+  ZO_ROOT_USER_EMAIL=ops@example.invalid
+  ZO_ROOT_USER_PASSWORD=replace-with-strong-password
+  ```
+
+- **Backend OTLP traces**: `backend` exports OpenTelemetry spans over OTLP HTTP to `http://openobserve:5080/api/default/v1/traces` (`stream-name: friendarazzi_traces`), authenticating via HTTP Basic auth from `secrets/openobserve.env`.
+- **Caddy logs**: Caddy logs remain in Docker's rotated `json-file` container log stream (`bash /opt/friendarazzi/repo/deploy/compose.sh logs caddy`) without an extra log-shipper sidecar in this iteration.
+- **Verification**: `deploy:vps` automatically verifies `friendarazzi_traces` after lifting maintenance mode. To query traces manually on the VPS:
+
+  ```sh
+  set -a; . /opt/friendarazzi/secrets/openobserve.env; set +a
+  NOW_US=$(( $(date +%s) * 1000000 ))
+  START_US=$(( NOW_US - 900000000 ))
+
+  curl -fsS -X POST "http://127.0.0.1:5080/api/default/_search?type=traces" \
+    -u "${ZO_ROOT_USER_EMAIL}:${ZO_ROOT_USER_PASSWORD}" \
+    -H "Content-Type: application/json" \
+    -d "{\"query\":{\"sql\":\"SELECT * FROM \\\"friendarazzi_traces\\\" LIMIT 5\",\"start_time\":${START_US},\"end_time\":${NOW_US},\"from\":0,\"size\":5},\"search_type\":\"ui\"}"
+  ```
+
+## Mail (`docker-mailserver`)
+
+The mail server runs unconditionally in `compose.yaml` (MVP registration and password recovery depend on it). Caddy obtains one TLS certificate for `API_DOMAIN`, `certsync` republishes it into `mail_certs`, and `docker-mailserver` reloads Postfix/Dovecot automatically when the pair changes.
+
+1. Populate `/opt/friendarazzi/secrets/mail.env`:
+
+   ```env
+   FRIENDARAZZI_SMTP_BENUTZERNAME=<submission-account>
+   FRIENDARAZZI_SMTP_PASSWORT=<submission-password>
+   ```
+
+2. After the first deployment brings up Caddy and `mailserver`, run the one-time bootstrap on the VPS:
+
+   ```sh
+   cd /opt/friendarazzi/repo && bash tasks/scripts/mail-bootstrap.sh
+   ```
+
+3. Publish the printed `MX`, `SPF`, `DKIM`, `DMARC`, and provider `PTR` records.
+4. `GET /api/health/mail` probes SMTP submission in the background without blocking API startup (`GET /api/health` stays `OK`); `deploy:vps` waits for `/api/health/mail` to report `Ok` before ending maintenance mode.
+
+## Recovery responsibilities
+
+- **Server-level recovery**: Hetzner VPS-provider server backups are the primary rollback/recovery mechanism for host failures or post-migration rollbacks. Confirm provider backups cover `/opt/friendarazzi/{data,secrets,state,backups}` and Docker's named volumes (`caddy_data`, `caddy_config`, `mail_certs`).
+- **Pre-release SQLite snapshots**: Located under `/opt/friendarazzi/backups/sqlite/`. If a release fails after migration and you need to inspect or restore the pre-release database state alongside provider recovery, restore from the matching `friendarazzi-<timestamp>-<sha12>.db` snapshot while `backend` is stopped and maintenance mode is enabled.
+- **Local development build**: On a workstation, build with `mise run build:server`, stage `.deploy/incoming/friendarazzi-server`, set `FRIENDARAZZI_HOST_ROOT=.` with local `secrets/{mail,openobserve}.env`, and run `docker compose -f compose.yaml -f compose.build.yaml up -d --build`. `deploy:vps` never passes `compose.build.yaml`.

@@ -66,6 +66,7 @@ jobs:
           NEXT_PUBLIC_FRIENDARAZZI_API_URL: ${{ vars.FRIENDARAZZI_API_URL }}
           NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH: ${{ steps.configure-pages.outputs.base_path }}
           FRIENDARAZZI_BUILD_RELEASE: true
+          FRIENDARAZZI_BUILD_COMMIT: ${{ github.sha }}
         run: mise run ci
 
       - name: Publish the test report

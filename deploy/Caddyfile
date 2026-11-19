@@ -1,4 +1,23 @@
 {$API_DOMAIN} {
     encode zstd gzip
-    reverse_proxy backend:3000
+
+    @maintenance file {
+        root /etc/caddy/state
+        try_files /maintenance.enabled
+    }
+
+    handle @maintenance {
+        header Access-Control-Allow-Origin "{$FRONTEND_ORIGIN}"
+        header Access-Control-Allow-Credentials "true"
+        header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        header Access-Control-Allow-Headers "Authorization, Content-Type"
+        header Retry-After "30"
+        header Cache-Control "no-store"
+        header Content-Type "application/json; charset=utf-8"
+        respond `{"message":"Service temporarily unavailable for scheduled maintenance","retryAfterSeconds":30}` 503
+    }
+
+    handle {
+        reverse_proxy backend:3000
+    }
 }

@@ -40,8 +40,8 @@ use crate::{
         },
     },
     schema::{
-        AuthenticatedBenutzer, CaptureOutcome, GameDetail, GameSummary, MailHealth, Ok,
-        StarterDeck, UserGallery, UserProfile,
+        AuthenticatedBenutzer, BuildVersion, CaptureOutcome, GameDetail, GameSummary, MailHealth,
+        Ok, StarterDeck, UserGallery, UserProfile,
     },
 };
 
@@ -113,6 +113,14 @@ impl FriendarazziApiSpec {
     #[oai(path = "/health/mail", method = "get", tag = "ApiTag::Betrieb")]
     async fn health_mail(&self) -> Json<MailHealth> {
         Json(self.mail_health())
+    }
+
+    /// Report the service build identity.
+    ///
+    /// Returns the package version, compile-time UTC build timestamp, and optional build commit.
+    #[oai(path = "/version", method = "get", tag = "ApiTag::Betrieb")]
+    async fn version(&self) -> Json<BuildVersion> {
+        Json(FriendarazziAppApi::build_version())
     }
 
     // ------------------------------------------------------------------ decks
@@ -667,10 +675,11 @@ pub fn openapi_service_from_api(
     app_api: FriendarazziAppApi,
     server_urls: impl IntoIterator<Item = impl Into<ServerObject>>,
 ) -> OpenApiService<FriendarazziApiSpec, ()> {
+    let build = FriendarazziAppApi::build_version();
     let mut service = OpenApiService::new(
         FriendarazziApiSpec::from(app_api),
         "Friendarazzi API",
-        env!("CARGO_PKG_VERSION"),
+        build.version,
     )
     .summary("Social photo-hunting Bingo API: lobbies, drafting, captures, and galleries.")
     .description(include_str!("README.md"));

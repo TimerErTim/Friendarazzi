@@ -29,7 +29,7 @@ pub mod requests;
 
 use self::errors::{GameReadError, MediaReadError, ProfileReadError};
 use crate::schema::{
-    AuthenticatedBenutzer, BoardTileView, BoardView, CaptureFeedItem, CaptureOutcome,
+    AuthenticatedBenutzer, BoardTileView, BoardView, BuildVersion, CaptureFeedItem, CaptureOutcome,
     DraftTargetQuota, GalleryGameGroup, GameDetail, GameSummary, GridCoordinate, PlayerBadge,
     PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView, UserGallery, UserProfile,
 };
@@ -50,6 +50,17 @@ impl FriendarazziAppApi {
 
     pub fn inner_app(&self) -> Arc<App> {
         self.app.clone()
+    }
+
+    /// Compile-time build identity of the service.
+    pub fn build_version() -> BuildVersion {
+        BuildVersion {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            build_time: env!("FRIENDARAZZI_BUILD_TIME").to_owned(),
+            commit: option_env!("FRIENDARAZZI_BUILD_COMMIT")
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned),
+        }
     }
 
     // ---------------------------------------------------------------- Decks

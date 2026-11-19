@@ -1,29 +1,34 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# Local half of `deploy:vps`. Validates the request, then streams the remote half
-# into the VPS over SSH stdin.
+# Local half of `deploy:vps`. Validates the request, loads the canonical VPS layout,
+# and streams `layout.env` + the remote half into the VPS over SSH stdin.
 #
-# Running the remote half from stdin is what keeps this workable: the checkout on
-# the VPS rewrites the worktree, and a script read from the filesystem there could
-# be executed as a mix of two revisions. A heredoc-style stdin script is already in
-# memory, so the old re-exec guard is unnecessary.
+# Streaming from stdin ensures a checkout switch on the VPS never mutates the script
+# currently executing.
 
-image="${usage_image:?missing <image>}"
-revision="${usage_revision:?missing <revision>}"
-host="${usage_host:?set --host or VPS_HOST}"
-user="${usage_user:?set --user or VPS_USER}"
-api_domain="${usage_api_domain:?set --api-domain or API_DOMAIN}"
-# `~` is expanded by the remote shell, not here: the runner's home is not the VPS's.
-# The VPS layout keeps the checkout at `/opt/friendarazzi/repo` with `data/` and `secrets/`
-# beside it, so the checkout and the host root are two different directories.
-deploy_dir="${usage_dir:-/opt/friendarazzi/repo}"
-identity="${usage_identity:-$HOME/.ssh/id_ed25519}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/../.." && pwd)"
+layout_file="$repo_root/deploy/layout.env"
+remote_script="$script_dir/deploy-vps-remote.sh"
 
 fail() {
   echo "deploy:vps: $1" >&2
   exit 2
 }
+
+[[ -f "$layout_file" ]] || fail "missing $layout_file"
+[[ -f "$remote_script" ]] || fail "missing $remote_script"
+# shellcheck source=deploy/layout.env
+source "$layout_file"
+
+image="${usage_image:?missing <image>}"
+revision="${usage_revision:-${image##*:sha-}}"
+host="${usage_host:?set --host or VPS_HOST}"
+user="${usage_user:?set --user or VPS_USER}"
+api_domain="${usage_api_domain:-}"
+host_root="${usage_root:-$VPS_HOST_ROOT_DEFAULT}"
+identity="${usage_identity:-$HOME/.ssh/id_ed25519}"
 
 # One reference format, everywhere: the commit tag. `:main` is pushed for humans
 # browsing the registry and is never a valid deployment input, and a digest would
@@ -40,17 +45,15 @@ fail() {
 
 [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || fail "'$host' is not a hostname or IPv4 address"
 [[ "$user" =~ ^[a-z_][a-z0-9_-]*$ ]] || fail "'$user' is not a Unix account name"
-[[ "$api_domain" =~ ^[A-Za-z0-9.-]+$ ]] || fail "'$api_domain' is not a DNS hostname"
+if [[ -n "$api_domain" ]]; then
+  [[ "$api_domain" =~ ^[A-Za-z0-9.-]+$ ]] || fail "'$api_domain' is not a DNS hostname"
+fi
 [[ -f "$identity" ]] || fail "no SSH key at '$identity'"
-# The values are embedded in the remote command words below, so the path must not be
-# able to contribute shell syntax. Only path characters are accepted.
-[[ "$deploy_dir" =~ ^[A-Za-z0-9_./~-]+$ ]] || fail "unsafe --dir '$deploy_dir'"
+[[ "$host_root" =~ ^[A-Za-z0-9_./~-]+$ ]] || fail "unsafe --root '$host_root'"
 
-remote_script="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/deploy-vps-remote.sh"
-[[ -f "$remote_script" ]] || fail "missing $remote_script"
-
-# The remote arguments travel as separate `bash -s --` words, so the script needs no
-# shell quoting of its own and a value can never be interpreted as code.
-ssh -i "$identity" -o IdentitiesOnly=yes "$user@$host" \
-  "bash -s -- '$image' '$revision' '$api_domain' '$deploy_dir'" \
-  < "$remote_script"
+{
+  cat "$layout_file"
+  printf '\n'
+  cat "$remote_script"
+} | ssh -i "$identity" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=15 "$user@$host" \
+  "bash -s -- '$image' '$revision' '$host_root' '$api_domain'"

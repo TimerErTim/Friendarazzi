@@ -219,7 +219,7 @@ fn ensure_database_directory(database_url: &str) -> Result<(), Report<BackendSer
 #[tokio::main]
 async fn main() -> Result<(), Report<BackendServerError>> {
     let config = config::load().change_context(BackendServerError)?;
-    init_tracing(config.log_dir.as_deref());
+    let tracing_guard = init_tracing(&config);
 
     ensure_database_directory(&config.database_url)?;
     let sqlite = Arc::new(
@@ -280,15 +280,40 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .with(cors(&config));
 
     tracing::info!(local_api_url = local_api_url, "server started at {api_url}");
-    Server::new(TcpListener::bind(format!(
+    let result = Server::new(TcpListener::bind(format!(
         "{}:{}",
         config.bind_address, config.bind_port
     )))
-    .run(app)
+    .run_with_graceful_shutdown(app, shutdown_signal(), None)
     .await
-    .change_context(BackendServerError)?;
+    .change_context(BackendServerError);
 
-    Ok(())
+    tracing_guard.shutdown();
+    result
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
 }
 
 #[cfg(test)]

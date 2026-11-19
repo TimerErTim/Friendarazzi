@@ -80,6 +80,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Report the service build identity.
+         * @description Returns the package version, compile-time UTC build timestamp, and optional build commit.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["BuildVersion"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/decks": {
         parameters: {
             query?: never;
@@ -1712,6 +1750,18 @@ export interface components {
             hasBingo: boolean;
             /** @description Grid tiles ordered by row then column. */
             tiles: components["schemas"]["BoardTileView"][];
+        };
+        /**
+         * BuildVersion
+         * @description Build metadata reported by `GET /api/version`.
+         */
+        BuildVersion: {
+            /** @description Package version from `CARGO_PKG_VERSION`. */
+            version: string;
+            /** @description UTC compile-time timestamp in RFC 3339 format. */
+            buildTime: string;
+            /** @description Git commit SHA when supplied at compile time. */
+            commit?: string | null;
         };
         /**
          * CaptureFeedItem

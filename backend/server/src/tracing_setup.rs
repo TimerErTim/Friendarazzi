@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use friendarazzi_api::FriendarazziAppApi;
 use opentelemetry::KeyValue;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_otlp::{SpanExporter, WithExportConfig, WithHttpConfig};
@@ -40,14 +41,8 @@ pub fn init_tracing(config: &ServerConfig) -> TracingGuard {
         .with_writer(std::io::stdout)
         .with_filter(filter.clone());
 
-    let (tracer_provider, otel_layer) = match build_otel_tracer(config) {
-        Some((provider, otel_filter)) => {
-            let tracer = provider.tracer("friendarazzi-server");
-            let layer = tracing_opentelemetry::layer()
-                .with_tracer(tracer)
-                .with_filter(otel_filter);
-            (Some(provider), Some(layer))
-        }
+    let (tracer_provider, otel_layer) = match build_otel_tracer(config, filter.clone()) {
+        Some((provider, layer)) => (Some(provider), Some(layer)),
         None => (None, None),
     };
 
@@ -88,7 +83,13 @@ where
         .with_filter(filter.add_directive(Level::DEBUG.into()))
 }
 
-fn build_otel_tracer(config: &ServerConfig) -> Option<(SdkTracerProvider, EnvFilter)> {
+fn build_otel_tracer<S>(
+    config: &ServerConfig,
+    filter: EnvFilter,
+) -> Option<(SdkTracerProvider, impl Layer<S>)>
+where
+    S: tracing::Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>,
+{
     let endpoint = resolve_otlp_endpoint(config)?;
 
     let mut headers = HashMap::new();
@@ -112,9 +113,14 @@ fn build_otel_tracer(config: &ServerConfig) -> Option<(SdkTracerProvider, EnvFil
         }
     };
 
+    let build = FriendarazziAppApi::build_version();
+    let mut attributes = vec![KeyValue::new("service.version", build.version)];
+    if let Some(commit) = build.commit {
+        attributes.push(KeyValue::new("service.commit", commit));
+    }
     let resource = Resource::builder()
         .with_service_name(config.otel_service_name.clone())
-        .with_attribute(KeyValue::new("service.version", env!("CARGO_PKG_VERSION")))
+        .with_attributes(attributes)
         .build();
 
     let provider = SdkTracerProvider::builder()
@@ -122,12 +128,12 @@ fn build_otel_tracer(config: &ServerConfig) -> Option<(SdkTracerProvider, EnvFil
         .with_batch_exporter(exporter)
         .build();
 
-    let otel_filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .with_env_var("FRIENDARAZZI_LOG_LEVEL")
-        .from_env_lossy();
+    let tracer = provider.tracer(config.otel_service_name.clone());
+    let layer = tracing_opentelemetry::layer()
+        .with_tracer(tracer)
+        .with_filter(filter.add_directive(Level::TRACE.into()));
 
-    Some((provider, otel_filter))
+    Some((provider, layer))
 }
 
 fn resolve_otlp_endpoint(config: &ServerConfig) -> Option<String> {

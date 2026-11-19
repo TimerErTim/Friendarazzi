@@ -17,12 +17,9 @@ use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
 use friendarazzi_sqlite::SQLiteInstance;
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
-use poem::{
-    Endpoint, EndpointExt, IntoResponse, Request, Response, Route, Server, listener::TcpListener,
-};
+use poem::{EndpointExt, IntoResponse, Route, Server, listener::TcpListener};
 use poem_openapi::payload::PlainText;
 use thiserror::Error;
-use tracing::Instrument;
 use tracing_setup::init_tracing;
 
 #[derive(Debug, Error)]
@@ -277,7 +274,6 @@ async fn main() -> Result<(), Report<BackendServerError>> {
             }),
         )
         .nest("/api", api_service)
-        .around(record_http_span)
         .with(Compression::new())
         .with(tracing)
         .with(catch_panic())
@@ -294,32 +290,6 @@ async fn main() -> Result<(), Report<BackendServerError>> {
 
     tracing_guard.shutdown();
     result
-}
-
-async fn record_http_span<E: Endpoint>(next: E, req: Request) -> poem::Result<Response> {
-    let method = req.method().as_str().to_owned();
-    let path = req.uri().path().to_owned();
-    let span = tracing::info_span!(
-        "http.request",
-        http.request.method = %method,
-        url.path = %path,
-        http.response.status_code = tracing::field::Empty,
-    );
-    async move {
-        let res = next.call(req).await.map(IntoResponse::into_response);
-        match &res {
-            Ok(resp) => {
-                tracing::Span::current()
-                    .record("http.response.status_code", resp.status().as_u16());
-            }
-            Err(err) => {
-                tracing::Span::current().record("http.response.status_code", err.status().as_u16());
-            }
-        }
-        res
-    }
-    .instrument(span)
-    .await
 }
 
 async fn shutdown_signal() {

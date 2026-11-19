@@ -120,13 +120,7 @@ impl FriendarazziApiSpec {
     /// Returns the package version, compile-time UTC build timestamp, and optional build commit.
     #[oai(path = "/version", method = "get", tag = "ApiTag::Betrieb")]
     async fn version(&self) -> Json<BuildVersion> {
-        Json(BuildVersion {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-            build_time: env!("FRIENDARAZZI_BUILD_TIME").to_owned(),
-            commit: option_env!("FRIENDARAZZI_BUILD_COMMIT")
-                .filter(|s| !s.trim().is_empty())
-                .map(str::to_owned),
-        })
+        Json(FriendarazziAppApi::build_version())
     }
 
     // ------------------------------------------------------------------ decks
@@ -681,10 +675,11 @@ pub fn openapi_service_from_api(
     app_api: FriendarazziAppApi,
     server_urls: impl IntoIterator<Item = impl Into<ServerObject>>,
 ) -> OpenApiService<FriendarazziApiSpec, ()> {
+    let build = FriendarazziAppApi::build_version();
     let mut service = OpenApiService::new(
         FriendarazziApiSpec::from(app_api),
         "Friendarazzi API",
-        env!("CARGO_PKG_VERSION"),
+        build.version,
     )
     .summary("Social photo-hunting Bingo API: lobbies, drafting, captures, and galleries.")
     .description(include_str!("README.md"));

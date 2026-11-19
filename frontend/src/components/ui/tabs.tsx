@@ -14,11 +14,6 @@ export function Tabs({
   );
 }
 
-/**
- * Tabs as a sheet index: the triggers sit on a hairline base, and the active one is
- * marked by a filled run of hunter green *and* a change of ink — the rule is the
- * primary signal, colour only reinforces it.
- */
 export function TabsList({
   className,
   ...props
@@ -26,7 +21,7 @@ export function TabsList({
   return (
     <TabsPrimitive.List
       className={cn(
-        "inline-flex min-h-11 items-stretch gap-1 border-b border-subtle",
+        "brutal-shadow-sm inline-flex min-h-11 flex-wrap items-stretch gap-1 rounded-sm border-2 border-strong bg-surface-muted p-1",
         className,
       )}
       {...props}
@@ -41,14 +36,12 @@ export function TabsTrigger({
   return (
     <TabsPrimitive.Trigger
       className={cn(
-        // 36px drawn; 44px target via a vertical overlay, since tab triggers are
-        // adjacent and a horizontal one would overlap a neighbour's taps.
-        "relative -mb-px inline-flex min-h-9 items-center justify-center border-b-2 border-transparent px-3",
-        "before:absolute before:inset-x-0 before:-inset-y-[7px] before:content-['']",
-        "text-sm font-medium text-secondary transition-colors hover:text-ink",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        "relative inline-flex min-h-9 cursor-pointer items-center justify-center rounded-sm border-2 border-transparent px-3.5",
+        "before:absolute before:inset-x-0 before:-inset-y-[5px] before:content-['']",
+        "text-sm font-bold text-secondary transition-colors hover:text-ink",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
         "disabled:pointer-events-none disabled:opacity-50",
-        "data-[state=active]:border-primary data-[state=active]:text-ink",
+        "data-[state=active]:border-strong data-[state=active]:bg-primary data-[state=active]:text-primary-foreground",
         className,
       )}
       {...props}
@@ -63,7 +56,7 @@ export function TabsContent({
   return (
     <TabsPrimitive.Content
       className={cn(
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
         className,
       )}
       {...props}

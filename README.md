@@ -1,4 +1,4 @@
-![Friendarazzi](assets/logo-rasterized-2452x664.webp)
+![Friendarazzi — The Candid Photo-Hunt Bingo](assets/banner_panorama.webp)
 
 # Friendarazzi
 

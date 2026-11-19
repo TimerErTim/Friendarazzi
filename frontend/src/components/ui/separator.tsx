@@ -5,11 +5,6 @@ import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/cn";
 
-/**
- * The section divider: a hairline with small ticks, like the printed rule between
- * two blocks of a logbook page. Vertical separators stay a plain hairline, because a
- * tick rule only reads as a rule when it runs across.
- */
 export function Separator({
   className,
   orientation = "horizontal",
@@ -22,8 +17,8 @@ export function Separator({
       orientation={orientation}
       className={cn(
         orientation === "horizontal"
-          ? "rule-ticks h-px w-full"
-          : "h-full w-px bg-subtle",
+          ? "h-0.5 w-full bg-strong"
+          : "h-full w-0.5 bg-strong",
         className,
       )}
       {...props}

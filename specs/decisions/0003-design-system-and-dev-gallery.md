@@ -1,7 +1,7 @@
 ---
 id: ADR-0003
 title: Semantic design tokens, shadcn-style primitives, and a dev-only component gallery
-status: Proposed
+status: Superseded by ADR-0005 (visual direction); token & gallery architecture retained
 date: 2026-10-24
 deciders: TimerErTim
 ---

@@ -6,29 +6,15 @@ import type { ComponentProps } from "react";
 
 import { cn } from "@/lib/cn";
 
-/**
- * A segmented control: a printed strip of cells sharing one contour, where exactly
- * one is marked as chosen. Used for picking a single option from a small set, so
- * every option is a real button with text, and the selection is carried by the fill
- * *and* by weight, never by colour alone.
- *
- * The cells share their borders rather than sitting apart: `-ml-px` collapses the
- * seam so the strip reads as one ruled block on the paper. The strip keeps a hairline
- * `border-subtle`: it is a set of adjacent labelled buttons, not a single field, and a
- * heavier contour made the group read as framed furniture.
- */
 const toggleGroupItemVariants = cva(
   [
-    // 44px drawn in both axes: segmented cells sit shoulder to shoulder, so a
-    // horizontal `before` overlay would steal its neighbour's taps. The minimum
-    // width is why a short label like "Beta" still gets a full-sized target.
-    "relative -ml-px inline-flex min-h-11 min-w-11 items-center justify-center gap-2 px-3.5",
-    "border border-subtle text-sm font-medium text-secondary",
+    "relative -ml-[2px] inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center gap-2 px-3.5",
+    "border-2 border-control bg-surface text-sm font-bold text-ink",
     "transition-colors first:ml-0 first:rounded-l-sm last:rounded-r-sm",
-    "hover:bg-surface-muted hover:text-ink",
-    "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+    "hover:bg-surface-muted",
+    "focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
     "disabled:pointer-events-none disabled:opacity-50",
-    "data-[state=on]:z-10 data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:font-semibold data-[state=on]:text-primary-foreground",
+    "data-[state=on]:z-10 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground",
   ].join(" "),
 );
 
@@ -38,7 +24,10 @@ export function ToggleGroup({
 }: ComponentProps<typeof ToggleGroupPrimitive.Root>) {
   return (
     <ToggleGroupPrimitive.Root
-      className={cn("flex w-fit flex-wrap items-center", className)}
+      className={cn(
+        "brutal-shadow-sm flex w-fit flex-wrap items-center rounded-sm",
+        className,
+      )}
       {...props}
     />
   );

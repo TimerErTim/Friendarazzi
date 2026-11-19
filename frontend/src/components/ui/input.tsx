@@ -1,28 +1,22 @@
-import type { InputHTMLAttributes } from "react";
+import type { ComponentPropsWithRef } from "react";
 
 import { cn } from "@/lib/cn";
 
-type InputProps = InputHTMLAttributes<HTMLInputElement>;
+type InputProps = ComponentPropsWithRef<"input">;
 
 /**
- * A field on paper. It sits on `--bg-elevated` — the guide's raised sheet — so it
- * reads as a place to write without needing a fill of its own. The resting contour
- * is `--border-control`, which clears the 3:1 that WCAG 2.2 §1.4.11 requires of a
- * control boundary — `--border-strong` is a 1.58:1 contour and may never bound an
- * input. On focus the contour and ring turn hunter green; on hover it darkens.
- */ export function Input({ className, ...props }: InputProps) {
+ * Neubrutalist input field: 44px height (`h-11`), crisp `border-2 border-control`,
+ * hard 2px shadow, and high-contrast focus outline.
+ */
+export function Input({ className, ...props }: InputProps) {
   return (
     <input
       className={cn(
-        // Drawn at 44px, not grown by an overlay: a replaced element (`input`,
-        // `select`, `textarea`) generates no `::before` box, so the hit-area trick
-        // that works on a `button` silently does nothing here. A stacked form field
-        // is its own row, so it can simply be the touch minimum.
-        "h-11 w-full rounded-sm border border-control bg-elevated px-3 text-sm text-ink",
+        "brutal-shadow-sm h-11 w-full rounded-sm border-2 border-control bg-elevated px-3 text-sm font-medium text-ink",
         "transition-colors placeholder:text-muted",
-        "hover:border-ink/40",
-        "focus-visible:border-primary focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-primary",
-        "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-muted",
+        "hover:bg-surface-muted/40",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+        "disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-muted disabled:shadow-none",
         "aria-invalid:border-impact aria-invalid:focus-visible:outline-impact",
         className,
       )}

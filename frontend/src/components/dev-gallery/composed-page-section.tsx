@@ -6,14 +6,6 @@ import { DemoPage } from "@/components/dev-gallery/demo-page";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/cn";
 
-/**
- * The composed plate: every primitive on one screen, arranged the way a real page
- * arranges them. It is the robustness test for the design system — the parts can
- * each pass and the page still fail on density, hierarchy, or neighbouring contrast.
- *
- * Not drawn twice side by side: a page needs width to be judged, so the theme is
- * switched instead. Both themes are complete scopes, so the switch is truthful.
- */
 export function ComposedPageSection() {
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
@@ -23,32 +15,29 @@ export function ComposedPageSection() {
       aria-labelledby="composed-heading"
       className="scroll-mt-6"
     >
-      <header className="flex items-baseline gap-4 pb-3">
+      <header className="flex items-baseline gap-4 border-b-2 border-strong pb-3">
         <span
           aria-hidden="true"
-          className="font-mono text-xs text-secondary tabular-nums"
+          className="rounded-sm border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-xs font-bold text-primary-foreground tabular-nums"
         >
           16
         </span>
         <div className="min-w-0 flex-1 space-y-1">
           <h2
             id="composed-heading"
-            className="font-serif text-lg font-semibold tracking-tight"
+            className="font-display text-lg tracking-tight text-ink"
           >
             Zusammengesetzte Seite
           </h2>
-          <p className="max-w-prose text-sm text-secondary">
-            Eine ganze Seite aus denselben Bausteinen: Laufkopf, Titelblock,
-            Filterzeile, Register, Kennzahlen, Zeichnung, Liniensystem, Formular
-            und Fußblock. Geprüft wird das Zusammenspiel — Dichte, Rangfolge und
-            Nachbarschaft, nicht der einzelne Baustein.
+          <p className="max-w-prose text-sm font-medium text-secondary">
+            Eine ganze Seite aus denselben neubrutalistischen Bausteinen:
+            Registerzeile, Titelblock, Filter, Tabs, Kennzahlen, Grafik,
+            Tabelle, Formular und Fußblock.
           </p>
         </div>
       </header>
 
-      <div aria-hidden="true" className="rule-ticks mb-4 h-px w-full" />
-
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-4 mb-3 flex flex-wrap items-center justify-between gap-3">
         <ToggleGroup
           type="single"
           value={theme}
@@ -60,9 +49,9 @@ export function ComposedPageSection() {
           aria-label="Theme der Seite"
         >
           <ToggleGroupItem value="light">Papier</ToggleGroupItem>
-          <ToggleGroupItem value="dark">Lampe</ToggleGroupItem>
+          <ToggleGroupItem value="dark">Blitzlicht</ToggleGroupItem>
         </ToggleGroup>
-        <code className="font-mono text-[10px] text-secondary">
+        <code className="font-mono text-xs font-bold text-secondary">
           .{theme} · ganze Seite
         </code>
       </div>
@@ -70,7 +59,7 @@ export function ComposedPageSection() {
       <div
         className={cn(
           theme,
-          "paper overflow-hidden rounded-md border border-subtle bg-canvas text-ink",
+          "brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-canvas text-ink",
         )}
       >
         <DemoPage />

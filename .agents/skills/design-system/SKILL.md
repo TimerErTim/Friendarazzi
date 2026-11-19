@@ -1,32 +1,33 @@
 ---
 name: design-system
-description: "Friendarazzi visual identity (Sleek Paperstyle) — semantic design tokens, shadcn-style UI primitives, WCAG contrast and touch-target rules, screen composition, and the /dev gallery. Read before creating or modifying any frontend UI, CSS tokens, or components."
+description: "Friendarazzi visual identity (Neubrutalism) — semantic design tokens, brand kit & wordmark, shadcn-style UI primitives, WCAG contrast and touch-target rules, screen composition, and the /dev gallery. Read before creating or modifying any frontend UI, CSS tokens, or components."
 ---
 
-# Design system — Sleek Paperstyle
+# Design system — Friendarazzi Neubrutalism
 
 The operative rulebook. Follow it literally; it is the only document an implementer needs to build
 UI. Values live in [`frontend/src/app/globals.css`](../../../frontend/src/app/globals.css) — this file
 names tokens and states rules, never hex codes. Rationale and history live in
-[`specs/product/visual-identity.md`](../../../specs/product/visual-identity.md).
+[`specs/product/visual-identity.md`](../../../specs/product/visual-identity.md) and
+[`specs/decisions/0005-neubrutalist-design-system.md`](../../../specs/decisions/0005-neubrutalist-design-system.md).
 
 **Scope: appearance only.** How a screen looks, feels, and behaves visually — never what the product
 does, which journey it supports, or how data flows. Content decisions live in product specs.
 
 ## The identity
 
-A warm, tactile logbook on paper, with the speed and precision of a modern web app. Borrows the
-material language of uncoated paper and pencil ruling, nothing else. Restrained skeuomorphism: flat
-paper, hairline rules, generous space. Utility first: aesthetic never competes with reading or entry.
+Bold, tactile, candid photo-hunt energy on off-white paper: heavy ink contours, crisp unblurred
+offset shadows, flat saturated Electric Yellow, Hot Pink, and Cyan sticker blocks, Polaroid-style
+photo frames, and geometric grotesque display typography.
 
 | ✅ DO | ❌ DON'T |
 |-------|----------|
-| Warm paper (`--bg-surface`, `--bg-canvas`). | Cold tech white; blue-cast grey (Slate) as neutral. |
-| `--color-primary` (hunter green) as the single accent. | Ornamental accents: brown buttons, gradients, multi-coloured badges. |
-| `--semantic-impact` for impacts, critical errors, destructive actions. | Red for decoration or neutral diagram parts. |
-| 1px borders, 4–6px corners. | Drop shadows, glassmorphism (`backdrop-blur`), 16px+ rounding. |
-| Serif headings, sans-serif body. | Handwriting or script for anything read as input. |
-| `--semantic-*` as meaning: colour appears only when something happened. | Semantic colour because a screen looked empty. |
+| Warm off-white canvas (`--bg-canvas`) & crisp cards (`--bg-surface`). | Cold tech white or washed-out blue-grey Slate neutrals. |
+| `--color-primary` (Electric Yellow), `--color-pink` (Hot Pink), `--color-cyan` (Cyan) paired with stark ink text. | White or yellow text on light paper, blurred drop shadows, or CSS gradients. |
+| Heavy `2px`–`2.5px` contours (`--border-control` / `--border-strong`) with hard offset shadows (`brutal-shadow`). | Hairline-only flat borders, glassmorphism (`backdrop-blur`), or soft `blur()` elevation. |
+| Tactile press depression (`brutal-press`: `translate(2px, 2px)`). | Bouncy spring animations or hover elevation without shadow crispness. |
+| `Archivo Black` display headings + `Space Grotesk` body + `JetBrains Mono` codes/timestamps. | Serif (`Lora`), cursive/script, or soft editorial book styling. |
+| `--semantic-*` as meaning: colour appears with a label or icon. | Decorative red/green/amber without status text or icon. |
 
 This table wins over any rule below that disagrees with it.
 
@@ -35,297 +36,136 @@ This table wins over any rule below that disagrees with it.
 Every token is defined for light and dark. Add a token only with an entry here.
 
 **One name per colour.** Utility suffix = token suffix: strip `--color-` or `--bg-` and you have the
-class. No aliases, no second vocabulary. The one collision: "primary" belongs to the brand, so ink is
-**`text-ink`**.
+class. The one collision: "primary" belongs to the brand, so ink is **`text-ink`**.
 
 | Token | Utilities | Use for |
 |----|----|----|
-| `--bg-canvas` | `bg-canvas` | The desk: app shell, page bodies, sidebar |
-| `--bg-surface` | `bg-surface` | A sheet: cards, tables, content, header |
-| `--bg-elevated` | `bg-elevated` | A raised sheet: inputs, dropdowns, dialogs |
-| `--bg-surface-muted` | `bg-surface-muted` | A second sheet: table heads, hover rows, skeletons, tracks |
-| `--border-subtle` | `border-subtle`, `bg-subtle`, `divide-subtle` | Pencil hairline: dividers, card borders, row rules |
-| `--border-strong` | `border-strong` | Non-interactive 1px contour: millimetre grid, quiet edges |
-| `--border-control` | `border-control` | **Every control's boundary** (≥ 3:1, WCAG 1.4.11) |
-| `--text-primary` | `text-ink`, `bg-ink` | Body, headings, default icons |
+| `--bg-canvas` | `bg-canvas` | Page background / desk |
+| `--bg-surface` | `bg-surface` | Cards, panels, top bar, sidebar, polaroid frames |
+| `--bg-elevated` | `bg-elevated` | Inputs, selects, dropdowns, dialogs |
+| `--bg-surface-muted` | `bg-surface-muted` | Table heads, secondary wells, skeletons, hover fill |
+| `--border-subtle` | `border-subtle`, `bg-subtle`, `divide-subtle` | Internal table row dividers and subtle separators |
+| `--border-strong` | `border-strong` | Structural `2px`–`2.5px` neubrutalist contours on cards, badges, and panels |
+| `--border-control` | `border-control` | **Every interactive control's boundary** (≥ 3:1, WCAG 1.4.11) |
+| `--text-primary` | `text-ink`, `bg-ink` | Body, headings, default icons, text on brand colour blocks |
 | `--text-secondary` | `text-secondary` | Labels, subtitles, metadata, units |
 | `--text-muted` | `text-muted` | Placeholders and disabled controls only |
-| `--color-primary` | `bg-primary`, `text-primary`, `border-primary`, `ring-primary`, `outline-primary` | The one brand colour: one primary action per screen, active nav, focus rings |
-| `--color-primary-hover` | `bg-primary-hover` | Pressed primary |
-| `--color-primary-subtle` | `bg-primary-subtle` | Green wash: subtle badges, selected rows |
-| `--primary-foreground` | `text-primary-foreground` | Labels on `--color-primary` |
-| `--semantic-impact` | `text-impact`, `bg-impact`, `border-impact`, `outline-impact`, `border-l-impact` | Impacts, critical deviations, delete, errors |
-| `--semantic-warning` | `text-warning`, `bg-warning`, `border-warning` | Warnings, unsaved changes |
-| `--semantic-success` | `text-success`, `bg-success`, `border-success` | Confirmations, positive trends |
-| `--semantic-info` | `text-info`, `bg-info`, `border-info` | Meteorological data and distance helper lines only |
+| `--color-primary` | `bg-primary`, `text-primary`, `border-primary`, `ring-primary` | Electric Yellow: primary action fill, active nav highlight, brand blocks |
+| `--color-primary-hover` | `bg-primary-hover` | Pressed/hovered primary button |
+| `--color-primary-subtle` | `bg-primary-subtle` | Soft yellow tint wash |
+| `--primary-foreground` | `text-primary-foreground` | Stark ink label on `--color-primary` |
+| `--color-pink` | `bg-pink`, `text-pink`, `border-pink` | Hot Pink: playful brand highlights, secondary stickers, wordmark letters |
+| `--color-pink-subtle` | `bg-pink-subtle` | Soft pink tint wash |
+| `--pink-foreground` | `text-pink-foreground` | Stark ink label on `--color-pink` |
+| `--color-cyan` | `bg-cyan`, `text-cyan`, `border-cyan` | Electric Cyan: Bingo callouts, info stickers, wordmark letters |
+| `--color-cyan-subtle` | `bg-cyan-subtle` | Soft cyan tint wash |
+| `--cyan-foreground` | `text-cyan-foreground` | Stark ink label on `--color-cyan` |
+| `--color-focus` | `outline-focus`, `ring-focus` | High-contrast keyboard focus ring (`--text-primary` in light, `--color-primary` in dark) |
+| `--shadow-ink` | `brutal-shadow`, `brutal-shadow-sm`, `brutal-shadow-lg` | Solid unblurred offset shadow colour (`4px 4px 0 var(--shadow-ink)`) |
+| `--semantic-impact` | `text-impact`, `bg-impact`, `border-impact`, `outline-impact`, `border-l-impact` | Destructive actions, errors, critical failures |
+| `--semantic-warning` | `text-warning`, `bg-warning`, `border-warning` | Warnings, pending player counts, medal/trophy accents |
+| `--semantic-success` | `text-success`, `bg-success`, `border-success` | Confirmations, captured Bingo tiles, locked readiness |
+| `--semantic-info` | `text-info`, `bg-info`, `border-info` | System/helper status notes |
 
 | Mechanics | Use for |
 |----|----|
-| `--shadow-paper` | `paper` class: a sheet's whisper of shadow. `none` in dark |
-| `--shadow-overlay` | `paper-overlay` class: dialogs, menus, tooltips |
-| `--font-sans` (Inter) | Interface: menus, tables, forms, figures. Never name a family in a component |
-| `--font-serif` (Lora) | Titles only: page, card, dialog headings |
-| `--font-mono` (Geist Mono) | Machine values: references, base URLs, token names, file names. Never prose |
-| `--radius` | 4–6px. Controls `rounded-sm`, containers `rounded-md` |
+| `--font-display` (`Archivo Black`) | Display headings (`h1`, `h2`, `CardTitle`, `DialogTitle`), hero banners, `Wordmark` |
+| `--font-sans` (`Space Grotesk`) | Interface copy: menus, tables, forms, buttons, descriptions |
+| `--font-mono` (`JetBrains Mono`) | Machine values: invite codes, 1:1 timeline timestamps, tabular counters, plate indices |
+| `--radius` | `0.375rem` (6px). Controls `rounded-sm` (4px), containers `rounded-md` (6px) |
 
-Add a font weight in `layout.tsx` before using it, or the browser synthesises it. Dark mode is
-class-based (`@custom-variant dark`), defaulting to `prefers-color-scheme`; the gallery sets `.light`
-or `.dark` on a wrapper to show both.
-
-## Colour discipline
-
-One brand colour; everything else is paper, ink, or explicit meaning. Hunter green means brand,
-primary action, active state — nothing else. Semantic colours are meaning only, never decoration, and
-always paired with a word. `--semantic-impact` is the most restricted: "this is an impact", "this
-failed", "this destroys something" — never a hover accent, chart series, or category marker.
-`--semantic-info` is not a general "informational" accent.
+Dark mode is class-based (`@custom-variant dark`), defaulting to `prefers-color-scheme`; the gallery
+sets `.light` or `.dark` on a wrapper to show both side by side.
 
 ## Contrast
 
-Text meets WCAG 2.2 AA (4.5:1). The gallery measures every documented pair; a change dropping one
-below AA is rejected. Four prescribed values fail as text and are role-restricted instead:
+Every text and control pair meets WCAG 2.2 AA (`4.5:1` text, `3:1` controls) in both themes,
+measured live in `/dev`.
 
-| Value | On paper | Restriction |
-|----|----|----|
-| `--text-muted` | 2.48:1 | Placeholders, disabled only. Never body, labels, metadata. |
-| `--semantic-warning` | 3.08:1 | Rules, washes, icons, borders. A warning that must be *read* is ink on the amber wash. |
-| `--border-strong` | 1.58:1 | 1px contour, never text. |
-| `--semantic-success` | 4.45:1 canvas, 4.85:1 surface | Text on `--bg-surface` only. |
+- Saturated brand fills (`--color-primary`, `--color-pink`, `--color-cyan`) **never** carry white
+  or coloured text; they always pair with `--primary-foreground` / `--pink-foreground` /
+  `--cyan-foreground` (stark ink).
+- `--color-primary` (Electric Yellow) is **never** used as text on `--bg-canvas` or `--bg-surface`;
+  use `text-ink` for headings and labels, reserving `--color-primary` for fills, stickers, and
+  dark-mode focus rings.
+- `--text-muted` is restricted to placeholders and disabled controls.
+- Focus outlines always use `outline-focus` (`focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`).
 
-A semantic colour may always be a mark, rule, or wash; it may be text only where the table allows.
-`Badge` and `Alert` encode this: `warning` is ink on amber, not amber text.
+## Brand Kit & Wordmark
 
-**Controls are a separate bar.** WCAG 2.2 §1.4.11 wants 3:1 for a control's outline, so every control
-boundary uses `--border-control`, never `--border-strong`: inputs, selects, textareas, search fields,
-checkbox, radio ring, switch. Thickening a low-contrast hairline does not make it pass — the colour
-has to change. `ToggleGroup` is the exception: its cells are adjacent labelled buttons, not one field,
-so the strip stays `border-subtle`; a heavier contour would read as framed furniture.
+Single-source brand assets live in `assets/` and are synced/verified into `frontend/public/` via
+`node tasks/scripts/sync-brand-assets.mjs`:
 
-## Paper vocabulary
+- **Mark (`assets/favicon.svg` → `frontend/public/favicon.svg`)**: The 3×3 neubrutalist Bingo grid
+  with geometric patterns and central camera lens on Electric Yellow.
+  - PNG/ICO exports: `favicon.ico`, `favicon-16x16.png`, `favicon-32x32.png`,
+    `apple-touch-icon.png` (180×180 opaque), `android-chrome-192x192.png`,
+    `android-chrome-512x512.png`, `android-chrome-maskable-512x512.png` (512×512 with 80% safe-zone
+    padding on opaque yellow).
+  - Monochrome mask icon: `frontend/public/safari-pinned-tab.svg`.
+  - Social preview (1200×630): `frontend/public/og-image.jpg` derived from `assets/banner_landscape.png`.
+  - README banner: `assets/banner_panorama.webp`.
+- **In-app `Wordmark` (`frontend/src/components/brand/wordmark.tsx`)**:
+  - Renders `"Friendarazzi"` in `font-display` (`Archivo Black`) with the banner's signature
+    alternating letter colour pattern (`bg-primary`, `bg-cyan`, `bg-pink` fills), dark ink stroke
+    contour, and hard neubrutalist offset text-shadow — built solely from semantic CSS variables.
+  - Clear space: at least `0.5em` around the mark/wordmark; minimum `18px` font size for full
+    multi-colour wordmark, or pair with the `BrandMark` icon (`>= 24×24px`) in compact spaces.
+  - Never recolour individual letters outside the three brand tokens (`--color-primary`,
+    `--color-cyan`, `--color-pink`).
 
-These elements carry the identity. Use them; do not invent another.
+## Neubrutalist Vocabulary
 
-1. **The sheet.** Content sits on `Card` — hairline plus a whisper of shadow, never a heavy border or
-   elevation. Dark mode: shadow `none`, the hairline alone separates.
-2. **The serif title.** Page, card, and dialog titles are `font-serif`. The book face is the only
-   material character; body never uses it.
-3. **The ruled line.** `Separator` draws `rule-ticks`: small ticks along a hairline like printed form
-   ruling. Sections are divided by a ruled line, never by empty space alone or a shadow.
-4. **The fine contour.** Inputs and selects sit on `--bg-elevated` with a `--border-control` contour,
-   turning `--color-primary` on focus and darkening on hover. A card's hairline is `--border-subtle`.
-5. **The stamp.** `Badge` is a rubber stamp: hairline box, tracked small caps, semantic tint, and its
-   status in words.
-6. **The millimetre grid.** Charts and diagrams are thin geometric lines on a faint grid from
-   `--border-subtle` or `--border-strong` at reduced strength — never filled shapes or gradients.
-7. **The hachure wall.** `HatchBand` draws diagonal `///////` strokes as the default separation
-   between major sections: a change of subject without a border around anything. `dense` for the
-   break before a footer. `Perforation` marks a separable annex instead.
-8. **The page furniture.** `SheetNumber` (margin plate number), `RegisterLine` (running head),
-   `MarginNote` (a remark at the margin, never an `Alert`), `RulerEdge` (a block stating its own
-   scale), `DogEaredSheet` (already read), `StampMark` (record-level verdict). All decorative; none
-   may be the only carrier of state.
+1. **The Sticker Card (`Card`, `brutal-shadow`).** Crisp `border-[2.5px] border-strong`,
+   `bg-surface`, and `4px 4px 0 var(--shadow-ink)`.
+2. **Tactile Press (`brutal-press`).** Buttons and interactive tiles carry `2px`–`2.5px`
+   `border-control` with `brutal-shadow-sm` and depress (`translate(2px, 2px)`) on `:active`.
+3. **Graph Paper & Checkerboard (`brutal-grid`, `brutal-checker`, `brutal-hatch`).** Subtle
+   structural grid backgrounds for the hero, 1:1 timeline, and section dividers — using only
+   `--border-subtle` / `--border-strong`.
+4. **Sticker Badges & Callouts (`Badge`, `Alert`).** Solid high-contrast stamps (`border-2
+   border-strong`) with tracked uppercase `Space Grotesk` or `JetBrains Mono` labels and icons.
+5. **Polaroid Photo Frames.** Captured photos and gallery items sit inside thick white/surface
+   frames with `border-[2.5px] border-strong`, hard offset shadows, and bold caption strips.
 
 ## Rules
 
-1. **Semantic utilities only.** `bg-surface`, `text-secondary`, `border-subtle`, `bg-primary`,
-   `text-impact`. Never a raw palette class (`bg-stone-100`, `text-red-200`) or a hex value in a
-   component. The shadcn-era names (`text-foreground`, `text-muted-foreground`, `border-border`,
-   `text-destructive`, `bg-surface-elevated`, `bg-background`, `outline-ring`) are retired and
-   `check:design` fails if any returns. Paper patterns come from `rule-ticks`, `rule-ticks-quiet`,
-   `leader`, `select-chevron`, `checkbox-tick`, `hatch`, `perforation`, `ruler-edge`, `dog-ear`,
-   `millimetre-grid`; their masks live in `globals.css` and inherit `currentColor`. An inline style
-   may reference only `var(--…)`.
-2. **Contrast is a gate.** See [Contrast](#contrast). The four exceptions are role-restricted, not
-   relaxed.
-3. **Colour is never the only signal.** Status and validation carry a word or an icon too.
-4. **Touch targets ≥ 44×44 px** on every interactive element. Target ≠ drawn control: a control keeps
-   its row height and extends its hit area with a `::before` overlay. Never make a control taller than
-   its row to reach 44px.
-
-   The overlay has four failure modes, all invisible to a review by eye, all verified by hit-testing
-   rather than by reading computed styles:
-   - `inset-y` alone leaves `left`/`right` at `auto`, so the pseudo box collapses to zero width in a
-     flex control. Every overlay also sets `inset-x-0`.
-   - `inset` resolves against the *padding* box, so a 1px or 2px contour silently eats that much of
-     the overlay. Size the inset for the drawn border.
-   - A replaced element (`input`, `select`, `textarea`) generates no `::before` box at all. A field is
-     drawn at 44px, because a stacked field is already its own row.
-   - A table row paints after its neighbour, so an overlay crossing into the next row loses the hit
-     test. In a dense ledger the row itself must be tall enough; that is `ToggleGroupItem`'s
-     `min-h-11`.
-
-   A caption is part of the target: a `<label>` beside a control must be in the hit area
-   (`RadioGroupOption`, `Checkbox`), or the row is short of the minimum however correct the control's
-   own box looks.
-5. **Focus always visible.** `focus-visible:outline-2` with `outline-primary`. Never remove an outline
-   without an equally visible replacement.
+1. **Semantic utilities only.** `bg-canvas`, `bg-surface`, `bg-elevated`, `bg-primary`,
+   `bg-pink`, `bg-cyan`, `text-ink`, `text-secondary`, `border-strong`, `border-control`,
+   `outline-focus`. Never a raw Tailwind palette class (`bg-yellow-400`, `text-pink-500`) or hex
+   value outside `globals.css`. Retired paper/shadcn names (`text-foreground`, `border-border`,
+   `paper-rule`, `rule-ticks`, `dog-ear`, `ruler-edge`, `millimetre-grid`, `leader`) must not
+   reappear.
+2. **Contrast is a gate.** Every pair in `TokenSwatches` must pass AA in both `.light` and `.dark`.
+3. **Colour is never the only signal.** Status and validation always carry text or an icon.
+4. **Touch targets ≥ 44×44 px** on every interactive element (`min-h-11` or `::before` hit-area
+   overlay with `inset-x-0`). Replaced elements (`input`, `select`, `textarea`) are drawn at
+   `h-11` (`44px`).
+5. **Focus always visible.** `focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`.
 6. **One primary action per screen.** Everything else `secondary` or `ghost`. Destructive uses
-   `destructive`, never the primary button.
-7. **German UI copy, English code.** Labels German, identifiers and comments English. Do not hardcode
-   product copy in a component beyond gallery fixtures.
-8. **Spacing** is the Tailwind default scale (4, 8, 12, 16, 24, 32). Page bodies and cards `p-6`,
-   fields stack with `space-y-1.5` inside `Field`. White space is part of the identity: prefer a wider
-   gap to another rule.
-9. **Variants come from `cva`.** Add variants in the component's `cva` definition, never as arbitrary
-   classes at call sites. Public variant names stay backwards compatible.
-10. **Flat by default.** Edges from `border-subtle`. Cards carry `paper` (`none` in dark); only
-    genuinely floating overlays carry `paper-overlay`. No hover elevation, gradients, or glass. A
-    dragging row is `ring-1 ring-primary`, never a shadow.
-11. **Angular paper, not pills.** Controls `rounded-sm`, containers `rounded-md`. Round is reserved
-    for meaning: slider bullet, radio ring, radio dot, switch track, progress track. Rounding is never
-    decoration.
-12. **Serif for titles only.** Never body, table cells, form labels, or buttons. Never script or
-    cursive — input must stay legible.
-13. **Warm and natural, low saturation.** Dark is warm charcoal, never pure black, never cold
-    blue-grey. Status colours must be distinguishable without glowing.
-
-## Components
-
-Primitives live in `frontend/src/components/ui/`. shadcn-style: `class-variance-authority` for
-variants, Radix where behaviour is non-trivial, `cn` (`clsx` + `tailwind-merge`) for merging.
-
-Only `Button`, `Alert`, and `Badge` carry status variants. Do not invent colour variants elsewhere.
-
-- **`Button`** — `icon` draws at `md` height with a `::before` 44px target, so mixed rows stay
- aligned. `field` is `h-11 px-4`: the drawn height of `Input`/`Select`/`Textarea`, so a button in a
- `FormRow` sits on the same line as the field beside it. It is already 44px, so it carries no
- overlay. `secondary` is a hairline on paper; `destructive` is a hairline in the failure red.
-- **`Card`** — a sheet, carries `paper`. `CardTitle` is `font-serif`; `CardHeader` closes with a
-  `rule-ticks-quiet` hairline so the title block reads as a printed form head.
-- **`Badge`** — a stamp: hairline, tracked caps, tinted, names its status in words. `primary` is the
-  one stamp in brand ink.
-- **`Alert`** — a margin note: coloured left rule, tinted wash, never a full coloured block. `error`
-  uses `role="alert"`.
-- **`Erfolgsmeldung`** — the positive counterpart of `Alert`, in
-  `components/feedback/`: the same wash and left rule as `Alert variant="success"`, a check icon as a
-  second channel besides colour, and one German sentence that names the write („Aufstellung
-  gespeichert.“). It is an `<output aria-atomic="true">`, not `role="alert"`: a success is polite
-  news, and the element stays mounted (`sr-only`) while empty so a live region is never inserted
-  together with its text. Paired with `useErfolgsmeldung` (one per section): the newest sentence
-  replaces the older one, a new mutation clears the slot first, and a timer clears it after `5s`. It
-  sits where that mutation's failure `Alert` sits — one result slot per section, never one inside a
-  card and one outside. Writes that navigate express their success by the destination instead.
-- **The general failure note.** A write whose screen shows no failure of its own falls back to the
-  same floating slot the success notes use (`ToastProvider`), drawn in the `error` tone: the same
-  wash and left rule as `Alert variant="error"`, a `CircleAlert` icon, `role="alert"`. It is a
-  fallback, not a second vocabulary: a screen that *can* say something specific about its own
-  failure marks the mutation `meta.handlesError` and renders its own `Alert`, and the general note
-  then stays silent. One failure, one sentence, one place — the note never repeats a site error.
-- **`Separator`** — the ruled line; the standard section divider.
-- **`Input`, `Textarea`, `Select`, `SearchInput`** — `--bg-elevated` with a `--border-control`
-  contour, turning `--color-primary` on focus and darkening on hover. All are drawn at 44px: they are
-  replaced elements and cannot take an overlay. `Textarea` defaults to one row with a 44px minimum
-  and may grow by content; use more rows only when the context needs them. A field may visually hide its
-  label while keeping it programmatically attached, and align a short counter or hint below the control
-  at the trailing edge. `Select` stays native on purpose — the platform picker survives touch and
-  one-handed use; its chevron is a `currentColor` mask, so it flips with the theme.
-- **`PasswordInput`** — a password field with an `Eye`/`EyeOff` toggle. The toggle is a real control
-  (`aria-pressed`, a German name stating what the next press does) sitting *inside* the field's
-  trailing area: the field reserves `pr-12` and the button occupies the 44×44 corner, so nothing is
-  drawn taller than the row. Its focus ring is drawn inside the field (`-outline-offset-2`) to stay
-  visible against the control contour. `id` is forwarded to the real `<input>`, so `Field`'s
-  `htmlFor` keeps pointing at the element that takes focus.
-- **Inked controls.** Anything drawn rather than typed carries a strong contour, because a mark on
-  paper is inked: `Checkbox` and `Switch` track and thumb are `border-2`, `RadioGroupItem` is
-  `border-[3px]`. A form must read as marks, not browser chrome. `Checkbox` fills green with a
-  paper-coloured `checkbox-tick`.
-- **`RadioGroupItem`** — a check circle: a `border-[3px]` ring on a 20px circle filling with a solid
-  green disc held off the ring by a paper gap, not a small dot in a large hole.
-- **`Slider`** — a value input drawn as a ruled measure: divided track, fully round bullet with
-  `border-2 border-primary` and a solid ink centre, so it reads as a cursor riding the track rather
-  than a second tick. `CheckpointSlider`'s bullet is the same shape, contoured in ink rather than
-  primary because it sits on a ramp of caller-supplied stake colours.
-- **`CheckpointSlider`** — a slider for a scale with named checkpoints, its track divided into
-  coloured bands between them. **Band colours are caller-supplied data**, not design tokens: they
-  arrive as a `checkpoints` prop and the design system owns no palette for them. Callers pass
-  `var(--…)` references, never hex. The value moves freely and never snaps. Bands are `aria-hidden`;
-  the legend names every checkpoint and the thumb's `aria-valuetext` names the nearest. No checkpoints
-  renders a plain track.
-- **`Table`** — a ruled ledger: hairlines between rows, no zebra banding, `tabular-nums`,
-  right-aligned figures, heads in tracked small caps on `--bg-surface-muted`. `TableKeyValue` renders
-  label · dotted-leader · value metric pairs.
-- **Sortable `Table` rows** use `@dnd-kit` with a dedicated per-row handle, never the whole row; the
-  handle meets the touch rule and has a distinct accessible name per row. Machine values are mono.
-- **`PflockSwatch`** — master data stores a Pflock's colour as a validated `#rrggbb`, so it cannot
-  come from the palette. The swatch receives that value through the `--pflock-farbe` custom
-  property and paints `bg-[var(--pflock-farbe)]`; it is the one inline style that names data rather
-  than a token. The swatch is `aria-hidden` and always paired with the stored hex (`PflockMarker`),
-  because colour is never the only signal. Band colours on `CheckpointSlider` are the same idea,
-  supplied as props; the design system owns no palette for either.
-- **`PflockFarbeFeld`** — the colour picker for a Pflock: a `fieldset`-backed group of 44×44 swatch
-  buttons (the club's vocabulary, hardcoded as *data*) plus a native `<input type="color">` for a
-  custom value. Selection is `border-primary` **and** an ink check on a paper chip **and**
-  `aria-pressed`; each option carries its German colour name as its accessible name, since a swatch
-  alone is not a name. The stored value is drawn in mono beside them.
-- **`Progress`** — a measured band with fifth-ticks on a divided track. `rounded-sm`: a progress
-  track's roundness would mean nothing.
-- **`Field`** — owns label, hint, and error placement; use it instead of hand-assembling label +
- input. The label is a real `<label>` attached with `htmlFor`: `Field` mints an id for a single
- control child that has none and leaves a control that already names itself alone. A caption drawn
- above an unnamed input is not a labelled field, and no token or contrast check detects that.
- The label row is a fixed `min-h-[18px]`, `items-center`, so a field with an `optional` marker and
- one without start their control at the same y.
-- **`FormRow` and `FormActions`** — the row-shaped form. `FormRow` is `grid items-start` with a
- caller-chosen column count; its `actions` slot renders `FormActions`, which reserves the label row
- as `pt-6` (18px label + 6px gap) and is `self-start`. Alignment is by the *control row*, never by
- the bottom edge: **never use `items-end` on a form row**, because a hint or error under one field
- then lifts its control above its neighbour and the row stops reading as one line. Put
- `Button size="field"` in `FormActions`, not `md`.
-- **Layout and workflow** (`app-shell`, `sidebar`, `page-chrome`, `workflow-steps`) compose from
-  primitives. The active nav item is a filled treatment plus `aria-current`, never colour alone.
-
-## Screen composition
-
-A screen is a page of the logbook. Whether a journey shows a map, a progress bar, or a step list is a
-product decision, not settled here.
-
-1. Page header: serif title with a ruled line beneath.
-2. Content blocks are `Card`s or ruled table sections; a `Separator` between sections.
-3. Dense and scannable: one primary action, tables for records, forms stacked in `Field`.
-4. Figures right-aligned and `tabular-nums`. IDs, references, and coordinates `font-mono`.
-5. Exactly one primary action per screen, in the first action row.
-6. Status as a word (plus icon or stamp); colour only as the second channel.
-7. A page that ends in links closes with one `HatchBand` before them and *nothing after them* — the
-   footer is the last block, so a page without a footer simply ends with its content. Never a
-   trailing rule that divides nothing.
-8. An `Alert` about a form's own submission sits on that form's sheet, immediately above the action
-   that caused it; an `Alert` about the page itself (the session could not be checked, a link in the
-   URL is spent) sits above the cards and spans the page. One rule, so a reader always knows whether
-   resubmitting can help.
+   `destructive`.
+7. **German UI copy, English code.** Labels German, identifiers and comments English.
+8. **Spacing** uses Tailwind's scale (`4, 8, 12, 16, 24, 32`). Cards and page bodies `p-6`.
+9. **Variants come from `cva`.** Keep public variant names stable (`primary`, `secondary`, `ghost`,
+   `destructive`, `default`, `success`, `warning`, `error`, `info`, `outline`).
+10. **URLs respect `NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH`.** All static metadata/icon/manifest paths
+    and shareable `inviteUrl(code)` links respect `basePath` (see `frontend/src/lib/invite-url.ts`).
+11. **Bingo boards & overlays.** `BingoBoard` renders as one unified card with `2px` `bg-strong` grid
+    lines and Polaroid-style cells (`object-contain` foreground photo over a blurred `object-cover`
+    backdrop). Floating toasts and avatar circles always sit on an opaque `bg-surface` backing so
+    transparent images and yellow winner banners remain high-contrast. Invite QR codes render dark
+    modules on an opaque `#ffffff` square with a 4-module quiet zone in both themes.
 
 ## The gallery at `/dev`
 
-`frontend/src/app/dev/page.dev.tsx` exists only under `next dev`: `next.config.ts` adds `dev.tsx` /
-`dev.ts` to `pageExtensions` only in the development phase, so `next build` never emits the route.
-
-- A printed specimen book: cover block, table-of-contents index, numbered plates. Each
-  `ComponentSection` carries a two-digit mono `index`, a serif title, a one-line rationale, and a
-  ruled line before the specimens.
-- Every plate renders twice — `.light` (Papier) and `.dark` (Lampe) — so a palette change is judged
-  side by side, not from memory.
-- The Tokens plate reads computed CSS variables and prints each documented pair's contrast ratio with
-  an AA verdict. The touch-target toggle outlines targets under 44px (dashed amber: a measuring
-  overlay, not part of the identity).
-- **The gallery is domain-free.** Fixtures use neutral German UI language (`Eintrag`, `Status`,
-  `Kategorie`, `Fortschritt`, `Alpha`/`Beta`/`Gamma`) — never product entities, shooting terms, or a
-  real place name. It shows *how* the product looks; *what* it does belongs to product specs, and a
-  plate must not imply a journey.
-- **Plate 16 composes a whole page** in the order a real page uses the parts — running head, plate
-  number, title block, action row, filter row, tabs, metric cards, drawing with legend, ledger with
-  inline controls, form card with margin furniture, footer. Specimens can each pass while the page
-  fails on density, hierarchy, or neighbouring contrast, so this plate is judged whole. It renders
-  once, not twice: a page needs width, so Papier/Lampe is a switch, and it is laid out with container
-  queries (`@md`, `@lg`, `@xl`). Whatever a page needs that the parts lack belongs here first, then
-  in the primitives.
-- A superseded direction belongs in the spec decision log, not on the page.
-
-**Workflow for any visual change:** edit a token or component → look at `/dev` → decide → write the
-result into this skill and the spec decision log in the same commit.
+`frontend/src/app/dev/page.dev.tsx` exists only under `next dev` (`next.config.ts` phase check).
+It renders every token, live WCAG contrast ratios, typography (`Archivo Black`, `Space Grotesk`,
+`JetBrains Mono`), the `Wordmark` & `BrandMark`, and all UI primitives side by side in `.light` and
+`.dark`, plus the full composed page plate and a 44 px touch-target overlay toggle.
 
 ## Keeping in sync
 
-- A new or renamed token, changed pairing, new variant, or changed visual rule must land here and in
-  `specs/product/visual-identity.md` in the same commit. No "document it later".
-- `check:design` (in `mise run check`) fails when a token in `globals.css` is undocumented here, a raw
-  palette class appears under `frontend/src` outside `globals.css`, or a retired utility name returns.
-  Prose nuance is the human half: the PR checklist item.
+- Every literal token in `globals.css` must be documented in this file (`check:design` fails
+  otherwise).
+- Update `specs/product/visual-identity.md` and this skill in the same commit as any token or
+  component rule change.

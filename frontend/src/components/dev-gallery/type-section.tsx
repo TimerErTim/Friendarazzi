@@ -4,17 +4,6 @@ import { Example } from "@/components/dev-gallery/component-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-/**
- * Typography of the logbook: two faces, two jobs.
- *
- * Lora is the book face and appears only in titles; Inter is the work face and
- * carries every control, table, and figure; Geist Mono is reserved for values a
- * machine produced. The specimen shows them together on real product copy, because
- * a pairing that reads well alone can still fall apart in a dense table.
- *
- * Both families are loaded in `layout.tsx` via `next/font`, so nothing extra is
- * fetched at runtime and there is no flash of a fallback face.
- */
 export function TypeSection() {
   return (
     <section
@@ -22,35 +11,33 @@ export function TypeSection() {
       aria-labelledby="type-heading"
       className="scroll-mt-6 space-y-4"
     >
-      <header className="flex items-baseline gap-4 pb-3">
+      <header className="flex items-baseline gap-4 border-b-2 border-strong pb-3">
         <span
           aria-hidden="true"
-          className="font-mono text-xs text-secondary tabular-nums"
+          className="rounded-sm border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-xs font-bold text-primary-foreground tabular-nums"
         >
           02
         </span>
         <div className="min-w-0 flex-1 space-y-1">
           <h2
             id="type-heading"
-            className="font-serif text-lg font-semibold tracking-tight"
+            className="font-display text-lg tracking-tight text-ink"
           >
             Schrift
           </h2>
-          <p className="max-w-prose text-sm text-secondary">
-            Lora trägt die Überschriften, Inter die Arbeit. Der Buchcharakter
-            lebt in den Titeln; alles, was gelesen und bedient wird, bleibt
-            nüchtern.
+          <p className="max-w-prose text-sm font-medium text-secondary">
+            Archivo Black trägt Display-Überschriften und die Wortmarke, Space
+            Grotesk den Fließtext und alle Steuerelemente, JetBrains Mono Codes
+            und Zeitstempel.
           </p>
         </div>
       </header>
 
-      <div aria-hidden="true" className="rule-ticks mb-4 h-px w-full" />
-
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="light space-y-5 rounded-md border border-subtle bg-canvas p-4 text-ink">
+        <div className="light brutal-shadow space-y-5 rounded-md border-[2.5px] border-strong bg-canvas p-4 text-ink">
           <TypeSpecimen />
         </div>
-        <div className="dark space-y-5 rounded-md border border-subtle bg-canvas p-4 text-ink">
+        <div className="dark brutal-shadow space-y-5 rounded-md border-[2.5px] border-strong bg-canvas p-4 text-ink">
           <TypeSpecimen />
         </div>
       </div>
@@ -62,17 +49,17 @@ function TypeSpecimen() {
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">Lora · Titel</Badge>
-        <Badge variant="outline">Inter · Schnittstelle</Badge>
-        <Badge variant="outline">Geist Mono · Werte</Badge>
+        <Badge variant="primary">Archivo Black · Display</Badge>
+        <Badge variant="info">Space Grotesk · UI</Badge>
+        <Badge variant="outline">JetBrains Mono · Werte</Badge>
       </div>
 
       <Example caption="Überschrift und Fließtext" className="block">
         <div className="w-full space-y-2">
-          <p className="font-serif text-2xl leading-tight font-semibold tracking-tight">
+          <p className="font-display text-2xl leading-tight tracking-tight">
             Neuer Eintrag — Bereich Süd
           </p>
-          <p className="text-sm">
+          <p className="text-sm font-medium">
             Jeden Eintrag einzeln erfassen. Der erste Wert und der Folgewert
             werden daraus berechnet.
           </p>
@@ -85,15 +72,15 @@ function TypeSpecimen() {
       <Example caption="Tabelle und Bedienelemente" className="block">
         <div className="w-full space-y-3">
           <table className="w-full border-collapse text-sm">
-            <thead className="border-b border-subtle text-left text-[10px] tracking-[0.09em] text-secondary uppercase">
+            <thead className="border-b-2 border-strong text-left font-mono text-[10px] tracking-[0.08em] text-secondary uppercase">
               <tr>
-                <th scope="col" className="py-1.5 font-semibold">
+                <th scope="col" className="py-1.5 font-bold">
                   Nr.
                 </th>
-                <th scope="col" className="py-1.5 font-semibold">
+                <th scope="col" className="py-1.5 font-bold">
                   Status
                 </th>
-                <th scope="col" className="py-1.5 text-right font-semibold">
+                <th scope="col" className="py-1.5 text-right font-bold">
                   Wert
                 </th>
               </tr>
@@ -101,11 +88,11 @@ function TypeSpecimen() {
             <tbody className="divide-y divide-subtle">
               {SAMPLE_ROWS.map((row) => (
                 <tr key={row.nr}>
-                  <td className="py-1.5 font-mono text-xs tabular-nums">
+                  <td className="py-1.5 font-mono text-xs font-bold tabular-nums">
                     {row.nr}
                   </td>
-                  <td className="py-1.5">{row.status}</td>
-                  <td className="py-1.5 text-right font-medium tabular-nums">
+                  <td className="py-1.5 font-medium">{row.status}</td>
+                  <td className="py-1.5 text-right font-mono font-bold tabular-nums">
                     {row.wert}
                   </td>
                 </tr>
@@ -117,7 +104,7 @@ function TypeSpecimen() {
             <Button size="sm" variant="secondary">
               Abbrechen
             </Button>
-            <span className="font-mono text-xs text-secondary tabular-nums">
+            <span className="font-mono text-xs font-bold text-secondary tabular-nums">
               0712 · 284 / 320
             </span>
           </div>
@@ -125,7 +112,7 @@ function TypeSpecimen() {
       </Example>
 
       <Example caption="Zeichen" className="block">
-        <p className="w-full text-sm">
+        <p className="w-full text-sm font-medium">
           ÄÖÜäöüß · 0123456789 · € · → · ✓ · — »Kategorie«
         </p>
       </Example>

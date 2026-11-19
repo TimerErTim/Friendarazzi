@@ -1,21 +1,44 @@
 {
-  "name": "Friendarazzi",
+  "id": "/",
+  "name": "Friendarazzi — Foto-Jagd-Bingo",
   "short_name": "Friendarazzi",
+  "description": "Das soziale Foto-Jagd-Bingo für Freundesgruppen.",
   "lang": "de",
   "start_url": ".",
+  "scope": ".",
   "display": "standalone",
-  "background_color": "#f4f1ea",
-  "theme_color": "#1b3b2b",
+  "background_color": "#FAF8F2",
+  "theme_color": "#FFE600",
   "icons": [
     {
       "src": "android-chrome-192x192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "android-chrome-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "android-chrome-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Mit Code beitreten",
+      "short_name": "Beitreten",
+      "url": "./join/"
+    },
+    {
+      "name": "Spiele & Lobbys",
+      "short_name": "Spiele",
+      "url": "./"
     }
   ]
 }

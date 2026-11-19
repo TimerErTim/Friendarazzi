@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { BrutalStickersSection } from "@/components/dev-gallery/brutal-stickers-section";
 import { touchTargetOutline } from "@/components/dev-gallery/component-section";
 import { ComposedPageSection } from "@/components/dev-gallery/composed-page-section";
 import { DataFiguresSection } from "@/components/dev-gallery/data-figures-section";
 import { InkedControlsSection } from "@/components/dev-gallery/inked-controls-section";
-import { PaperFurnitureSection } from "@/components/dev-gallery/paper-furniture-section";
 import {
   AlertSection,
   BadgeSection,
@@ -28,20 +28,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
-/**
- * The design gallery: the visual identity reviewed as a logbook of itself.
- *
- * Exists only under `next dev`. The file is `page.dev.tsx`, and `next.config.ts`
- * adds `dev.tsx` to `pageExtensions` for the development phase only, so `next build`
- * never sees it and nothing here ships.
- *
- * The workflow it serves: change a token in `globals.css`, this page reloads, and
- * both themes are judged side by side on the same specimen — no switching, no
- * memory. Decisions are then written into `.agents/skills/design-system/SKILL.md` and
- * `specs/product/visual-identity.md`.
- */
-
-/** The plate index, in the order the system is read: foundation, then parts. */
 const PLATES = [
   { id: "tokens", index: "01", label: "Tokens" },
   { id: "type", index: "02", label: "Schrift" },
@@ -56,7 +42,7 @@ const PLATES = [
   { id: "data", index: "11", label: "Tabelle & Maß" },
   { id: "overlay", index: "12", label: "Überlagerung" },
   { id: "misc", index: "13", label: "Kleinteile" },
-  { id: "furniture", index: "14", label: "Papier-Möbel" },
+  { id: "brand-stickers", index: "14", label: "Marke & Sticker" },
   { id: "inked", index: "15", label: "Markierte Bedienelemente" },
   { id: "composed", index: "16", label: "Zusammengesetzte Seite" },
 ] as const;
@@ -69,46 +55,45 @@ export default function DevGalleryPage() {
       <SetBreadcrumbLabel label="Design-Galerie" />
 
       <div className="mx-auto max-w-6xl px-6 py-10">
-        {/* Title block: a logbook's cover page. */}
         <header className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="primary">Sleek Paperstyle</Badge>
-            <Badge variant="outline">Nur im Dev-Server</Badge>
-            <span className="font-mono text-xs text-secondary">16 Tafeln</span>
+            <Badge variant="primary">Neubrutalismus</Badge>
+            <Badge variant="info">Nur im Dev-Server</Badge>
+            <span className="font-mono text-xs font-bold text-secondary">
+              16 Tafeln
+            </span>
           </div>
 
           <div className="space-y-2">
-            <h1 className="font-serif text-3xl leading-tight font-semibold tracking-tight text-balance">
+            <h1 className="font-display text-3xl leading-tight tracking-tight text-balance">
               Gestaltungs-Galerie
             </h1>
-            <p className="max-w-prose text-sm text-secondary">
-              Die visuelle Identität als Musterbuch. Jede Tafel zeigt dieselben
-              Bausteine zweimal: links auf warmem Papier, rechts im Lampenlicht.
-              Farben, Radien und Schatten kommen ausschließlich aus{" "}
-              <code className="font-mono text-xs text-ink">globals.css</code>.
+            <p className="max-w-prose text-sm font-medium text-secondary">
+              Das Design-System als Musterbuch. Jede Tafel zeigt dieselben
+              Bausteine zweimal: links auf hellem Papier, rechts im dunklen
+              Blitzlicht. Alle Token-Werte kommen ausschließlich aus{" "}
+              <code className="font-mono text-xs font-bold text-ink">
+                globals.css
+              </code>
+              .
             </p>
           </div>
 
           <Separator />
         </header>
 
-        {/* Index: a printed table of contents, not a nav bar. */}
         <nav aria-label="Tafeln" className="py-6">
-          <ol className="grid gap-x-8 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+          <ol className="grid gap-x-8 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
             {PLATES.map((plate) => (
               <li key={plate.id}>
                 <a
                   href={`#${plate.id}`}
-                  className="group flex items-baseline gap-2 rounded-sm py-0.5 text-sm transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className="group flex items-center gap-2 rounded-sm py-1 text-sm font-bold transition-colors hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                 >
-                  <span className="font-mono text-[11px] text-secondary tabular-nums">
+                  <span className="rounded-sm border border-strong bg-primary px-1.5 py-0.5 font-mono text-[11px] font-bold text-primary-foreground tabular-nums">
                     {plate.index}
                   </span>
                   <span>{plate.label}</span>
-                  <span
-                    aria-hidden="true"
-                    className="leader mb-1 h-2 flex-1 opacity-50"
-                  />
                 </a>
               </li>
             ))}
@@ -117,18 +102,17 @@ export default function DevGalleryPage() {
 
         <Separator />
 
-        {/* Toolbar: the one control that is about the gallery, not the system. */}
         <div className="flex flex-wrap items-center justify-between gap-3 py-4">
-          <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
+          <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-bold">
             <input
               type="checkbox"
               checked={showTouchTargets}
               onChange={(event) => setShowTouchTargets(event.target.checked)}
-              className="checkbox-tick size-4 appearance-none rounded-sm border border-subtle bg-surface"
+              className="checkbox-tick brutal-shadow-sm size-5 appearance-none rounded-sm border-2 border-control bg-surface"
             />
             44 px Touch-Ziele markieren
           </label>
-          <Button variant="ghost" size="sm" asChild>
+          <Button variant="secondary" size="sm" asChild>
             <Link href="/">Zur App</Link>
           </Button>
         </div>
@@ -149,17 +133,16 @@ export default function DevGalleryPage() {
               <DataSection />
               <OverlaySection />
               <MiscSection />
-              <PaperFurnitureSection />
+              <BrutalStickersSection />
               <InkedControlsSection />
             </div>
           </div>
           <ComposedPageSection />
         </div>
 
-        {/* Colophon: the page signs itself off, as a printed specimen sheet does. */}
-        <footer className="mt-16 border-t border-subtle pt-4">
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-secondary">
-            <span>Lora · Inter · Geist Mono</span>
+        <footer className="mt-16 border-t-2 border-strong pt-4">
+          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs font-bold text-secondary">
+            <span>Archivo Black · Space Grotesk · JetBrains Mono</span>
             <span aria-hidden="true">·</span>
             <span>WCAG 2.2 AA</span>
             <span aria-hidden="true">·</span>

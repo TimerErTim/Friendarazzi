@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { PageHeader } from "@/components/layout/page-header";
+import { CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   gameHref,
   joinHref,
@@ -14,11 +15,6 @@ import {
   userProfileHref,
 } from "@/lib/navigation";
 
-/**
- * Static export fallback: supports pretty share URLs (`/join/<code>`, `/games/<id>`,
- * `/users/<id>`) by redirecting to the query-param static pages, and serves a real
- * 404 page for everything else.
- */
 export default function NotFoundPage() {
   const router = useRouter();
   const [redirecting, setRedirecting] = useState(false);
@@ -46,22 +42,30 @@ export default function NotFoundPage() {
 
   if (redirecting) {
     return (
-      <div className="mx-auto w-full max-w-xl p-6 text-sm text-secondary">
+      <div className="mx-auto w-full max-w-xl p-6 font-mono text-sm font-bold text-secondary">
         Weiterleitung …
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-6 p-6">
-      <PageHeader
-        register={["Friendarazzi"]}
-        title="Seite nicht gefunden"
-        description="Diese Seite existiert nicht oder wurde verschoben."
-      />
-      <Button asChild>
-        <Link href={paths.home}>Zur Startseite</Link>
-      </Button>
+    <div className="mx-auto flex w-full max-w-lg flex-col justify-center px-4 py-16">
+      <Card>
+        <CardContent className="space-y-4 pt-6 text-center">
+          <CodeTag tone="pink">HTTP 404</CodeTag>
+          <h1 className="font-display text-3xl tracking-tight text-ink">
+            Seite nicht gefunden
+          </h1>
+          <p className="text-sm font-medium text-secondary">
+            Diese Seite existiert nicht oder wurde verschoben.
+          </p>
+          <div className="pt-2">
+            <Button size="lg" asChild>
+              <Link href={paths.home}>Zur Startseite</Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

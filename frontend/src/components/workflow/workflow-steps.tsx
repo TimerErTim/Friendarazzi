@@ -10,31 +10,21 @@ type Step = {
 type WorkflowStepsProps = {
   steps: Step[];
   currentStepId: string;
-  /** Iteration labels come from the locale source, never from this component. */
   optionalLabel?: string;
 };
 
-/**
- * A workflow as a ruled sequence: numbered marks joined by a short stitched line,
- * like the entries of a logbook. A passed step is a filled mark, the step ahead an
- * outline, and the current step is confirmed by a stamp-like ring.
- *
- * State is carried by the mark shape, the step number, the text and `aria-current`,
- * never by colour alone, so the sequence stays readable in daylight and to
- * colour-blind users. The current step is named in text ("Schritt 2 von 3").
- */
 export function WorkflowSteps({
   steps,
   currentStepId,
   optionalLabel = "optional",
 }: WorkflowStepsProps) {
-  const aktuell = steps.findIndex((step) => step.id === currentStepId);
+  const currentIdx = steps.findIndex((step) => step.id === currentStepId);
 
   return (
     <ol
       aria-label={
-        aktuell >= 0
-          ? `Schritt ${aktuell + 1} von ${steps.length}: ${steps[aktuell]?.label}`
+        currentIdx >= 0
+          ? `Schritt ${currentIdx + 1} von ${steps.length}: ${steps[currentIdx]?.label}`
           : undefined
       }
       className="flex flex-wrap items-center gap-x-2 gap-y-3"
@@ -52,12 +42,12 @@ export function WorkflowSteps({
           >
             <span
               className={cn(
-                "flex size-6 items-center justify-center rounded-sm text-[11px] font-semibold tabular-nums",
+                "brutal-shadow-sm flex size-7 items-center justify-center rounded-sm border-2 border-strong font-mono text-xs font-bold tabular-nums",
                 isCurrent
-                  ? "border-2 border-primary bg-surface text-ink"
+                  ? "bg-primary text-primary-foreground"
                   : isDone
-                    ? "bg-primary text-primary-foreground"
-                    : "border border-subtle text-secondary",
+                    ? "bg-cyan text-cyan-foreground"
+                    : "bg-surface text-secondary",
               )}
             >
               {index + 1}
@@ -66,27 +56,26 @@ export function WorkflowSteps({
               className={cn(
                 "text-sm",
                 isCurrent
-                  ? "font-semibold text-ink"
+                  ? "font-bold text-ink"
                   : isDone
-                    ? "text-ink"
-                    : "text-secondary",
+                    ? "font-semibold text-ink"
+                    : "font-medium text-secondary",
               )}
             >
               {step.label}
               {isCurrent ? (
                 <span className="ml-1.5 font-mono text-xs text-secondary">
-                  Schritt {index + 1} von {steps.length}
+                  ({index + 1}/{steps.length})
                 </span>
               ) : null}
             </span>
             {step.optional ? (
-              <span className="text-xs text-secondary">({optionalLabel})</span>
+              <span className="font-mono text-xs text-secondary">
+                ({optionalLabel})
+              </span>
             ) : null}
             {isLast ? null : (
-              <span
-                aria-hidden="true"
-                className="h-px w-8 border-t border-dashed border-subtle"
-              />
+              <span aria-hidden="true" className="h-0.5 w-6 bg-strong" />
             )}
           </li>
         );

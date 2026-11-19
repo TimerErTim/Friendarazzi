@@ -1,6 +1,5 @@
 "use client";
 
-import { Award } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -11,12 +10,10 @@ import { useUserGalleryQuery } from "@/api/hooks";
 import { PlayerAvatar } from "@/components/friendarazzi/player-avatar";
 import { UserGalleryTabs } from "@/components/friendarazzi/user-gallery-tabs";
 import { SetBreadcrumbLabel } from "@/components/layout/page-chrome";
-import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { HatchBand, MarginNote } from "@/components/ui/paper-rule";
 import { Skeleton } from "@/components/ui/skeleton";
 import { paths } from "@/lib/navigation";
 import { useQueryParam } from "@/lib/use-query-param";
@@ -33,9 +30,8 @@ export default function UserProfilePage() {
 
   if (id === null || gallery.isLoading) {
     return (
-      <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
-        <Skeleton className="h-10 w-56" />
-        <Skeleton className="h-32 w-full" />
+      <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
+        <Skeleton className="h-44 w-full" />
         <Skeleton className="h-64 w-full" />
       </div>
     );
@@ -43,12 +39,12 @@ export default function UserProfilePage() {
 
   if (!id) {
     return (
-      <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
-        <MarginNote label="Kein Spieler gewählt">
+      <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
+        <CalloutNote label="Kein Spieler gewählt" tone="yellow">
           Wähle einen Spieler über dessen Avatar aus.
-        </MarginNote>
+        </CalloutNote>
         <Button asChild>
-          <Link href={paths.home}>Zur Übersicht</Link>
+          <Link href={paths.home}>Zur Spielzentrale</Link>
         </Button>
       </div>
     );
@@ -56,7 +52,7 @@ export default function UserProfilePage() {
 
   if (gallery.isError || !gallery.data) {
     return (
-      <div className="mx-auto w-full max-w-3xl space-y-4 p-6">
+      <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
         <Alert variant="error">
           {apiErrorMessage(gallery.error, {
             fallback: "Dieses Spielerprofil konnte nicht geladen werden.",
@@ -69,39 +65,55 @@ export default function UserProfilePage() {
   const profile = gallery.data.user;
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
+    <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
       <SetBreadcrumbLabel label={profile.displayName} />
-      <PageHeader
-        register={["Spieler", "Profil"]}
-        title={profile.displayName}
-        description={profile.effectiveTitle}
-      />
 
-      <Card>
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 pt-6">
-          <div className="flex items-center gap-4">
-            <PlayerAvatar user={profile} size="lg" linkToProfile={false} />
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="warning" className="gap-1">
-                  <Award className="size-3.5 text-warning" aria-hidden="true" />
-                  {profile.goldMedalCount} Goldmedaillen
-                </Badge>
-                <Badge variant="primary">{profile.effectiveTitle}</Badge>
-              </div>
-              <p className="text-sm text-secondary tabular-nums">
-                {profile.gamesPlayed} Spiele · {profile.capturesMade} Fotos
-                geschossen · {profile.timesCaught}× erwischt
-              </p>
+      <section className="brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-surface">
+        <div className="flex flex-wrap items-center gap-4 border-b-2 border-strong bg-cyan-subtle p-6">
+          <PlayerAvatar user={profile} size="lg" linkToProfile={false} />
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
+                {profile.displayName}
+              </h1>
+              <Badge variant="info">{profile.effectiveTitle}</Badge>
             </div>
+            <p className="font-mono text-xs font-bold text-secondary">
+              Spieler-Steckbrief
+            </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      <HatchBand />
+        <div className="grid grid-cols-3 divide-x-2 divide-strong bg-surface">
+          <div className="p-4 text-center">
+            <p className="font-display text-2xl text-ink tabular-nums">
+              {profile.gamesPlayed}
+            </p>
+            <p className="font-mono text-[11px] font-bold text-secondary uppercase">
+              Spiele
+            </p>
+          </div>
+          <div className="p-4 text-center">
+            <p className="font-display text-2xl text-ink tabular-nums">
+              {profile.capturesMade}
+            </p>
+            <p className="font-mono text-[11px] font-bold text-secondary uppercase">
+              Geschossen
+            </p>
+          </div>
+          <div className="p-4 text-center">
+            <p className="font-display text-2xl text-ink tabular-nums">
+              {profile.timesCaught}
+            </p>
+            <p className="font-mono text-[11px] font-bold text-secondary uppercase">
+              Erwischt
+            </p>
+          </div>
+        </div>
+      </section>
 
       <section className="space-y-3">
-        <h2 className="font-serif text-lg font-semibold text-ink">
+        <h2 className="font-display text-lg tracking-tight text-ink">
           Fotomomente
         </h2>
         <UserGalleryTabs

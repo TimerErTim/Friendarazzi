@@ -4,8 +4,8 @@ import { Camera, Clock } from "lucide-react";
 import { useState } from "react";
 
 import type { CaptureFeedItem } from "@/api/friendarazzi-api";
+import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MarginNote } from "@/components/ui/paper-rule";
 import { cn } from "@/lib/cn";
 
 import { AuthenticatedImage } from "./media-image";
@@ -13,7 +13,6 @@ import { PhotoLightbox } from "./photo-lightbox";
 
 /**
  * 1:1 linear-scaled timeline proportional to total match duration (`startedAt` .. `endedAt`).
- * Quiet stretches remain visually open while clusters highlight chaotic bursts.
  */
 export function GameTimeline({
   startedAt,
@@ -28,9 +27,9 @@ export function GameTimeline({
 
   if (captures.length === 0) {
     return (
-      <MarginNote label="1:1 Zeitachse">
+      <CalloutNote label="1:1 Zeitachse">
         In dieser Runde wurden keine Fotos aufgenommen.
-      </MarginNote>
+      </CalloutNote>
     );
   }
 
@@ -51,37 +50,34 @@ export function GameTimeline({
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="bg-cyan-subtle">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardTitle>1:1 Spiel-Zeitachse</CardTitle>
-          <span className="inline-flex items-center gap-1.5 text-xs text-secondary tabular-nums">
+          <span className="inline-flex items-center gap-1.5 rounded-sm border-2 border-strong bg-surface px-2 py-0.5 font-mono text-xs font-bold text-ink tabular-nums">
             <Clock className="size-3.5" aria-hidden="true" />
-            Gesamtdauer: {formatDuration(totalMs)}
+            {formatDuration(totalMs)}
           </span>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <p className="text-xs text-secondary">
+      <CardContent className="space-y-4 pt-5">
+        <p className="text-xs font-medium text-secondary">
           Maßstabsgetreue Darstellung vom Spielstart bis zum Bingo. Tippe auf
           einen Punkt, um Beweisfoto und Details zu öffnen.
         </p>
 
-        {/* Scrollable 1:1 track on narrow mobile screens, full width on desktop */}
         <div className="overflow-x-auto pb-2">
           <div className="relative min-w-[540px] pt-12 pb-8">
-            {/* Baseline track */}
-            <div className="millimetre-grid absolute inset-x-4 top-6 h-10 rounded-sm border border-subtle" />
-            <div className="absolute inset-x-4 top-1/2 h-0.5 -translate-y-1/2 bg-strong" />
+            <div className="brutal-grid absolute inset-x-4 top-6 h-12 rounded-sm border-2 border-strong bg-canvas" />
+            <div className="absolute inset-x-4 top-12 h-0.5 -translate-y-1/2 bg-strong" />
 
-            {/* Start / End labels */}
-            <div className="absolute top-0 left-4 text-[11px] text-secondary tabular-nums">
+            <div className="absolute top-0 left-4 font-mono text-[11px] font-bold text-ink tabular-nums">
               Start:{" "}
               {new Date(startMs).toLocaleTimeString("de-AT", {
                 hour: "2-digit",
                 minute: "2-digit",
               })}
             </div>
-            <div className="absolute top-0 right-4 text-[11px] text-secondary tabular-nums">
+            <div className="absolute top-0 right-4 font-mono text-[11px] font-bold text-ink tabular-nums">
               Bingo:{" "}
               {new Date(endMs).toLocaleTimeString("de-AT", {
                 hour: "2-digit",
@@ -89,7 +85,6 @@ export function GameTimeline({
               })}
             </div>
 
-            {/* Proportional 1:1 nodes */}
             <div className="relative mx-6 h-12">
               {captures.map((cap, index) => {
                 const capMs = Date.parse(cap.capturedAt);
@@ -107,16 +102,18 @@ export function GameTimeline({
                     onClick={() => setSelected(cap)}
                     style={{ left: `${leftPct}%` }}
                     className={cn(
-                      "group absolute -translate-x-1/2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+                      "group absolute -translate-x-1/2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                       staggerTop,
                     )}
                     title={`${cap.catcher.displayName}: ${cap.promptText ?? "Foto"} (${new Date(cap.capturedAt).toLocaleTimeString("de-AT")})`}
                     aria-label={`Foto von ${cap.catcher.displayName} um ${new Date(cap.capturedAt).toLocaleTimeString("de-AT")}`}
                   >
                     <span className="flex size-11 items-center justify-center">
-                      <span className="size-8 overflow-hidden rounded-full border-2 border-primary bg-elevated transition-transform group-hover:scale-110">
+                      <span className="brutal-shadow-sm size-9 overflow-hidden rounded-full border-2 border-strong bg-surface transition-transform group-hover:scale-110">
                         <AuthenticatedImage
-                          storageKey={cap.thumbnailStorageKey}
+                          storageKey={
+                            cap.imageStorageKey ?? cap.thumbnailStorageKey
+                          }
                           alt={cap.promptText ?? "Capture"}
                           className="h-full w-full"
                         />
@@ -129,8 +126,8 @@ export function GameTimeline({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs text-secondary">
-          <Camera className="size-3.5 text-primary" aria-hidden="true" />
+        <div className="flex flex-wrap items-center gap-2 font-mono text-xs font-semibold text-secondary">
+          <Camera className="size-4 text-ink" aria-hidden="true" />
           <span>{captures.length} erfasste Momente im 1:1 Zeitverlauf</span>
         </div>
 

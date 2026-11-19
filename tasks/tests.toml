@@ -3,11 +3,15 @@ description = "Run the isolated tests (nextest profile `unit`, no external servi
 # The profile is the one thing the product ships with, so the tests exercise it.
 run = "cargo nextest run --workspace --profile unit --release --all-features"
 
+["test:frontend"]
+description = "Run frontend unit tests"
+run = "node --test {{ vars.REPO_ROOT }}/frontend/src/lib/invite-url.test.ts"
+
 ["test:e2e"]
 description = "Run the end-to-end tests (nextest profile `e2e`) against a real Mailpit"
 daemons = ["mailpit"]
 run = "cargo nextest run --workspace --profile e2e --release --all-features"
 
 ["test"]
-description = "Run every test: unit first, then e2e with its services"
-depends = ["test:unit", "test:e2e"]
+description = "Run every test: unit first, then frontend, then e2e with its services"
+depends = ["test:unit", "test:frontend", "test:e2e"]

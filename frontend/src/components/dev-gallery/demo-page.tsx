@@ -22,6 +22,12 @@ import {
 } from "@/components/dev-gallery/data-figures";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import {
+  CalloutNote,
+  CodeTag,
+  RegisterTag,
+  StickerBand,
+} from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -51,15 +57,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  HatchBand,
-  MarginNote,
-  Perforation,
-  RegisterLine,
-  RulerEdge,
-  SheetNumber,
-  StampMark,
-} from "@/components/ui/paper-rule";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupOption } from "@/components/ui/radio-group";
 import { SearchInput } from "@/components/ui/search-input";
@@ -181,13 +178,13 @@ export function DemoPage() {
   return (
     <div className="@container">
       <div className="space-y-6 bg-canvas p-4 text-ink sm:p-6">
-        {/* Running head and plate number: the page introduces itself before the title. */}
+        {/* Running head and plate number */}
         <div className="flex items-start justify-between gap-3">
-          <RegisterLine items={["Buch", "Oktober", "Entwurf"]} />
-          <SheetNumber>014</SheetNumber>
+          <RegisterTag items={["Buch", "Oktober", "Entwurf"]} />
+          <CodeTag tone="yellow">014</CodeTag>
         </div>
 
-        {/* Title block: serif, one line of ink, one of secondary. */}
+        {/* Title block */}
         <header className="space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 space-y-1.5">
@@ -196,7 +193,7 @@ export function DemoPage() {
                 <Badge variant="success">Erfasst</Badge>
                 <Badge variant="outline">Manuell</Badge>
               </div>
-              <h1 className="font-serif text-2xl leading-tight font-semibold tracking-tight text-balance">
+              <h1 className="font-display text-2xl leading-tight tracking-tight text-balance">
                 Eintrag 014 — Monatsblatt
               </h1>
               <p className="max-w-prose text-sm text-secondary">
@@ -343,10 +340,10 @@ export function DemoPage() {
                   <CardTitle>Status</CardTitle>
                   <CardDescription>Urteil auf Dokumentebene</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3 pt-0">
+                <CardContent className="space-y-3 pt-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <StampMark>Geprüft</StampMark>
-                    <StampMark>Oktober</StampMark>
+                    <CodeTag tone="cyan">Geprüft</CodeTag>
+                    <CodeTag tone="pink">Oktober</CodeTag>
                   </div>
                   <WorkflowSteps
                     currentStepId="prüfen"
@@ -465,7 +462,7 @@ export function DemoPage() {
                   <ArrowRight /> Alle öffnen
                 </Button>
               </div>
-              <div aria-hidden="true" className="rule-ticks-quiet mx-6 h-px" />
+              <div aria-hidden="true" className="mx-6 h-0.5 bg-strong" />
               <CardContent className="px-0 pt-0 pb-0">
                 <Table>
                   <caption className="sr-only">
@@ -561,7 +558,7 @@ export function DemoPage() {
               </div>
             </Card>
 
-            <Perforation />
+            <StickerBand />
 
             {/* Form block: the row a user actually fills in. */}
             <div className="grid gap-4 @2xl:grid-cols-3">
@@ -647,45 +644,42 @@ export function DemoPage() {
                 </div>
               </Card>
 
-              <div className="flex gap-3">
-                <RulerEdge />
-                <div className="space-y-4 py-1">
-                  <MarginNote label="Hinweis">
-                    Diese Bemerkung begleitet den Eintrag. Sie verlangt keine
-                    Aktion.
-                  </MarginNote>
-                  <Perforation />
+              <div className="space-y-4">
+                <CalloutNote label="Hinweis" tone="yellow">
+                  Diese Bemerkung begleitet den Eintrag. Sie verlangt keine
+                  Aktion.
+                </CalloutNote>
+                <StickerBand height="sm" />
+                <div className="space-y-2">
+                  <p className="text-[10px] font-semibold tracking-[0.09em] text-secondary uppercase">
+                    Laden
+                  </p>
                   <div className="space-y-2">
-                    <p className="text-[10px] font-semibold tracking-[0.09em] text-secondary uppercase">
-                      Laden
-                    </p>
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-full" />
-                      <Skeleton className="h-4 w-3/4" />
-                      <Skeleton className="h-4 w-1/2" />
-                    </div>
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
                   </div>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="secondary" size="sm">
-                        Blatt abschließen
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Blatt abschließen?</DialogTitle>
-                        <DialogDescription>
-                          Das Blatt wird gespeichert und erscheint in der
-                          Übersicht. Offene Zeilen bleiben offen.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <DialogFooter>
-                        <Button variant="secondary">Abbrechen</Button>
-                        <Button>Speichern</Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
                 </div>
+                <Dialog>
+                  <DialogTrigger asChild>
+                    <Button variant="secondary" size="sm">
+                      Blatt abschließen
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Blatt abschließen?</DialogTitle>
+                      <DialogDescription>
+                        Das Blatt wird gespeichert und erscheint in der
+                        Übersicht. Offene Zeilen bleiben offen.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button variant="secondary">Abbrechen</Button>
+                      <Button>Speichern</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
           </TabsContent>
@@ -745,7 +739,7 @@ export function DemoPage() {
 
         {/* The page signs itself off, as a printed sheet does. */}
         <div className="space-y-3">
-          <HatchBand dense height="md" />
+          <StickerBand checker height="md" />
           <footer className="flex flex-wrap items-center justify-between gap-3 pb-1">
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-secondary">
               <span>Blatt 014</span>

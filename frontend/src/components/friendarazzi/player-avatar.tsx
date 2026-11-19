@@ -51,9 +51,9 @@ export function PlayerAvatar({
     <span className={cn("relative inline-flex shrink-0", className)}>
       <span
         className={cn(
-          "inline-flex items-center justify-center overflow-hidden rounded-full border-2 bg-surface-muted font-semibold text-ink",
+          "brutal-shadow-sm inline-flex items-center justify-center overflow-hidden rounded-full border-2 border-strong font-display text-ink",
           SIZE_CLASSES[size],
-          hasGold ? "border-warning ring-2 ring-warning/30" : "border-subtle",
+          hasGold ? "bg-surface text-ink" : "bg-surface-muted text-ink",
         )}
       >
         {user.avatarStorageKey ? (
@@ -68,10 +68,10 @@ export function PlayerAvatar({
       </span>
       {showMedalBadge && hasGold ? (
         <span
-          className="absolute -right-1 -bottom-1 inline-flex items-center gap-0.5 rounded-full border border-warning bg-elevated px-1 py-0.5 text-[10px] leading-none font-bold text-ink tabular-nums"
+          className="brutal-shadow-sm absolute -right-1.5 -bottom-1 inline-flex items-center gap-0.5 rounded-full border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground tabular-nums"
           title={`${user.goldMedalCount} Goldmedaille(n)`}
         >
-          <Award className="size-2.5 text-warning" aria-hidden="true" />
+          <Award className="size-2.5" aria-hidden="true" />
           {user.goldMedalCount}
         </span>
       ) : null}
@@ -85,7 +85,7 @@ export function PlayerAvatar({
   return (
     <Link
       href={href}
-      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       title={`Profil von ${user.displayName} öffnen`}
     >
       {avatarBox}
@@ -93,9 +93,6 @@ export function PlayerAvatar({
   );
 }
 
-/**
- * Clickable player row/chip with avatar, display name, Gold Medal badge, and title.
- */
 export function PlayerBadgeLink({
   user,
   subtitle,
@@ -113,8 +110,8 @@ export function PlayerBadgeLink({
     <Link
       href={href}
       className={cn(
-        "group inline-flex min-h-11 items-center gap-2.5 rounded-sm px-1.5 py-1 transition-colors hover:bg-surface-muted",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+        "group inline-flex min-h-11 items-center gap-2.5 rounded-sm px-1.5 py-1 transition-colors hover:bg-primary-subtle",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
       )}
     >
       <PlayerAvatar
@@ -124,7 +121,7 @@ export function PlayerBadgeLink({
       />
       <span className="min-w-0 flex-1 text-left">
         <span className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate text-sm font-semibold text-ink group-hover:underline">
+          <span className="truncate text-sm font-bold text-ink group-hover:underline">
             {user.displayName}
           </span>
           {user.isHost ? (
@@ -132,14 +129,8 @@ export function PlayerBadgeLink({
               <Crown className="size-3" aria-hidden="true" /> Host
             </Badge>
           ) : null}
-          {user.goldMedalCount > 0 ? (
-            <Badge variant="warning" className="gap-1">
-              <Award className="size-3 text-warning" aria-hidden="true" />
-              {user.goldMedalCount}
-            </Badge>
-          ) : null}
         </span>
-        <span className="block truncate text-xs text-secondary">
+        <span className="block truncate font-mono text-xs text-secondary">
           {subtitle ?? user.effectiveTitle}
         </span>
       </span>

@@ -154,7 +154,7 @@ function SortableRow({
         style={{ transform: CSS.Translate.toString(transform), transition }}
         className={cn(
           "relative",
-          isDragging && "z-10 bg-surface ring-1 ring-primary",
+          isDragging && "z-10 bg-primary-subtle ring-2 ring-focus",
           !row.active && "text-secondary",
         )}
       >

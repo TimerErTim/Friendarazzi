@@ -3,15 +3,14 @@ import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 /**
- * A sheet of paper. A hairline and a whisper of shadow lift it off the desk; in
- * dark mode the shadow is `none` and the hairline does the work. Nothing heavier:
- * the guide is explicit that there are no heavy borders and no leather.
+ * A neubrutalist sheet: crisp heavy contour (`border-[2.5px] border-strong`)
+ * and hard unblurred offset shadow (`brutal-shadow`).
  */
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "paper rounded-md border border-subtle bg-surface",
+        "brutal-shadow rounded-md border-[2.5px] border-strong bg-surface",
         className,
       )}
       {...props}
@@ -19,33 +18,25 @@ export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   );
 }
 
-/**
- * The sheet's title block: title and optional description, then a faint ruled line
- * across the full width. The rule is a hairline with ticks, like the printed fill
- * line of a form — one pixel, not a band.
- */
 export function CardHeader({
   className,
   children,
   ...props
 }: HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("px-6 pt-5 pb-4", className)} {...props}>
-      <div className="space-y-1">{children}</div>
-      <div
-        aria-hidden="true"
-        className="rule-ticks-quiet -mx-6 mt-4 h-px"
-        style={{ transform: "translateY(0.5px)" }}
-      />
+    <div
+      className={cn(
+        "space-y-1 border-b-2 border-strong px-6 pt-5 pb-4",
+        className,
+      )}
+      {...props}
+    >
+      {children}
     </div>
   );
 }
 
-/**
- * The title is the logbook's hand: serif, tight, and the only place the historical
- * character appears. It is deliberately one step larger than body text but never
- * a display size — this is a tool, not a magazine.
- */
+/** Bold geometric grotesque display title (`Archivo Black`). */
 export function CardTitle({
   className,
   ...props
@@ -53,7 +44,7 @@ export function CardTitle({
   return (
     <h2
       className={cn(
-        "font-serif text-[17px] leading-snug font-semibold tracking-tight",
+        "font-display text-lg leading-snug tracking-tight text-ink",
         className,
       )}
       {...props}
@@ -65,9 +56,7 @@ export function CardDescription({
   className,
   ...props
 }: HTMLAttributes<HTMLParagraphElement>) {
-  return (
-    <p className={cn("text-[13px] text-secondary", className)} {...props} />
-  );
+  return <p className={cn("text-sm text-secondary", className)} {...props} />;
 }
 
 export function CardContent({
@@ -84,7 +73,7 @@ export function CardFooter({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 border-t border-subtle px-6 py-3",
+        "flex items-center gap-2 border-t-2 border-strong bg-surface-muted px-6 py-3",
         className,
       )}
       {...props}

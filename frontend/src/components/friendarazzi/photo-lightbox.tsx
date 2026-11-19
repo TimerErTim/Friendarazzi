@@ -41,20 +41,18 @@ export function PhotoLightbox({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Polaroid frame around the photo */}
-        <div className="brutal-shadow-sm rounded-md border-[2.5px] border-strong bg-surface p-2">
-          <div className="overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
-            <AuthenticatedImage
-              storageKey={
-                capture.isBlurred
-                  ? capture.thumbnailStorageKey
-                  : (capture.imageStorageKey ?? capture.thumbnailStorageKey)
-              }
-              alt={capture.promptText ?? "Beweisfoto"}
-              blurred={capture.isBlurred}
-              className="max-h-[60vh] w-full object-contain"
-            />
-          </div>
+        {/* Single framed viewport around the photo */}
+        <div className="brutal-shadow-sm overflow-hidden rounded-md border-2 border-strong bg-surface-muted">
+          <AuthenticatedImage
+            storageKey={
+              capture.isBlurred
+                ? capture.thumbnailStorageKey
+                : (capture.imageStorageKey ?? capture.thumbnailStorageKey)
+            }
+            alt={capture.promptText ?? "Beweisfoto"}
+            blurred={capture.isBlurred}
+            className="max-h-[60vh] w-full object-contain"
+          />
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-strong pt-3">

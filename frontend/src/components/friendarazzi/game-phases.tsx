@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowRight,
   Award,
   Camera,
   Check,
@@ -1302,15 +1303,27 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
                         cap.imageStorageKey ?? cap.thumbnailStorageKey
                       }
                       alt={cap.promptText ?? "Beweisfoto"}
-                      className="h-full w-full transition-transform hover:scale-105"
+                      fit="contain-blurred"
+                      className="h-full w-full"
                     />
                   </button>
                   <div className="space-y-2 pt-2.5">
                     <p className="line-clamp-2 text-xs font-bold text-ink">
                       {cap.promptText}
                     </p>
-                    <div className="flex items-center justify-between gap-1">
-                      <PlayerAvatar user={cap.catcher} size="sm" />
+                    <div className="flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1">
+                        <PlayerAvatar user={cap.catcher} size="sm" />
+                        {cap.target ? (
+                          <>
+                            <ArrowRight
+                              className="size-3.5 shrink-0 text-secondary"
+                              aria-hidden="true"
+                            />
+                            <PlayerAvatar user={cap.target} size="sm" />
+                          </>
+                        ) : null}
+                      </div>
                       <span className="font-mono text-[11px] font-semibold text-secondary tabular-nums">
                         {new Date(cap.capturedAt).toLocaleTimeString("de-AT", {
                           hour: "2-digit",

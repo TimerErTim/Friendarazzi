@@ -17,9 +17,12 @@ use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
 use friendarazzi_sqlite::SQLiteInstance;
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
-use poem::{EndpointExt, IntoResponse, Route, Server, listener::TcpListener};
+use poem::{
+    Endpoint, EndpointExt, IntoResponse, Request, Response, Route, Server, listener::TcpListener,
+};
 use poem_openapi::payload::PlainText;
 use thiserror::Error;
+use tracing::Instrument;
 use tracing_setup::init_tracing;
 
 #[derive(Debug, Error)]
@@ -219,7 +222,7 @@ fn ensure_database_directory(database_url: &str) -> Result<(), Report<BackendSer
 #[tokio::main]
 async fn main() -> Result<(), Report<BackendServerError>> {
     let config = config::load().change_context(BackendServerError)?;
-    init_tracing(config.log_dir.as_deref());
+    let tracing_guard = init_tracing(&config);
 
     ensure_database_directory(&config.database_url)?;
     let sqlite = Arc::new(
@@ -274,21 +277,73 @@ async fn main() -> Result<(), Report<BackendServerError>> {
             }),
         )
         .nest("/api", api_service)
+        .around(record_http_span)
         .with(Compression::new())
         .with(tracing)
         .with(catch_panic())
         .with(cors(&config));
 
     tracing::info!(local_api_url = local_api_url, "server started at {api_url}");
-    Server::new(TcpListener::bind(format!(
+    let result = Server::new(TcpListener::bind(format!(
         "{}:{}",
         config.bind_address, config.bind_port
     )))
-    .run(app)
+    .run_with_graceful_shutdown(app, shutdown_signal(), None)
     .await
-    .change_context(BackendServerError)?;
+    .change_context(BackendServerError);
 
-    Ok(())
+    tracing_guard.shutdown();
+    result
+}
+
+async fn record_http_span<E: Endpoint>(next: E, req: Request) -> poem::Result<Response> {
+    let method = req.method().as_str().to_owned();
+    let path = req.uri().path().to_owned();
+    let span = tracing::info_span!(
+        "http.request",
+        http.request.method = %method,
+        url.path = %path,
+        http.response.status_code = tracing::field::Empty,
+    );
+    async move {
+        let res = next.call(req).await.map(IntoResponse::into_response);
+        match &res {
+            Ok(resp) => {
+                tracing::Span::current()
+                    .record("http.response.status_code", resp.status().as_u16());
+            }
+            Err(err) => {
+                tracing::Span::current().record("http.response.status_code", err.status().as_u16());
+            }
+        }
+        res
+    }
+    .instrument(span)
+    .await
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {}
+        () = terminate => {}
+    }
 }
 
 #[cfg(test)]

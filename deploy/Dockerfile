@@ -4,7 +4,7 @@
 # `sha-<commit>` tag. A build stage here would produce a second binary, from the same
 # source, that the gate never ran.
 FROM debian:trixie-slim AS runtime
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl sqlite3 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --home-dir /app --no-create-home app
 WORKDIR /app

@@ -89,9 +89,10 @@ fn bearer_schema_ist_veröffentlicht() {
             .is_some_and(|text| !text.is_empty()),
     );
 
-    const OHNE_TOKEN: [(&str, &str); 8] = [
+    const OHNE_TOKEN: [(&str, &str); 9] = [
         ("/health", "get"),
         ("/health/mail", "get"),
+        ("/version", "get"),
         ("/registrierung/start", "post"),
         ("/registrierung/abschluss", "post"),
         ("/anmeldung", "post"),

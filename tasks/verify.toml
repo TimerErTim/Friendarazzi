@@ -59,6 +59,9 @@ body=$(curl -fsS "$ORIGIN/api/health" || true)
 body=$(printf '%s' "$body" | tr -d '"[:space:]')
 [ "$body" = "OK" ] || fail "/api/health returned '$body', expected OK"
 
+curl -fsS "$ORIGIN/api/version" | jq -e '(.version | type == "string" and length > 0) and (.buildTime | type == "string" and length > 0)' >/dev/null \
+  || fail "/api/version did not return version and buildTime"
+
 curl -fsS "$ORIGIN/spec.json" | jq -e . >/dev/null || fail "/spec.json is not valid JSON"
 
 for path in /spec.yaml /swagger; do

@@ -40,8 +40,8 @@ use crate::{
         },
     },
     schema::{
-        AuthenticatedBenutzer, CaptureOutcome, GameDetail, GameSummary, MailHealth, Ok,
-        StarterDeck, UserGallery, UserProfile,
+        AuthenticatedBenutzer, BuildVersion, CaptureOutcome, GameDetail, GameSummary, MailHealth,
+        Ok, StarterDeck, UserGallery, UserProfile,
     },
 };
 
@@ -113,6 +113,20 @@ impl FriendarazziApiSpec {
     #[oai(path = "/health/mail", method = "get", tag = "ApiTag::Betrieb")]
     async fn health_mail(&self) -> Json<MailHealth> {
         Json(self.mail_health())
+    }
+
+    /// Report the service build identity.
+    ///
+    /// Returns the package version, compile-time UTC build timestamp, and optional build commit.
+    #[oai(path = "/version", method = "get", tag = "ApiTag::Betrieb")]
+    async fn version(&self) -> Json<BuildVersion> {
+        Json(BuildVersion {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            build_time: env!("FRIENDARAZZI_BUILD_TIME").to_owned(),
+            commit: option_env!("FRIENDARAZZI_BUILD_COMMIT")
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_owned),
+        })
     }
 
     // ------------------------------------------------------------------ decks

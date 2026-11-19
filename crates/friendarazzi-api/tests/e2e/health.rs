@@ -105,3 +105,30 @@ async fn ein_fehler_bleibt_auf_der_mailroute() {
     assert_eq!(health_status, StatusCode::OK);
     assert_eq!(health_body, serde_json::json!("OK"));
 }
+
+#[test_log::test(tokio::test)]
+async fn version_endpoint_reports_package_version_and_build_time() {
+    let client = client(Arc::new(FakeMailSender::new()));
+
+    let (status, body) = client.get_json("/api/version").await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+    let build_time = body["buildTime"]
+        .as_str()
+        .expect("buildTime must be an RFC 3339 string");
+    chrono::DateTime::parse_from_rfc3339(build_time).expect("buildTime must parse as RFC 3339");
+    assert!(
+        body["commit"].is_null() || body["commit"].as_str().is_some_and(|s| !s.is_empty()),
+        "commit must be null or a non-empty string, got {}",
+        body["commit"]
+    );
+    let obj = body
+        .as_object()
+        .expect("version response must be an object");
+    assert_eq!(
+        obj.len(),
+        3,
+        "version endpoint must expose only expected fields"
+    );
+}

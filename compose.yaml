@@ -1,28 +1,36 @@
 name: friendarazzi
 
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   backend:
-    # `deploy:vps` exports the exact reference it was asked to deploy, and the
-    # required form fails to render if it is missing. A default would let a deploy
-    # silently run whatever a moving tag pointed at. For a local build, add
+    # `deploy:vps` writes `state/deploy.env` with the exact reference it was asked to
+    # deploy, and the required form fails to render if it is missing. A default would let
+    # a deploy silently run whatever a moving tag pointed at. For a local build, add
     # `compose.build.yaml`:
     #   docker compose -f compose.yaml -f compose.build.yaml up --build
     image: ${FRIENDARAZZI_IMAGE:?Set FRIENDARAZZI_IMAGE to ghcr.io/<owner>/friendarazzi-server:sha-<commit>, or use compose.build.yaml}
     restart: unless-stopped
+    logging: *default-logging
     # State and secrets live beside the checkout (`/opt/friendarazzi`), not inside it, so a
     # deploy can check out another revision without touching them. No default: falling
-    # back to the checkout would start on an empty database and without SMTP credentials.
+    # back to the checkout would start on an empty database and without credentials.
     env_file:
-      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/secrets/mail.env
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/secrets/mail.env
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/secrets/openobserve.env
     environment:
       FRIENDARAZZI_BIND_ADDRESS: 0.0.0.0
       FRIENDARAZZI_BIND_PORT: "3000"
       FRIENDARAZZI_DATABASE_URL: /data/sqlite/friendarazzi.db
       FRIENDARAZZI_OBJECT_STORE_DIR: /data/media
+      FRIENDARAZZI_LOG_LEVEL: ${FRIENDARAZZI_LOG_LEVEL:-info}
       # No signing key file: the server generates an Ed25519 key per process. Session rows
       # carry the public half each token was signed with, and a request is checked against
-      # its own row, so a restart does not invalidate outstanding tokens. A mounted key
-      # would be one more operator-owned secret without changing that.
+      # its own row, so a restart does not invalidate outstanding tokens.
       FRIENDARAZZI_TOKEN_ISSUER: ${API_DOMAIN:?Set API_DOMAIN in .env}
       FRIENDARAZZI_TOKEN_AUDIENCE: friendarazzi-api
       FRIENDARAZZI_FRONTEND_BASIS_URL: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN in .env}
@@ -34,9 +42,14 @@ services:
       FRIENDARAZZI_SMTP_PORT: "587"
       FRIENDARAZZI_SMTP_VERSCHLUESSELUNG: start-tls
       FRIENDARAZZI_SMTP_ABSENDER: ${MAIL_ABSENDER:?Set MAIL_ABSENDER in .env}
+      # Export spans over OTLP HTTP to the internal OpenObserve service; credentials come
+      # from `secrets/openobserve.env` via `ZO_ROOT_USER_EMAIL` / `ZO_ROOT_USER_PASSWORD`.
+      FRIENDARAZZI_OTLP_ENDPOINT: http://openobserve:5080/api/default/v1/traces
+      FRIENDARAZZI_OTLP_STREAM_NAME: friendarazzi_traces
+      FRIENDARAZZI_OTEL_SERVICE_NAME: friendarazzi-server
     volumes:
-      - ${FRIENDARAZZI_HOST_ROOT:-.}/data/sqlite:/data/sqlite
-      - ${FRIENDARAZZI_HOST_ROOT:-.}/data/media:/data/media
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/data/sqlite:/data/sqlite
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/data/media:/data/media
     expose:
       - "3000"
     healthcheck:
@@ -57,8 +70,10 @@ services:
   caddy:
     image: caddy:2
     restart: unless-stopped
+    logging: *default-logging
     environment:
       API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in .env}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN in .env}
     ports:
       - "80:80"
       - "443:443"
@@ -66,6 +81,7 @@ services:
     volumes:
       # Part of the checkout in every layout, so it stays relative to this file.
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/state/caddy:/etc/caddy/state:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -80,6 +96,7 @@ services:
   certsync:
     image: caddy:2
     restart: unless-stopped
+    logging: *default-logging
     environment:
       API_DOMAIN: ${API_DOMAIN:?Set API_DOMAIN in .env}
       CADDY_DATA_DIR: /caddy-data
@@ -118,6 +135,7 @@ services:
     # operator value — there is no second domain to keep in step.
     hostname: ${API_DOMAIN:?Set API_DOMAIN in .env}
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "25:25"
       - "587:587"
@@ -150,9 +168,9 @@ services:
     volumes:
       # Mail state lives beside the checkout so provider snapshots cover it, the same way
       # the SQLite database and object store do.
-      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/data/mail/mail-data:/var/mail
-      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/data/mail/mail-state:/var/mail-state
-      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT in .env}/data/mail/mail-config:/tmp/docker-mailserver
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/data/mail/mail-data:/var/mail
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/data/mail/mail-state:/var/mail-state
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/data/mail/mail-config:/tmp/docker-mailserver
       # The certificate pair `certsync` publishes above.
       - mail_certs:/certs:ro
     cap_add:
@@ -169,6 +187,24 @@ services:
           # The backend dials the public FQDN so certificate verification passes, and this
           # alias resolves that name inside the bridge instead of through public DNS.
           - ${API_DOMAIN:?Set API_DOMAIN in .env}
+
+  # Observability store for backend OTLP traces.
+  # Bound to loopback only; access the UI over an SSH tunnel (`ssh -L 5080:127.0.0.1:5080`).
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:v1.1.2
+    restart: unless-stopped
+    logging: *default-logging
+    env_file:
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/secrets/openobserve.env
+    environment:
+      ZO_DATA_DIR: /data
+      ZO_LOCAL_MODE: "true"
+    ports:
+      - "127.0.0.1:5080:5080"
+    volumes:
+      - ${FRIENDARAZZI_HOST_ROOT:?Set FRIENDARAZZI_HOST_ROOT (e.g. /opt/friendarazzi or . for local)}/data/openobserve:/data
+    networks:
+      - app
 
 networks:
   app:

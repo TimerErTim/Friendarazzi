@@ -39,7 +39,8 @@ jobs:
 
   pages:
     name: deploy/pages
-    needs: [ci]
+    needs: [ci, release-check, image]
+    if: ${{ always() && !cancelled() && needs.ci.result == 'success' && needs.image.result == 'success' && ((github.event_name != 'push' && needs.release-check.result == 'skipped') || needs.release-check.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -68,8 +69,10 @@ jobs:
 
   image:
     name: deploy/image
-    # Wraps the binary `pr/base` tested, so the VPS never compiles.
-    needs: [ci]
+    # Wraps the binary `pr/base` tested after release checks pass (on push), so both
+    # Pages and VPS deployments depend on the published image for this exact SHA.
+    needs: [ci, release-check]
+    if: ${{ always() && !cancelled() && needs.ci.result == 'success' && ((github.event_name != 'push' && needs.release-check.result == 'skipped') || needs.release-check.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -152,8 +155,9 @@ jobs:
 
   deploy-backend:
     name: deploy/backend
-    # Runs beside `deploy/pages`; only `deploy/release` waits for both.
-    needs: [ci, image]
+    # Waits for `deploy/image` alongside `deploy/pages`; `deploy/release` waits for both.
+    needs: [ci, release-check, image]
+    if: ${{ always() && !cancelled() && needs.ci.result == 'success' && needs.image.result == 'success' && ((github.event_name != 'push' && needs.release-check.result == 'skipped') || needs.release-check.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -184,7 +188,7 @@ jobs:
           printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
 
-      # The same task an operator runs for a manual deploy or rollback.
+      # The same task an operator runs for a manual deploy.
       - name: Deploy the image on the VPS
         env:
           VPS_HOST: ${{ vars.VPS_HOST }}
@@ -194,13 +198,16 @@ jobs:
           set -eu
           test -n "${VPS_HOST:-}" || { echo "::error::Set production variable VPS_HOST"; exit 1; }
           test -n "${VPS_USER:-}" || { echo "::error::Set production variable VPS_USER"; exit 1; }
-          test -n "${API_DOMAIN:-}" || { echo "::error::Set production variable API_DOMAIN"; exit 1; }
-          mise run deploy:vps \
-            "${{ needs.image.outputs.reference }}" \
-            "${{ github.sha }}" \
-            --host "$VPS_HOST" \
-            --user "$VPS_USER" \
-            --api-domain "$API_DOMAIN"
+          args=(
+            "${{ needs.image.outputs.reference }}"
+            "${{ github.sha }}"
+            --host "$VPS_HOST"
+            --user "$VPS_USER"
+          )
+          if [ -n "${API_DOMAIN:-}" ]; then
+            args+=(--api-domain "$API_DOMAIN")
+          fi
+          mise run deploy:vps "${args[@]}"
 
   release:
     name: deploy/release

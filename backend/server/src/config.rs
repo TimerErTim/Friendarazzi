@@ -42,6 +42,16 @@ pub struct ServerConfig {
     pub smtp_passwort: Option<String>,
     /// Envelope sender of every transactional mail.
     pub smtp_absender: String,
+    /// OTLP HTTP traces endpoint (e.g. `http://openobserve:5080/api/default/v1/traces`).
+    pub otlp_endpoint: Option<String>,
+    /// Optional Basic auth username for the OTLP endpoint.
+    pub otlp_username: Option<String>,
+    /// Optional Basic auth password for the OTLP endpoint.
+    pub otlp_password: Option<String>,
+    /// Target stream name header for OTLP traces (OpenObserve `stream-name`).
+    pub otlp_stream_name: String,
+    /// OpenTelemetry `service.name` resource attribute.
+    pub otel_service_name: String,
 }
 
 impl Default for ServerConfig {
@@ -63,6 +73,11 @@ impl Default for ServerConfig {
             smtp_benutzername: None,
             smtp_passwort: None,
             smtp_absender: "noreply@friendarazzi.app".into(),
+            otlp_endpoint: None,
+            otlp_username: None,
+            otlp_password: None,
+            otlp_stream_name: "friendarazzi_traces".into(),
+            otel_service_name: "friendarazzi-server".into(),
         }
     }
 }
@@ -154,6 +169,26 @@ pub struct Cli {
     /// Envelope sender of transactional mail
     #[arg(long, env = "FRIENDARAZZI_SMTP_ABSENDER")]
     pub smtp_absender: Option<String>,
+
+    /// OTLP HTTP traces endpoint (omit to disable OTLP trace export)
+    #[arg(long, env = "FRIENDARAZZI_OTLP_ENDPOINT")]
+    pub otlp_endpoint: Option<String>,
+
+    /// Optional Basic auth username for the OTLP endpoint
+    #[arg(long, env = "FRIENDARAZZI_OTLP_USERNAME")]
+    pub otlp_username: Option<String>,
+
+    /// Optional Basic auth password for the OTLP endpoint
+    #[arg(long, env = "FRIENDARAZZI_OTLP_PASSWORD")]
+    pub otlp_password: Option<String>,
+
+    /// OpenObserve `stream-name` header value for OTLP traces
+    #[arg(long, env = "FRIENDARAZZI_OTLP_STREAM_NAME")]
+    pub otlp_stream_name: Option<String>,
+
+    /// OpenTelemetry `service.name` resource attribute
+    #[arg(long, env = "FRIENDARAZZI_OTEL_SERVICE_NAME")]
+    pub otel_service_name: Option<String>,
 }
 
 pub fn load() -> Result<ServerConfig, ConfigError> {
@@ -258,6 +293,21 @@ fn overlay(mut config: ServerConfig, cli: &Cli) -> ServerConfig {
     }
     if let Some(smtp_absender) = &cli.smtp_absender {
         config.smtp_absender = smtp_absender.clone();
+    }
+    if let Some(otlp_endpoint) = &cli.otlp_endpoint {
+        config.otlp_endpoint = Some(otlp_endpoint.clone());
+    }
+    if let Some(otlp_username) = &cli.otlp_username {
+        config.otlp_username = Some(otlp_username.clone());
+    }
+    if let Some(otlp_password) = &cli.otlp_password {
+        config.otlp_password = Some(otlp_password.clone());
+    }
+    if let Some(otlp_stream_name) = &cli.otlp_stream_name {
+        config.otlp_stream_name = otlp_stream_name.clone();
+    }
+    if let Some(otel_service_name) = &cli.otel_service_name {
+        config.otel_service_name = otel_service_name.clone();
     }
     config
 }
@@ -479,5 +529,29 @@ logDir = "server-logs/"
         let cli =
             Cli::try_parse_from(["friendarazzi-server", "--config-path", "/tmp/cli.json"]).unwrap();
         assert_eq!(cli.config_path, Some(PathBuf::from("/tmp/cli.json")));
+    }
+
+    #[test_log::test]
+    fn overlays_otlp_settings() {
+        let cli = Cli {
+            otlp_endpoint: Some("http://openobserve:5080/api/default/v1/traces".into()),
+            otlp_username: Some("ops@example.invalid".into()),
+            otlp_password: Some("secret".into()),
+            otlp_stream_name: Some("custom_traces".into()),
+            otel_service_name: Some("friendarazzi-test".into()),
+            ..Cli::default()
+        };
+        let resolved = cli_overlay(cli);
+        assert_eq!(
+            resolved.otlp_endpoint.as_deref(),
+            Some("http://openobserve:5080/api/default/v1/traces")
+        );
+        assert_eq!(
+            resolved.otlp_username.as_deref(),
+            Some("ops@example.invalid")
+        );
+        assert_eq!(resolved.otlp_password.as_deref(), Some("secret"));
+        assert_eq!(resolved.otlp_stream_name, "custom_traces");
+        assert_eq!(resolved.otel_service_name, "friendarazzi-test");
     }
 }

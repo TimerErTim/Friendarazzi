@@ -73,3 +73,18 @@ impl MailHealth {
         }
     }
 }
+
+/// Build metadata reported by `GET /api/version`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildVersion {
+    /// Package version from `CARGO_PKG_VERSION`.
+    pub version: String,
+    /// UTC compile-time timestamp in RFC 3339 format.
+    pub build_time: String,
+    /// Git commit SHA when supplied at compile time.
+    pub commit: Option<String>,
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Award, Camera, Upload } from "lucide-react";
+import { Camera, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -85,10 +85,6 @@ export default function ProfilePage() {
                     <h1 className="font-display text-2xl tracking-tight sm:text-3xl">
                       {profile.displayName}
                     </h1>
-                    <Badge variant="outline" className="gap-1">
-                      <Award className="size-3.5" aria-hidden="true" />
-                      {profile.goldMedalCount} Gold
-                    </Badge>
                     <Badge variant="info">{profile.effectiveTitle}</Badge>
                   </div>
                   <p className="font-mono text-xs font-bold">

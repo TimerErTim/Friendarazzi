@@ -1,10 +1,9 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
-
 import type { CaptureFeedItem } from "@/api/friendarazzi-api";
 
 import { AuthenticatedImage } from "./media-image";
+import { LongArrow } from "./photo-lightbox";
 import { PlayerAvatar } from "./player-avatar";
 
 /**
@@ -43,14 +42,11 @@ export function CaptureGalleryCard({
           {capture.isBlurred ? "Verpixelter Teaser" : capture.promptText}
         </p>
         <div className="flex items-center justify-between gap-1.5">
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <PlayerAvatar user={capture.catcher} size="sm" />
             {capture.target ? (
               <>
-                <ArrowRight
-                  className="size-3.5 shrink-0 text-secondary"
-                  aria-hidden="true"
-                />
+                <LongArrow className="min-w-5 max-w-10 flex-1 text-secondary" />
                 <PlayerAvatar user={capture.target} size="sm" />
               </>
             ) : null}

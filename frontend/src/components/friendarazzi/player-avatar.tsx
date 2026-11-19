@@ -129,12 +129,6 @@ export function PlayerBadgeLink({
               <Crown className="size-3" aria-hidden="true" /> Host
             </Badge>
           ) : null}
-          {user.goldMedalCount > 0 ? (
-            <Badge variant="warning" className="gap-1">
-              <Award className="size-3" aria-hidden="true" />
-              {user.goldMedalCount}
-            </Badge>
-          ) : null}
         </span>
         <span className="block truncate font-mono text-xs text-secondary">
           {subtitle ?? user.effectiveTitle}

@@ -1,6 +1,5 @@
 "use client";
 
-import { Award } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -77,10 +76,6 @@ export default function UserProfilePage() {
               <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
                 {profile.displayName}
               </h1>
-              <Badge variant="primary" className="gap-1">
-                <Award className="size-3.5" aria-hidden="true" />
-                {profile.goldMedalCount} Gold
-              </Badge>
               <Badge variant="info">{profile.effectiveTitle}</Badge>
             </div>
             <p className="font-mono text-xs font-bold text-secondary">

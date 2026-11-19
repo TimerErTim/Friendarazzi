@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Clock } from "lucide-react";
+import { ChevronRight, Clock } from "lucide-react";
 
 import type { CaptureFeedItem } from "@/api/friendarazzi-api";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/cn";
 
 import { AuthenticatedImage } from "./media-image";
 import { PlayerBadgeLink } from "./player-avatar";
+
+export function LongArrow({ className }: { className?: string }) {
+  return (
+    <span aria-hidden="true" className={cn("flex items-center", className)}>
+      <span className="-mr-2.5 h-[2px] flex-1 rounded-full bg-current" />
+      <ChevronRight className="size-4 shrink-0 stroke-[2.5]" />
+    </span>
+  );
+}
 
 export function PhotoLightbox({
   capture,
@@ -55,12 +65,12 @@ export function PhotoLightbox({
           />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t-2 border-strong pt-3">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="border-t-2 border-strong pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 sm:flex-nowrap sm:gap-3">
             <PlayerBadgeLink user={capture.catcher} compact subtitle="Fänger" />
             {capture.target ? (
               <>
-                <ArrowRight className="size-4 text-ink" aria-hidden="true" />
+                <LongArrow className="min-w-8 flex-1 text-ink" />
                 <PlayerBadgeLink
                   user={capture.target}
                   compact

@@ -10,7 +10,7 @@ import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { gameHref } from "@/lib/navigation";
 
-import { AuthenticatedImage } from "./media-image";
+import { CaptureGalleryCard } from "./capture-gallery-card";
 import { PhotoLightbox } from "./photo-lightbox";
 
 export function UserGalleryTabs({
@@ -111,27 +111,13 @@ function GalleryGroups({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {group.photos.map((photo) => (
-              <button
+              <CaptureGalleryCard
                 key={photo.id}
-                type="button"
-                onClick={() => onSelect(photo)}
-                className="brutal-press group flex cursor-pointer flex-col overflow-hidden rounded-md border-2 border-strong bg-surface p-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-              >
-                <div className="aspect-square w-full overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
-                  <AuthenticatedImage
-                    storageKey={
-                      photo.imageStorageKey ?? photo.thumbnailStorageKey
-                    }
-                    alt={photo.promptText ?? "Beweisfoto"}
-                    className="h-full w-full transition-transform group-hover:scale-105"
-                  />
-                </div>
-                <span className="mt-1.5 line-clamp-1 text-xs font-bold text-ink">
-                  {photo.promptText}
-                </span>
-              </button>
+                capture={photo}
+                onSelect={onSelect}
+              />
             ))}
           </div>
         </section>

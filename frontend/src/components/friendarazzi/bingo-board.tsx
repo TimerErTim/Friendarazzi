@@ -53,7 +53,7 @@ function toCaptureFeedItem(
 }
 
 /**
- * Unified single-card Bingo board with classical 2px grid lines and
+ * Unified single-card Bingo board with ultra-fine hairline separators and
  * square Polaroid-style cells shared 1:1 between active play and archive view.
  */
 export function BingoBoard({
@@ -74,7 +74,7 @@ export function BingoBoard({
 
   return (
     <div className="brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-surface">
-      <div className={cn("grid gap-[2px] bg-strong", gridColsClass)}>
+      <div className={cn("grid gap-px bg-strong/15", gridColsClass)}>
         {board.tiles.map((tile) => {
           const captureItem = toCaptureFeedItem(tile, board, feed);
           const canOpenCapture = Boolean(captureItem && onViewCapture);

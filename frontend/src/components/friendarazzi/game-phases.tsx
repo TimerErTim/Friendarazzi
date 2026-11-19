@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowRight,
   Award,
   Camera,
   Check,
@@ -60,6 +59,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 
 import { BingoBoard } from "./bingo-board";
+import { CaptureGalleryCard } from "./capture-gallery-card";
 import { GameTimeline } from "./game-timeline";
 import { InviteShareCard } from "./invite-share-card";
 import { AuthenticatedImage } from "./media-image";
@@ -1289,50 +1289,11 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {game.feed.map((cap) => (
-                <div
+                <CaptureGalleryCard
                   key={cap.id}
-                  className="brutal-shadow-sm flex flex-col overflow-hidden rounded-md border-2 border-strong bg-surface p-2"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSelectedCapture(cap)}
-                    className="aspect-square w-full cursor-pointer overflow-hidden rounded-sm border-2 border-strong bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                  >
-                    <AuthenticatedImage
-                      storageKey={
-                        cap.imageStorageKey ?? cap.thumbnailStorageKey
-                      }
-                      alt={cap.promptText ?? "Beweisfoto"}
-                      fit="contain-blurred"
-                      className="h-full w-full"
-                    />
-                  </button>
-                  <div className="space-y-2 pt-2.5">
-                    <p className="line-clamp-2 text-xs font-bold text-ink">
-                      {cap.promptText}
-                    </p>
-                    <div className="flex items-center justify-between gap-1.5">
-                      <div className="flex items-center gap-1">
-                        <PlayerAvatar user={cap.catcher} size="sm" />
-                        {cap.target ? (
-                          <>
-                            <ArrowRight
-                              className="size-3.5 shrink-0 text-secondary"
-                              aria-hidden="true"
-                            />
-                            <PlayerAvatar user={cap.target} size="sm" />
-                          </>
-                        ) : null}
-                      </div>
-                      <span className="font-mono text-[11px] font-semibold text-secondary tabular-nums">
-                        {new Date(cap.capturedAt).toLocaleTimeString("de-AT", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  capture={cap}
+                  onSelect={setSelectedCapture}
+                />
               ))}
             </div>
           )}

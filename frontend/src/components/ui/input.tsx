@@ -1,8 +1,8 @@
-import type { InputHTMLAttributes } from "react";
+import type { ComponentPropsWithRef } from "react";
 
 import { cn } from "@/lib/cn";
 
-type InputProps = InputHTMLAttributes<HTMLInputElement>;
+type InputProps = ComponentPropsWithRef<"input">;
 
 /**
  * Neubrutalist input field: 44px height (`h-11`), crisp `border-2 border-control`,

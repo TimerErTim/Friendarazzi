@@ -584,14 +584,19 @@ function AuthenticatedHome() {
     router.push(gameHref(created.id));
   }
 
-  function handleJoinSubmit(e: React.FormEvent) {
+  async function handleJoinSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = inviteCode.trim().toUpperCase();
     if (!trimmed) {
       router.push(paths.join);
       return;
     }
-    router.push(joinHref(trimmed));
+    try {
+      const joined = await mutations.joinGame.mutateAsync(trimmed);
+      router.push(gameHref(joined.id));
+    } catch {
+      router.push(joinHref(trimmed));
+    }
   }
 
   if (games.isLoading) {
@@ -632,7 +637,7 @@ function AuthenticatedHome() {
           </div>
 
           <form
-            onSubmit={handleJoinSubmit}
+            onSubmit={(e) => void handleJoinSubmit(e)}
             className="brutal-shadow-sm space-y-3 rounded-md border-2 border-strong bg-cyan-subtle p-4"
           >
             <p className="font-mono text-xs font-bold tracking-wider text-ink uppercase">
@@ -650,9 +655,14 @@ function AuthenticatedHome() {
                 className="min-w-36 flex-1 font-mono font-bold tracking-wider uppercase"
                 maxLength={16}
               />
-              <Button type="submit" variant="secondary" size="field">
+              <Button
+                type="submit"
+                variant="secondary"
+                size="field"
+                disabled={mutations.joinGame.isPending}
+              >
                 <Ticket aria-hidden="true" />
-                Beitreten
+                {mutations.joinGame.isPending ? "Tritt bei …" : "Beitreten"}
               </Button>
             </div>
           </form>
@@ -822,6 +832,13 @@ function AuthenticatedHome() {
 }
 
 function ActiveGameCard({ game }: { game: GameSummary }) {
+  const ctaLabel =
+    game.status === GameStatus.Active
+      ? "Brett öffnen"
+      : game.status === GameStatus.Drafting
+        ? "Zum Entwurf"
+        : "Zur Lobby";
+
   return (
     <Card className="flex flex-col justify-between overflow-hidden">
       <div className="flex items-start justify-between gap-3 border-b-2 border-strong bg-primary-subtle px-5 py-4">
@@ -829,7 +846,9 @@ function ActiveGameCard({ game }: { game: GameSummary }) {
           <h3 className="truncate font-display text-lg text-ink">
             {game.title}
           </h3>
-          <CodeTag tone="surface">Code: {game.inviteCode}</CodeTag>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <CodeTag tone="surface">Code: {game.inviteCode}</CodeTag>
+          </div>
         </div>
         <Badge variant="primary">{statusLabel(game.status)}</Badge>
       </div>
@@ -846,7 +865,7 @@ function ActiveGameCard({ game }: { game: GameSummary }) {
         </div>
         <Button size="sm" asChild>
           <Link href={gameHref(game.id)}>
-            Ins Spiel
+            {ctaLabel}
             <ArrowRight aria-hidden="true" />
           </Link>
         </Button>

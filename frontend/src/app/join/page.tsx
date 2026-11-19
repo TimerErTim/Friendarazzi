@@ -14,7 +14,12 @@ import { CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { gameHref } from "@/lib/navigation";
+import {
+  authHrefWithRedirect,
+  gameHref,
+  joinHref,
+  paths,
+} from "@/lib/navigation";
 import { useQueryParam } from "@/lib/use-query-param";
 
 export default function JoinPage() {
@@ -29,9 +34,10 @@ export default function JoinPage() {
     }
   }, [codeParam]);
 
-  const activeCode = (codeParam || manualCode).trim().toUpperCase();
+  const activeCode = manualCode.trim().toUpperCase();
   const preview = useGameByCodeQuery(activeCode || null);
   const mutations = useFriendarazziMutations();
+  const redirectTarget = activeCode ? joinHref(activeCode) : paths.join;
 
   async function handleJoin() {
     if (!activeCode) return;
@@ -75,13 +81,22 @@ export default function JoinPage() {
               ) : null}
               <div className="flex flex-wrap gap-3">
                 <Button size="lg" asChild>
-                  <Link href="/anmeldung">
+                  <Link
+                    href={authHrefWithRedirect("/anmeldung", redirectTarget)}
+                  >
                     Anmelden
                     <ArrowRight aria-hidden="true" />
                   </Link>
                 </Button>
                 <Button variant="secondary" size="lg" asChild>
-                  <Link href="/registrierung">Konto erstellen</Link>
+                  <Link
+                    href={authHrefWithRedirect(
+                      "/registrierung",
+                      redirectTarget,
+                    )}
+                  >
+                    Konto erstellen
+                  </Link>
                 </Button>
               </div>
             </div>

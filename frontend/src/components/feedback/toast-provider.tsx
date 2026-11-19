@@ -106,7 +106,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             alertVariants({
               variant: toast.tone === "error" ? "error" : "success",
             }),
-            "brutal-shadow-lg pointer-events-auto w-fit max-w-full",
+            "w-full",
           );
           const content = (
             <>
@@ -126,14 +126,21 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <span className="min-w-0">{toast.message}</span>
             </>
           );
-          return toast.tone === "error" ? (
-            <div key={toast.id} role="alert" className={className}>
-              {content}
+          return (
+            <div
+              key={toast.id}
+              className="brutal-shadow-lg pointer-events-auto w-fit max-w-full rounded-sm bg-surface"
+            >
+              {toast.tone === "error" ? (
+                <div role="alert" className={className}>
+                  {content}
+                </div>
+              ) : (
+                <output aria-atomic="true" className={className}>
+                  {content}
+                </output>
+              )}
             </div>
-          ) : (
-            <output key={toast.id} aria-atomic="true" className={className}>
-              {content}
-            </output>
           );
         })}
       </div>

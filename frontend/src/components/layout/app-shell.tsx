@@ -14,6 +14,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/api/auth-provider";
 import { useAuthMutations, useBenutzerQuery } from "@/api/hooks";
 import { Wordmark } from "@/components/brand/wordmark";
+import { PlayerAvatar } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -140,9 +141,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       disabled={
                         auth.logout.isPending || auth.deleteAccount.isPending
                       }
-                      className="gap-2"
+                      className="gap-2 pl-1.5"
                     >
-                      <UserRound aria-hidden="true" />
+                      <PlayerAvatar
+                        user={benutzer.data}
+                        size="sm"
+                        linkToProfile={false}
+                        showMedalBadge={false}
+                      />
                       <span className="hidden max-w-28 truncate sm:inline">
                         {benutzer.data.displayName}
                       </span>

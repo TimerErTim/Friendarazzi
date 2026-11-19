@@ -149,7 +149,12 @@ Single-source brand assets live in `assets/` and are synced/verified into `front
 9. **Variants come from `cva`.** Keep public variant names stable (`primary`, `secondary`, `ghost`,
    `destructive`, `default`, `success`, `warning`, `error`, `info`, `outline`).
 10. **URLs respect `NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH`.** All static metadata/icon/manifest paths
-    prefix `basePath` in `layout.tsx`.
+    and shareable `inviteUrl(code)` links respect `basePath` (see `frontend/src/lib/invite-url.ts`).
+11. **Bingo boards & overlays.** `BingoBoard` renders as one unified card with `2px` `bg-strong` grid
+    lines and Polaroid-style cells (`object-contain` foreground photo over a blurred `object-cover`
+    backdrop). Floating toasts and avatar circles always sit on an opaque `bg-surface` backing so
+    transparent images and yellow winner banners remain high-contrast. Invite QR codes render dark
+    modules on an opaque `#ffffff` square with a 4-module quiet zone in both themes.
 
 ## The gallery at `/dev`
 

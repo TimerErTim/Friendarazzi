@@ -16,12 +16,48 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { cn } from "@/lib/cn";
+import { authHrefWithRedirect, safeRedirectPath } from "@/lib/navigation";
 
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 128;
+const POST_AUTH_REDIRECT_KEY = "friendarazzi:post_auth_redirect";
 
 function useMailToken() {
   return useSearchParams().get("token") ?? "";
+}
+
+function useRedirectTarget() {
+  const fromQuery = useSearchParams().get("redirect");
+  if (fromQuery) {
+    return safeRedirectPath(fromQuery, "/");
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const stored = window.sessionStorage.getItem(POST_AUTH_REDIRECT_KEY);
+      return safeRedirectPath(stored, "/");
+    } catch {
+      return "/";
+    }
+  }
+  return "/";
+}
+
+function clearStoredRedirect() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(POST_AUTH_REDIRECT_KEY);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+function persistRedirect(path: string) {
+  if (typeof window === "undefined" || !path || path === "/") return;
+  try {
+    window.sessionStorage.setItem(POST_AUTH_REDIRECT_KEY, path);
+  } catch {
+    // Ignore storage errors
+  }
 }
 
 function passwordWithinPolicy(password: string) {
@@ -85,6 +121,7 @@ type AuthStudioProps = {
   mode: "login" | "register" | "password";
   title: string;
   description: ReactNode;
+  redirectTarget?: string;
   pageError?: string | null;
   footer?: ReactNode;
   children: ReactNode;
@@ -98,6 +135,7 @@ function AuthStudio({
   mode,
   title,
   description,
+  redirectTarget,
   pageError,
   footer,
   children,
@@ -155,7 +193,7 @@ function AuthStudio({
               className="brutal-shadow-sm grid grid-cols-2 gap-1 rounded-md border-2 border-strong bg-surface-muted p-1"
             >
               <Link
-                href="/anmeldung"
+                href={authHrefWithRedirect("/anmeldung", redirectTarget)}
                 className={cn(
                   "flex min-h-11 items-center justify-center rounded-sm border-2 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                   mode === "login"
@@ -166,7 +204,7 @@ function AuthStudio({
                 Anmelden
               </Link>
               <Link
-                href="/registrierung"
+                href={authHrefWithRedirect("/registrierung", redirectTarget)}
                 className={cn(
                   "flex min-h-11 items-center justify-center rounded-sm border-2 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                   mode === "register"
@@ -216,6 +254,7 @@ function AuthLink({ href, children }: { href: string; children: ReactNode }) {
 
 export function LoginPage() {
   const router = useRouter();
+  const redirectTarget = useRedirectTarget();
   const auth = useAuthMutations();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -232,7 +271,12 @@ export function LoginPage() {
     event.preventDefault();
     auth.login.mutate(
       { eMailAdresse: email, passwort: password },
-      { onSuccess: () => router.replace("/") },
+      {
+        onSuccess: () => {
+          clearStoredRedirect();
+          router.replace(redirectTarget);
+        },
+      },
     );
   }
 
@@ -241,6 +285,7 @@ export function LoginPage() {
       mode="login"
       title="Willkommen zurück"
       description="Melde dich mit deiner E-Mail-Adresse und deinem Passwort an."
+      redirectTarget={redirectTarget}
       footer={<AuthLink href="/passwort">Passwort vergessen?</AuthLink>}
     >
       <form className="space-y-5" onSubmit={submit}>
@@ -282,6 +327,7 @@ export function LoginPage() {
 
 export function RegistrationPage() {
   const router = useRouter();
+  const redirectTarget = useRedirectTarget();
   const auth = useAuthMutations();
   const token = useMailToken();
   const [email, setEmail] = useState("");
@@ -319,6 +365,7 @@ export function RegistrationPage() {
 
   function start(event: FormEvent) {
     event.preventDefault();
+    persistRedirect(redirectTarget);
     auth.registerStart.mutate(email, { onSuccess: () => setSent(true) });
   }
 
@@ -327,7 +374,12 @@ export function RegistrationPage() {
     if (mismatch) return;
     auth.registerFinish.mutate(
       { token, passwort: password },
-      { onSuccess: () => router.replace("/") },
+      {
+        onSuccess: () => {
+          clearStoredRedirect();
+          router.replace(redirectTarget);
+        },
+      },
     );
   }
 
@@ -340,10 +392,13 @@ export function RegistrationPage() {
           ? "Deine E-Mail-Adresse ist bestätigt. Lege jetzt dein Passwort fest."
           : "In zwei Schritten: Adresse bestätigen, dann Passwort festlegen."
       }
+      redirectTarget={redirectTarget}
       pageError={finishFailure?.scope === "page" ? finishFailure.message : null}
       footer={
         finishing ? (
-          <AuthLink href="/registrierung">
+          <AuthLink
+            href={authHrefWithRedirect("/registrierung", redirectTarget)}
+          >
             Neuen Bestätigungslink anfordern
           </AuthLink>
         ) : undefined

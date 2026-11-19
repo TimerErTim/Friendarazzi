@@ -1,6 +1,17 @@
 import type { LucideIcon } from "lucide-react";
 import { Camera, Home, Settings2, Ticket, UserRound } from "lucide-react";
 
+import { BASE_PATH, withBasePath } from "./invite-url";
+
+export {
+  authHrefWithRedirect,
+  BASE_PATH,
+  inviteUrl,
+  safeRedirectPath,
+  stripBasePath,
+  withBasePath,
+} from "./invite-url";
+
 export type NavItem = {
   id: string;
   label: string;
@@ -26,27 +37,8 @@ export function isExactPath(pathname: string, href: string): boolean {
   return normalizePath(pathname) === normalizePath(href);
 }
 
-export const BASE_PATH = (
-  process.env.NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH ?? ""
-).replace(/\/+$/, "");
-
-export function withBasePath(path: string): string {
-  if (!BASE_PATH || path.startsWith(BASE_PATH)) {
-    return path;
-  }
-  return `${BASE_PATH}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-export function stripBasePath(pathname: string): string {
-  if (BASE_PATH && pathname.startsWith(BASE_PATH)) {
-    const stripped = pathname.slice(BASE_PATH.length);
-    return stripped.startsWith("/") ? stripped : `/${stripped}`;
-  }
-  return pathname;
-}
-
 export function absoluteUrl(appPath: string): string {
-  const fullPath = withBasePath(appPath);
+  const fullPath = withBasePath(appPath, BASE_PATH);
   if (typeof window !== "undefined") {
     return `${window.location.origin}${fullPath}`;
   }

@@ -109,9 +109,11 @@ export function GameTimeline({
                     aria-label={`Foto von ${cap.catcher.displayName} um ${new Date(cap.capturedAt).toLocaleTimeString("de-AT")}`}
                   >
                     <span className="flex size-11 items-center justify-center">
-                      <span className="brutal-shadow-sm size-9 overflow-hidden rounded-full border-2 border-strong bg-primary transition-transform group-hover:scale-110">
+                      <span className="brutal-shadow-sm size-9 overflow-hidden rounded-full border-2 border-strong bg-surface transition-transform group-hover:scale-110">
                         <AuthenticatedImage
-                          storageKey={cap.thumbnailStorageKey}
+                          storageKey={
+                            cap.imageStorageKey ?? cap.thumbnailStorageKey
+                          }
                           alt={cap.promptText ?? "Capture"}
                           className="h-full w-full"
                         />

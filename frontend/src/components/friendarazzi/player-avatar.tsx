@@ -53,7 +53,7 @@ export function PlayerAvatar({
         className={cn(
           "brutal-shadow-sm inline-flex items-center justify-center overflow-hidden rounded-full border-2 border-strong font-display text-ink",
           SIZE_CLASSES[size],
-          hasGold ? "bg-primary text-primary-foreground" : "bg-surface-muted",
+          hasGold ? "bg-surface text-ink" : "bg-surface-muted text-ink",
         )}
       >
         {user.avatarStorageKey ? (

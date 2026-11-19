@@ -115,3 +115,69 @@ async fn e2e_lobby_settings_patch_error_mappings_and_late_join_conflict() {
         .await;
     assert_eq!(st, StatusCode::BAD_REQUEST);
 }
+
+#[test_log::test(tokio::test)]
+async fn e2e_user_can_host_and_join_unlimited_parallel_games() {
+    let harness = E2eHarness::new().await;
+    let (t_alice, _) = neuer_benutzer(&harness, "multi-alice@example.at").await;
+    let (t_bob, _) = neuer_benutzer(&harness, "multi-bob@example.at").await;
+    let (t_carol, _) = neuer_benutzer(&harness, "multi-carol@example.at").await;
+
+    // Alice hosts 2 parallel games and Bob/Carol each host 1 game that Alice joins.
+    let mut alice_game_ids = Vec::new();
+    for title in ["Alice Host 1", "Alice Host 2"] {
+        let (st, created) = harness
+            .client
+            .post_json_auth(
+                "/api/games",
+                json!({
+                    "title": title,
+                    "gridSize": 3,
+                    "visibilityMode": "Undercover"
+                }),
+                &t_alice,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK, "{created}");
+        alice_game_ids.push(created["id"].as_str().unwrap().to_owned());
+    }
+
+    for (host_token, title) in [(&t_bob, "Bob Host"), (&t_carol, "Carol Host")] {
+        let (st, created) = harness
+            .client
+            .post_json_auth(
+                "/api/games",
+                json!({
+                    "title": title,
+                    "gridSize": 3,
+                    "visibilityMode": "LiveFeed"
+                }),
+                host_token,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK, "{created}");
+        let code = created["inviteCode"].as_str().unwrap().to_owned();
+        let gid = created["id"].as_str().unwrap().to_owned();
+
+        let (st, joined) = harness
+            .client
+            .post_json_auth("/api/games/join", json!({ "inviteCode": code }), &t_alice)
+            .await;
+        assert_eq!(st, StatusCode::OK, "{joined}");
+        assert_eq!(joined["id"].as_str().unwrap(), gid);
+        alice_game_ids.push(gid);
+    }
+
+    let (st, list) = harness.client.get_json_auth("/api/games", &t_alice).await;
+    assert_eq!(st, StatusCode::OK, "{list}");
+    let items = list.as_array().unwrap();
+    assert_eq!(items.len(), 4);
+    for expected_id in &alice_game_ids {
+        assert!(
+            items
+                .iter()
+                .any(|g| g["id"].as_str() == Some(expected_id.as_str())),
+            "missing parallel game {expected_id} in {list}"
+        );
+    }
+}

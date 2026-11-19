@@ -5,13 +5,14 @@ import {
   Camera,
   Check,
   CheckCircle2,
-  Copy,
+  Crosshair,
   Crown,
   Dices,
   Eye,
   EyeOff,
   Flame,
   Ghost,
+  Loader2,
   Lock,
   Sparkles,
   Target,
@@ -20,7 +21,7 @@ import {
   Users,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiErrorMessage } from "@/api/errors";
 import {
@@ -56,9 +57,10 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
-import { absoluteUrl, joinHref } from "@/lib/navigation";
 
+import { BingoBoard } from "./bingo-board";
 import { GameTimeline } from "./game-timeline";
+import { InviteShareCard } from "./invite-share-card";
 import { AuthenticatedImage } from "./media-image";
 import { PhotoLightbox } from "./photo-lightbox";
 import { PlayerAvatar, PlayerBadgeLink } from "./player-avatar";
@@ -106,7 +108,8 @@ const LOBBY_MODES = [
 export function LobbyPhase({ game }: { game: GameDetail }) {
   const me = useBenutzerQuery();
   const mutations = useFriendarazziMutations();
-  const feedback = useErfolgsmeldung();
+  const { mutate: updateSettings, isPending: isSavingSettings } =
+    mutations.updateSettings;
   const isHost = me.data?.id === game.hostUserId;
 
   const [title, setTitle] = useState(game.title);
@@ -114,60 +117,93 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
   const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>(
     game.visibilityMode,
   );
-  const [copied, setCopied] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+
+  const isEditingTitleRef = useRef(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedRef = useRef({
+    title: game.title,
+    gridSize: String(game.gridSize),
+    visibilityMode: game.visibilityMode,
+  });
 
   useEffect(() => {
-    setTitle(game.title);
+    if (!isEditingTitleRef.current) {
+      setTitle(game.title);
+    }
     setGridSize(String(game.gridSize));
     setVisibilityMode(game.visibilityMode);
+    lastSavedRef.current = {
+      title: game.title,
+      gridSize: String(game.gridSize),
+      visibilityMode: game.visibilityMode,
+    };
   }, [game.title, game.gridSize, game.visibilityMode]);
 
-  const inviteUrl = absoluteUrl(joinHref(game.inviteCode));
+  useEffect(() => {
+    if (!justSaved) return;
+    const timer = setTimeout(() => setJustSaved(false), 1800);
+    return () => clearTimeout(timer);
+  }, [justSaved]);
+
+  const commitSettings = useCallback(
+    (nextTitle: string, nextGridSize: string, nextMode: VisibilityMode) => {
+      const trimmedTitle = nextTitle.trim();
+      if (!trimmedTitle) return;
+      const prev = lastSavedRef.current;
+      if (
+        prev.title === trimmedTitle &&
+        prev.gridSize === nextGridSize &&
+        prev.visibilityMode === nextMode
+      ) {
+        return;
+      }
+      lastSavedRef.current = {
+        title: trimmedTitle,
+        gridSize: nextGridSize,
+        visibilityMode: nextMode,
+      };
+      updateSettings(
+        {
+          gameId: game.id,
+          input: {
+            title: trimmedTitle,
+            gridSize: Number(nextGridSize),
+            visibilityMode: nextMode,
+          },
+        },
+        {
+          onSuccess: () => setJustSaved(true),
+        },
+      );
+    },
+    [game.id, updateSettings],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   const canStart = game.players.length >= 3;
   const openSlots = Math.max(0, 3 - game.players.length);
 
-  function copyInvite() {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  function handleTitleChange(val: string) {
+    isEditingTitleRef.current = true;
+    setTitle(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      isEditingTitleRef.current = false;
+      commitSettings(val, gridSize, visibilityMode);
+    }, 500);
   }
 
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[1.05fr_0.95fr]">
-      {/* Left Column: Share Ticket + Crew Roster */}
+      {/* Left Column: Consolidated Invite Card + Crew Roster */}
       <div className="space-y-6">
-        <div className="brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-surface">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b-2 border-strong bg-primary p-5 text-primary-foreground">
-            <div>
-              <p className="font-mono text-xs font-bold tracking-wider uppercase">
-                Freunde einladen
-              </p>
-              <p className="font-mono text-3xl font-bold tracking-[0.2em]">
-                {game.inviteCode}
-              </p>
-            </div>
-            <Button variant="secondary" onClick={copyInvite}>
-              {copied ? (
-                <>
-                  <Check className="size-4 text-success" aria-hidden="true" />
-                  Link kopiert!
-                </>
-              ) : (
-                <>
-                  <Copy className="size-4" aria-hidden="true" />
-                  Einladungslink kopieren
-                </>
-              )}
-            </Button>
-          </div>
-          <div className="bg-surface-muted px-5 py-3">
-            <p className="font-mono text-xs break-all text-secondary">
-              {inviteUrl}
-            </p>
-          </div>
-        </div>
+        <InviteShareCard inviteCode={game.inviteCode} />
 
         <Card>
           <CardHeader>
@@ -209,37 +245,48 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
       {/* Right Column: Host Console or Guest Rules Card */}
       <Card>
         <CardHeader className="bg-cyan-subtle">
-          <CardTitle>
-            {isHost ? "Host-Regiepult" : "Regeln dieser Runde"}
-          </CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>
+              {isHost ? "Host-Regiepult" : "Regeln dieser Runde"}
+            </CardTitle>
+            {isHost ? (
+              <output
+                aria-live="polite"
+                className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-secondary"
+              >
+                {isSavingSettings ? (
+                  <>
+                    <Loader2
+                      className="size-3.5 animate-spin"
+                      aria-hidden="true"
+                    />
+                    Speichert …
+                  </>
+                ) : justSaved ? (
+                  <>
+                    <Check
+                      className="size-3.5 text-success"
+                      aria-hidden="true"
+                    />
+                    Gespeichert
+                  </>
+                ) : null}
+              </output>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="space-y-5 pt-5">
           {isHost ? (
-            <form
-              className="space-y-5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                feedback.verwerfen();
-                mutations.updateSettings.mutate(
-                  {
-                    gameId: game.id,
-                    input: {
-                      title,
-                      gridSize: Number(gridSize),
-                      visibilityMode,
-                    },
-                  },
-                  {
-                    onSuccess: () =>
-                      feedback.melden("Einstellungen gespeichert."),
-                  },
-                );
-              }}
-            >
+            <div className="space-y-5">
               <Field label="Spieltitel">
                 <Input
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  onBlur={() => {
+                    isEditingTitleRef.current = false;
+                    if (debounceRef.current) clearTimeout(debounceRef.current);
+                    commitSettings(title, gridSize, visibilityMode);
+                  }}
                   required
                 />
               </Field>
@@ -256,7 +303,10 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                         key={opt.size}
                         type="button"
                         aria-pressed={selected}
-                        onClick={() => setGridSize(opt.size)}
+                        onClick={() => {
+                          setGridSize(opt.size);
+                          commitSettings(title, opt.size, visibilityMode);
+                        }}
                         className={cn(
                           "brutal-press flex min-h-14 cursor-pointer flex-col items-start justify-center rounded-sm border-2 border-control p-2.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                           selected
@@ -289,7 +339,10 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                         key={opt.mode}
                         type="button"
                         aria-pressed={selected}
-                        onClick={() => setVisibilityMode(opt.mode)}
+                        onClick={() => {
+                          setVisibilityMode(opt.mode);
+                          commitSettings(title, gridSize, opt.mode);
+                        }}
                         className={cn(
                           "brutal-press flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-sm border-2 border-control px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                           selected
@@ -326,7 +379,7 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                 </Alert>
               ) : null}
 
-              <div className="flex flex-col gap-2.5 border-t-2 border-strong pt-4">
+              <div className="border-t-2 border-strong pt-4">
                 <Button
                   type="button"
                   size="lg"
@@ -338,17 +391,8 @@ export function LobbyPhase({ game }: { game: GameDetail }) {
                     ? "Startet …"
                     : "Entwurfsphase starten"}
                 </Button>
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  size="field"
-                  className="w-full"
-                  disabled={mutations.updateSettings.isPending}
-                >
-                  Einstellungen speichern
-                </Button>
               </div>
-            </form>
+            </div>
           ) : (
             <div className="space-y-4">
               <dl className="grid gap-3 text-sm sm:grid-cols-2">
@@ -395,6 +439,11 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
   const me = useBenutzerQuery();
   const decks = useDecksQuery();
   const mutations = useFriendarazziMutations();
+  const {
+    mutate: savePrompts,
+    mutateAsync: savePromptsAsync,
+    isPending: isSavingDraft,
+  } = mutations.savePrompts;
   const feedback = useErfolgsmeldung();
 
   const myPlayer = game.players.find((p) => p.id === me.data?.id);
@@ -402,7 +451,21 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
 
   const [selectedDeckSlug, setSelectedDeckSlug] = useState<string>("night-out");
   const [slots, setSlots] = useState<DraftSlot[]>([]);
+  const [justSavedDraft, setJustSavedDraft] = useState(false);
+
   const initializedRef = useRef(false);
+  const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDigestRef = useRef<string>("");
+
+  function toPromptPayload(list: DraftSlot[]): DraftPromptRequestItem[] {
+    return list
+      .filter((s) => s.text.trim().length > 0)
+      .map((s) => ({
+        targetUserId: s.targetUserId,
+        text: s.text.trim(),
+        source: s.source,
+      }));
+  }
 
   useEffect(() => {
     if (initializedRef.current && slots.length > 0) return;
@@ -433,8 +496,49 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
     setSlots(built);
     if (built.length > 0) {
       initializedRef.current = true;
+      lastDigestRef.current = JSON.stringify(
+        built
+          .filter((s) => s.text.trim().length > 0)
+          .map((s) => ({
+            targetUserId: s.targetUserId,
+            text: s.text.trim(),
+            source: s.source,
+          })),
+      );
     }
   }, [game.myQuotas, game.myDrafts, slots.length]);
+
+  useEffect(() => {
+    if (!justSavedDraft) return;
+    const timer = setTimeout(() => setJustSavedDraft(false), 1800);
+    return () => clearTimeout(timer);
+  }, [justSavedDraft]);
+
+  useEffect(() => {
+    return () => {
+      if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
+    };
+  }, []);
+
+  function commitDraft(nextSlots: DraftSlot[]) {
+    if (isLocked) return;
+    const payload = toPromptPayload(nextSlots);
+    const digest = JSON.stringify(payload);
+    if (digest === lastDigestRef.current) return;
+    lastDigestRef.current = digest;
+    savePrompts(
+      { gameId: game.id, prompts: payload },
+      { onSuccess: () => setJustSavedDraft(true) },
+    );
+  }
+
+  function scheduleDraftSave(nextSlots: DraftSlot[]) {
+    if (isLocked) return;
+    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
+    draftDebounceRef.current = setTimeout(() => {
+      commitDraft(nextSlots);
+    }, 600);
+  }
 
   const activeDeck = useMemo(() => {
     const list = decks.data ?? [];
@@ -451,76 +555,69 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
     const pool = [...activeDeck.prompts].sort(() => Math.random() - 0.5);
     let cursor = 0;
 
-    setSlots((prev) =>
-      prev.map((slot) => {
-        if (slot.text.trim()) return slot;
-        let candidate = "";
-        for (let tries = 0; tries < pool.length; tries += 1) {
-          const tpl = pool[(cursor + tries) % pool.length] ?? "";
-          const filled = fillTemplate(tpl, slot.targetName);
-          if (!used.has(filled)) {
-            candidate = filled;
-            used.add(filled);
-            cursor = (cursor + tries + 1) % pool.length;
-            break;
-          }
+    const nextSlots = slots.map((slot) => {
+      if (slot.text.trim()) return slot;
+      let candidate = "";
+      for (let tries = 0; tries < pool.length; tries += 1) {
+        const tpl = pool[(cursor + tries) % pool.length] ?? "";
+        const filled = fillTemplate(tpl, slot.targetName);
+        if (!used.has(filled)) {
+          candidate = filled;
+          used.add(filled);
+          cursor = (cursor + tries + 1) % pool.length;
+          break;
         }
-        if (!candidate) {
-          const tpl =
-            pool[cursor % pool.length] ?? "{name} macht etwas Lustiges";
-          candidate = fillTemplate(tpl, slot.targetName);
-          cursor += 1;
-        }
-        return {
-          ...slot,
-          text: candidate,
-          source: PromptSource.StarterDeck,
-        };
-      }),
-    );
+      }
+      if (!candidate) {
+        const tpl = pool[cursor % pool.length] ?? "{name} macht etwas Lustiges";
+        candidate = fillTemplate(tpl, slot.targetName);
+        cursor += 1;
+      }
+      return {
+        ...slot,
+        text: candidate,
+        source: PromptSource.StarterDeck,
+      };
+    });
+
+    setSlots(nextSlots);
+    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
+    commitDraft(nextSlots);
   }
 
   function rerollSlot(key: string) {
     if (!activeDeck || activeDeck.prompts.length === 0) return;
     const pool = activeDeck.prompts;
-    setSlots((prev) =>
-      prev.map((slot) => {
-        if (slot.key !== key) return slot;
-        const idx = Math.floor(Math.random() * pool.length);
-        const tpl = pool[idx] ?? "{name} lacht laut";
-        return {
-          ...slot,
-          text: fillTemplate(tpl, slot.targetName),
-          source: PromptSource.StarterDeck,
-        };
-      }),
-    );
+    const nextSlots = slots.map((slot) => {
+      if (slot.key !== key) return slot;
+      const idx = Math.floor(Math.random() * pool.length);
+      const tpl = pool[idx] ?? "{name} lacht laut";
+      return {
+        ...slot,
+        text: fillTemplate(tpl, slot.targetName),
+        source: PromptSource.StarterDeck,
+      };
+    });
+    setSlots(nextSlots);
+    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
+    commitDraft(nextSlots);
   }
 
   const allFilled =
     slots.length > 0 && slots.every((s) => s.text.trim().length > 0);
   const filledCount = slots.filter((s) => s.text.trim().length > 0).length;
 
-  async function handleSaveAndLock(lockAfter: boolean) {
+  async function handleLock() {
     feedback.verwerfen();
-    const payload: DraftPromptRequestItem[] = slots
-      .filter((s) => s.text.trim().length > 0)
-      .map((s) => ({
-        targetUserId: s.targetUserId,
-        text: s.text.trim(),
-        source: s.source,
-      }));
-
-    await mutations.savePrompts.mutateAsync({
+    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
+    const payload = toPromptPayload(slots);
+    lastDigestRef.current = JSON.stringify(payload);
+    await savePromptsAsync({
       gameId: game.id,
       prompts: payload,
     });
-    if (lockAfter) {
-      await mutations.lockPrompts.mutateAsync(game.id);
-      feedback.melden("Aufträge eingeloggt!");
-    } else {
-      feedback.melden("Entwurf gespeichert.");
-    }
+    await mutations.lockPrompts.mutateAsync(game.id);
+    feedback.melden("Aufträge eingeloggt!");
   }
 
   return (
@@ -654,17 +751,23 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
                       aria-label={`Auftrag ${index + 1} für ${quota.targetUser.displayName}`}
                       onChange={(e) => {
                         const val = e.target.value;
-                        setSlots((prev) =>
-                          prev.map((item) =>
-                            item.key === slot.key
-                              ? {
-                                  ...item,
-                                  text: val,
-                                  source: PromptSource.Custom,
-                                }
-                              : item,
-                          ),
+                        const nextSlots = slots.map((item) =>
+                          item.key === slot.key
+                            ? {
+                                ...item,
+                                text: val,
+                                source: PromptSource.Custom,
+                              }
+                            : item,
                         );
+                        setSlots(nextSlots);
+                        scheduleDraftSave(nextSlots);
+                      }}
+                      onBlur={() => {
+                        if (draftDebounceRef.current) {
+                          clearTimeout(draftDebounceRef.current);
+                        }
+                        commitDraft(slots);
                       }}
                     />
                     <Button
@@ -710,41 +813,47 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
         </Alert>
       ) : (
         <div className="brutal-shadow-lg sticky bottom-20 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border-[2.5px] border-strong bg-surface p-4 md:bottom-4">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <CodeTag tone="cyan">
               {filledCount} / {slots.length}
             </CodeTag>
             <span className="text-sm font-bold text-ink">
               Aufträge ausgefüllt
             </span>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={
-                mutations.savePrompts.isPending ||
-                mutations.lockPrompts.isPending
-              }
-              onClick={() => void handleSaveAndLock(false)}
+            <output
+              aria-live="polite"
+              className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-secondary"
             >
-              Zwischenspeichern
-            </Button>
-            <Button
-              type="button"
-              disabled={
-                !allFilled ||
-                mutations.savePrompts.isPending ||
-                mutations.lockPrompts.isPending
-              }
-              onClick={() => void handleSaveAndLock(true)}
-            >
-              <Lock className="size-4" aria-hidden="true" />
-              {mutations.lockPrompts.isPending
-                ? "Wird eingeloggt …"
-                : "Einloggen & Bereit melden"}
-            </Button>
+              {isSavingDraft ? (
+                <>
+                  <Loader2
+                    className="size-3.5 animate-spin"
+                    aria-hidden="true"
+                  />
+                  Speichert …
+                </>
+              ) : justSavedDraft ? (
+                <>
+                  <Check className="size-3.5 text-success" aria-hidden="true" />
+                  Entwurf gespeichert
+                </>
+              ) : null}
+            </output>
           </div>
+          <Button
+            type="button"
+            disabled={
+              !allFilled ||
+              mutations.savePrompts.isPending ||
+              mutations.lockPrompts.isPending
+            }
+            onClick={() => void handleLock()}
+          >
+            <Lock className="size-4" aria-hidden="true" />
+            {mutations.lockPrompts.isPending
+              ? "Wird eingeloggt …"
+              : "Einloggen & Bereit melden"}
+          </Button>
         </div>
       )}
     </div>
@@ -785,13 +894,6 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   const pct =
     totalCount > 0 ? Math.round((capturedCount / totalCount) * 100) : 0;
 
-  const gridColsClass =
-    game.gridSize === 3
-      ? "grid-cols-3"
-      : game.gridSize === 4
-        ? "grid-cols-4"
-        : "grid-cols-5";
-
   async function submitTilePhoto() {
     if (!selectedTile || !selectedFile) return;
     await mutations.submitCapture.mutateAsync({
@@ -827,61 +929,17 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
           <Progress value={pct} aria-label="Spielfortschritt" />
         </div>
 
-        <div className={cn("grid gap-2.5", gridColsClass)}>
-          {board.tiles.map((tile) => {
-            return (
-              <button
-                key={tile.id}
-                type="button"
-                disabled={tile.isCaptured}
-                onClick={() => {
-                  if (!tile.isCaptured) {
-                    mutations.submitCapture.reset();
-                    setSelectedFile(null);
-                    setSelectedTile(tile);
-                  }
-                }}
-                className={cn(
-                  "relative flex min-h-26 flex-col justify-between overflow-hidden rounded-md border-[2.5px] border-strong p-2.5 text-left sm:min-h-32 sm:p-3",
-                  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-                  tile.isCaptured
-                    ? "brutal-shadow-sm bg-cyan-subtle"
-                    : "brutal-press cursor-pointer bg-surface hover:bg-primary-subtle",
-                )}
-              >
-                {tile.imageStorageKey ? (
-                  <div className="absolute inset-0 opacity-30">
-                    <AuthenticatedImage
-                      storageKey={tile.imageStorageKey}
-                      alt={tile.promptText}
-                      className="h-full w-full"
-                    />
-                  </div>
-                ) : null}
-
-                <div className="relative z-10 flex items-start justify-between gap-1">
-                  <span className="inline-flex items-center rounded-sm border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary-foreground uppercase">
-                    {tile.targetUser.displayName}
-                  </span>
-                  {tile.isCaptured ? (
-                    <span className="inline-flex size-6 items-center justify-center rounded-sm border-2 border-strong bg-surface text-success">
-                      <CheckCircle2 className="size-4" aria-hidden="true" />
-                    </span>
-                  ) : (
-                    <Camera
-                      className="size-4 shrink-0 text-ink"
-                      aria-hidden="true"
-                    />
-                  )}
-                </div>
-
-                <p className="relative z-10 mt-2 line-clamp-3 text-xs leading-snug font-bold text-ink sm:text-sm">
-                  {tile.promptText}
-                </p>
-              </button>
-            );
-          })}
-        </div>
+        <BingoBoard
+          board={board}
+          gridSize={game.gridSize}
+          feed={game.feed}
+          onEmptyTileSelect={(tile) => {
+            mutations.submitCapture.reset();
+            setSelectedFile(null);
+            setSelectedTile(tile);
+          }}
+          onViewCapture={(cap) => setLightboxCapture(cap)}
+        />
       </div>
 
       {/* Right: Live Crew + Activity Stream */}
@@ -985,15 +1043,46 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
         }}
       >
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Beweisfoto hochladen</DialogTitle>
-            <DialogDescription>
+          <DialogHeader className="space-y-3">
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-sm border-2 border-strong bg-surface-muted px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-ink uppercase">
+              <Camera className="size-3.5" aria-hidden="true" />
+              Beweisfoto hochladen
+            </span>
+            <DialogTitle className="font-display text-2xl leading-tight tracking-tight text-ink sm:text-3xl">
               {selectedTile?.promptText}
-              {selectedTile?.targetUser
-                ? ` · Ziel: ${selectedTile.targetUser.displayName}`
-                : ""}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Lade ein Beweisfoto für diesen Auftrag hoch.
             </DialogDescription>
           </DialogHeader>
+
+          {selectedTile?.targetUser ? (
+            <div className="brutal-shadow-sm flex items-center gap-3 rounded-md border-2 border-strong bg-cyan-subtle p-2.5">
+              <div className="relative shrink-0">
+                <PlayerAvatar
+                  user={selectedTile.targetUser}
+                  size="md"
+                  linkToProfile={false}
+                  showMedalBadge={false}
+                />
+                <span
+                  aria-hidden="true"
+                  className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full border-2 border-strong bg-primary text-primary-foreground"
+                >
+                  <Crosshair className="size-3" />
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-display text-base leading-tight text-ink">
+                  {selectedTile.targetUser.displayName}
+                </p>
+                <p className="truncate font-mono text-[11px] font-bold text-secondary">
+                  vor der Linse erwischen ·{" "}
+                  {selectedTile.targetUser.effectiveTitle}
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           <div className="space-y-4">
             <label className="brutal-press flex min-h-11 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-control bg-primary-subtle p-6 text-center hover:bg-primary/25">
@@ -1237,55 +1326,22 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
         </TabsContent>
 
         <TabsContent value="boards" className="pt-2">
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-6 xl:grid-cols-2">
             {game.allBoards.map((board) => (
-              <Card key={board.id}>
-                <CardHeader>
-                  <div className="flex items-center justify-between gap-2">
-                    <PlayerBadgeLink user={board.owner} compact />
-                    {board.hasBingo ? (
-                      <Badge variant="primary">Bingo!</Badge>
-                    ) : null}
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-5">
-                  <div
-                    className={cn(
-                      "grid gap-1.5",
-                      game.gridSize === 3
-                        ? "grid-cols-3"
-                        : game.gridSize === 4
-                          ? "grid-cols-4"
-                          : "grid-cols-5",
-                    )}
-                  >
-                    {board.tiles.map((tile) => (
-                      <div
-                        key={tile.id}
-                        className={cn(
-                          "relative flex min-h-18 flex-col justify-between overflow-hidden rounded-sm border-2 border-strong p-1.5 text-[11px]",
-                          tile.isCaptured
-                            ? "bg-cyan-subtle"
-                            : "bg-surface-muted",
-                        )}
-                      >
-                        {tile.imageStorageKey ? (
-                          <div className="absolute inset-0 opacity-30">
-                            <AuthenticatedImage
-                              storageKey={tile.imageStorageKey}
-                              alt={tile.promptText}
-                              className="h-full w-full"
-                            />
-                          </div>
-                        ) : null}
-                        <span className="relative z-10 line-clamp-3 leading-tight font-bold text-ink">
-                          {tile.promptText}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
+              <div key={board.id} className="space-y-3">
+                <div className="brutal-shadow-sm flex items-center justify-between gap-2 rounded-md border-2 border-strong bg-surface px-4 py-2.5">
+                  <PlayerBadgeLink user={board.owner} compact />
+                  {board.hasBingo ? (
+                    <Badge variant="primary">Bingo!</Badge>
+                  ) : null}
+                </div>
+                <BingoBoard
+                  board={board}
+                  gridSize={game.gridSize}
+                  feed={game.feed}
+                  onViewCapture={(cap) => setSelectedCapture(cap)}
+                />
+              </div>
             ))}
           </div>
         </TabsContent>

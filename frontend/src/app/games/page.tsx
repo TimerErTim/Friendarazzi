@@ -1,9 +1,9 @@
 "use client";
 
-import { Check, Copy } from "lucide-react";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
@@ -17,12 +17,15 @@ import {
 } from "@/components/friendarazzi/game-phases";
 import { SetBreadcrumbLabel } from "@/components/layout/page-chrome";
 import { Alert } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { CalloutNote, CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
-import { gameHref, paths } from "@/lib/navigation";
+import { authHrefWithRedirect, gameHref, paths } from "@/lib/navigation";
 import { useQueryParam } from "@/lib/use-query-param";
+
+const LAST_GAME_KEY = "friendarazzi:last_game_id";
 
 const PHASES = [
   { status: GameStatus.Lobby, num: "1", label: "Lobby" },
@@ -31,23 +34,55 @@ const PHASES = [
   { status: GameStatus.Completed, num: "4", label: "Finale" },
 ] as const;
 
+function shortStatusLabel(status: GameStatus): string {
+  switch (status) {
+    case GameStatus.Lobby:
+      return "Lobby";
+    case GameStatus.Drafting:
+      return "Entwurf";
+    case GameStatus.Active:
+      return "Läuft";
+    case GameStatus.Completed:
+      return "Beendet";
+  }
+}
+
 export default function GamePage() {
   const phase = useAuth();
   const router = useRouter();
   const id = useQueryParam("id");
   const gamesList = useGamesQuery();
   const detail = useGameDetailQuery(id);
-  const [copiedCode, setCopiedCode] = useState(false);
 
   useEffect(() => {
     if (phase.status === "anonymous") {
-      router.replace("/anmeldung");
+      router.replace(
+        authHrefWithRedirect("/anmeldung", id ? gameHref(id) : paths.games),
+      );
     }
-  }, [phase.status, router]);
+  }, [phase.status, id, router]);
+
+  useEffect(() => {
+    if (!id || typeof window === "undefined") return;
+    try {
+      window.sessionStorage.setItem(LAST_GAME_KEY, id);
+    } catch {
+      // Ignore storage errors
+    }
+  }, [id]);
 
   useEffect(() => {
     if (id === "" && gamesList.data && gamesList.data.length > 0) {
+      let lastId: string | null = null;
+      if (typeof window !== "undefined") {
+        try {
+          lastId = window.sessionStorage.getItem(LAST_GAME_KEY);
+        } catch {
+          lastId = null;
+        }
+      }
       const target =
+        (lastId ? gamesList.data.find((g) => g.id === lastId) : undefined) ??
         gamesList.data.find((g) => g.status !== GameStatus.Completed) ??
         gamesList.data[0];
       if (target) {
@@ -97,18 +132,50 @@ export default function GamePage() {
 
   const game = detail.data;
   const activeIdx = PHASES.findIndex((p) => p.status === game.status);
-
-  function copyCode() {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      void navigator.clipboard.writeText(game.inviteCode);
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 1800);
-    }
-  }
+  const runningGames = (gamesList.data ?? []).filter(
+    (g) => g.status !== GameStatus.Completed,
+  );
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
       <SetBreadcrumbLabel label={game.title} />
+
+      {/* Parallel Games Quick-Switch Bar */}
+      {runningGames.length > 1 ? (
+        <nav
+          aria-label="Parallele Spiele wechseln"
+          className="flex flex-wrap items-center gap-2"
+        >
+          {runningGames.map((item) => {
+            const isCurrent = item.id === game.id;
+            return (
+              <Link
+                key={item.id}
+                href={gameHref(item.id)}
+                aria-current={isCurrent ? "page" : undefined}
+                className={cn(
+                  "inline-flex min-h-11 items-center gap-2 rounded-sm border-2 border-strong px-3 py-1.5 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                  isCurrent
+                    ? "brutal-shadow-sm bg-primary text-primary-foreground"
+                    : "bg-surface text-ink hover:bg-surface-muted",
+                )}
+              >
+                <span className="max-w-36 truncate">{item.title}</span>
+                <CodeTag tone={isCurrent ? "surface" : "cyan"}>
+                  {shortStatusLabel(item.status)}
+                </CodeTag>
+              </Link>
+            );
+          })}
+          <Link
+            href={paths.home}
+            className="inline-flex min-h-11 items-center gap-1 rounded-sm border-2 border-dashed border-strong bg-canvas px-3 py-1.5 text-xs font-bold text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            Lobbys
+          </Link>
+        </nav>
+      ) : null}
 
       {/* Match Stage Bar & 4-Phase Stepper */}
       <section className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-4 sm:p-5">
@@ -126,20 +193,7 @@ export default function GamePage() {
               {game.players.length} Spieler
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={copyCode}
-            className="brutal-press inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border-2 border-control bg-primary-subtle px-3 py-1.5 font-mono text-xs font-bold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-            title="Einladungscode kopieren"
-          >
-            <span>CODE: {game.inviteCode}</span>
-            {copiedCode ? (
-              <Check className="size-3.5 text-success" aria-hidden="true" />
-            ) : (
-              <Copy className="size-3.5" aria-hidden="true" />
-            )}
-          </button>
+          <Badge variant="primary">{shortStatusLabel(game.status)}</Badge>
         </div>
 
         {/* Visual Phase Stepper */}
@@ -172,13 +226,13 @@ export default function GamePage() {
       </section>
 
       {game.status === GameStatus.Lobby ? (
-        <LobbyPhase game={game} />
+        <LobbyPhase key={game.id} game={game} />
       ) : game.status === GameStatus.Drafting ? (
-        <DraftingPhase game={game} />
+        <DraftingPhase key={game.id} game={game} />
       ) : game.status === GameStatus.Active ? (
-        <ActivePlayPhase game={game} />
+        <ActivePlayPhase key={game.id} game={game} />
       ) : (
-        <CompletedPhase game={game} />
+        <CompletedPhase key={game.id} game={game} />
       )}
     </div>
   );

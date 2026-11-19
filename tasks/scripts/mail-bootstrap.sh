@@ -91,9 +91,10 @@ echo
 echo "1. DKIM — TXT on mail._domainkey.${mail_domain}"
 echo "   Value (one line, quotes and whitespace between parts removed):"
 "${compose[@]}" exec -T mailserver cat "$key_file" 2>/dev/null |
-  sed -n 's/^[^(]*(\(.*\))$/\1/p' |
-  tr -d '"' | tr -d '\n' | tr -s ' ' | sed 's/^ *//; s/ *$//' |
+  { grep -o '"[^"]*"' || true; } |
+  tr -d '"\r\n' |
   sed 's/^/     /'
+echo
 echo
 echo "2. SPF — TXT on ${mail_domain}"
 echo "     v=spf1 mx ~all"

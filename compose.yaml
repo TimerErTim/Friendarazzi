@@ -109,11 +109,13 @@ services:
     healthcheck:
       # Healthy once the pair exists. The mail server waits for this: started with
       # `SSL_TYPE=manual` and no certificate it aborts, and `restart: unless-stopped`
-      # would turn that into a crash loop until Caddy had issued one.
+      # would turn that into a crash loop until Caddy had issued one. Allow enough
+      # startup grace time for initial ACME/Let's Encrypt certificate issuance.
       test: ["CMD-SHELL", "test -s /certs/active.crt && test -s /certs/active.key"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 6
+      start_period: 90s
     # No `depends_on`: the script waits for the certificate itself, so a missing one delays
     # publication instead of failing the container.
     networks:

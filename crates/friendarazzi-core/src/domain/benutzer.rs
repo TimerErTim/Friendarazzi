@@ -227,7 +227,11 @@ fn default_display_name_from_email(email: &EmailAdresse) -> NonEmptyString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::media::tests::png_bytes_for_test;
+    use crate::domain::media::tests::{
+        QuadrantColor::{Blue as B, Green as G, Red as R, Yellow as Y},
+        assert_no_exif_metadata, assert_quadrants, encode_with_exif, exif_tiff_chunk,
+        png_bytes_for_test, quadrant_image_for_test,
+    };
 
     fn jetzt() -> DateTime<Utc> {
         DateTime::from_timestamp(1_700_000_000, 0).unwrap()
@@ -288,6 +292,18 @@ mod tests {
         let decoded = image::load_from_memory(&webp).unwrap();
         assert_eq!(decoded.width(), 400);
         assert_eq!(decoded.height(), 400);
+    }
+
+    #[test_log::test]
+    fn avatar_processing_applies_exif_orientation_and_removes_exif() {
+        let src = quadrant_image_for_test(600, 600);
+        let raw = encode_with_exif(&src, image::ImageFormat::Jpeg, exif_tiff_chunk(6, false));
+        let webp = Benutzer::process_avatar_photo(&raw).unwrap();
+
+        assert_no_exif_metadata(&webp);
+        let decoded = image::load_from_memory(&webp).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (400, 400));
+        assert_quadrants(&decoded, [B, R, Y, G]);
     }
 
     #[test_log::test]

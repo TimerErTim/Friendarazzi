@@ -1,4 +1,7 @@
-use friendarazzi_fakes::png_bytes_for_test;
+use friendarazzi_fakes::{
+    QuadrantColor::{Blue as B, Green as G, Red as R, Yellow as Y},
+    inspect_normalized_webp_for_test, png_bytes_for_test, quadrant_jpeg_with_exif_for_test,
+};
 use poem::http::StatusCode;
 use serde_json::json;
 
@@ -149,5 +152,38 @@ async fn e2e_profile_update_avatar_upload_and_caught_vs_captured_gallery() {
     assert_eq!(
         alice_gallery["captured"][0]["photos"][0]["target"]["id"],
         id_bob
+    );
+}
+
+#[test_log::test(tokio::test)]
+async fn e2e_avatar_normalizes_exif_orientation_and_strips_exif() {
+    let harness = E2eHarness::new().await;
+    let (t_alice, _) = neuer_benutzer(&harness, "av-exif-alice@example.at").await;
+    let (t_bob, _) = neuer_benutzer(&harness, "av-exif-bob@example.at").await;
+
+    let jpeg = quadrant_jpeg_with_exif_for_test(128, 128, 6);
+    let (st, prof) = harness
+        .client
+        .post_multipart_file_auth(
+            "/api/profil/avatar",
+            "file",
+            "avatar_rotated.jpg",
+            "image/jpeg",
+            jpeg,
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{prof}");
+
+    let key = prof["avatarStorageKey"].as_str().unwrap();
+    let (media_st, bytes, ct) = harness
+        .client
+        .get_bytes_auth(&format!("/api/media/{key}"), &t_bob)
+        .await;
+    assert_eq!(media_st, StatusCode::OK);
+    assert_eq!(ct, "image/webp");
+    assert_eq!(
+        inspect_normalized_webp_for_test(&bytes),
+        (400, 400, [B, R, Y, G])
     );
 }

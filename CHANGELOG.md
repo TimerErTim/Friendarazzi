@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Reversible prompt locking with a shared 60-second pre-game countdown once all players mark ready, allowing any player to withdraw readiness and adjust prompts before boards are dealt.
+- Parallel-game session overview with progress indicators, action-needed highlights, explicit multi-game selection, and switch-safe autosave (flushing pending draft and lobby edits before switching or closing).
+
+### Changed
+- Reduced visual clutter and duplicate status indicators across the hub, game screens, and profile view, grouping all profile editing controls (avatar, display name, and title) into one place.
+
 ### Fixed
 - Quick-Start deck autofill and slot reroll now guarantee unique rendered prompts per player draft and leave remaining slots empty with guidance if a deck runs out of unused suggestions.
 

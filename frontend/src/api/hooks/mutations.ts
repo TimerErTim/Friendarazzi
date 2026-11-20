@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateGameInput,
   DraftPromptRequestItem,
+  GameDetail,
   UpdateGameSettingsInput,
   UpdateProfileInput,
 } from "../friendarazzi-api";
@@ -24,27 +25,34 @@ export function useFriendarazziMutations() {
     });
   };
 
+  const syncGameDetail = (game: GameDetail) => {
+    queryClient.setQueryData(friendarazziKeys.games.detail(game.id), game);
+    void queryClient.invalidateQueries({
+      queryKey: friendarazziKeys.games.all(),
+    });
+  };
+
   return {
     createGame: useMutation({
       mutationFn: (input: CreateGameInput) => api.gameCreate(input),
       ...SITE_HANDLED,
-      onSuccess: (game) => invalidateGame(game.id),
+      onSuccess: syncGameDetail,
     }),
     joinGame: useMutation({
       mutationFn: (inviteCode: string) => api.gameJoin(inviteCode),
       ...SITE_HANDLED,
-      onSuccess: (game) => invalidateGame(game.id),
+      onSuccess: syncGameDetail,
     }),
     updateSettings: useMutation({
       mutationFn: (vars: { gameId: string; input: UpdateGameSettingsInput }) =>
         api.gameUpdateSettings(vars.gameId, vars.input),
       ...SITE_HANDLED,
-      onSuccess: (game) => invalidateGame(game.id),
+      onSuccess: syncGameDetail,
     }),
     startDrafting: useMutation({
       mutationFn: (gameId: string) => api.gameStartDrafting(gameId),
       ...SITE_HANDLED,
-      onSuccess: (game) => invalidateGame(game.id),
+      onSuccess: syncGameDetail,
     }),
     savePrompts: useMutation({
       mutationFn: (vars: {
@@ -52,12 +60,17 @@ export function useFriendarazziMutations() {
         prompts: DraftPromptRequestItem[];
       }) => api.gameSavePrompts(vars.gameId, vars.prompts),
       ...SITE_HANDLED,
-      onSuccess: (game) => invalidateGame(game.id),
+      onSuccess: syncGameDetail,
     }),
     lockPrompts: useMutation({
       mutationFn: (gameId: string) => api.gameLockPrompts(gameId),
       ...SITE_HANDLED,
-      onSuccess: (game) => invalidateGame(game.id),
+      onSuccess: syncGameDetail,
+    }),
+    unlockPrompts: useMutation({
+      mutationFn: (gameId: string) => api.gameUnlockPrompts(gameId),
+      ...SITE_HANDLED,
+      onSuccess: syncGameDetail,
     }),
     submitCapture: useMutation({
       mutationFn: (vars: { gameId: string; tileId: string; file: File }) =>

@@ -24,6 +24,9 @@ const CONSTRUCTING: &str = "while constructing game";
 /// Minimum number of players required to start drafting and guarantee `author != owner && target != owner`.
 pub const MIN_PLAYERS: usize = 3;
 
+/// Shared grace period once all players lock prompts before boards are dealt.
+pub const READY_GRACE_PERIOD_SECONDS: i64 = 60;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GameId(pub Uuid);
 
@@ -194,6 +197,7 @@ pub mod state {
     pub struct Drafting {
         pub prompts: Vec<PromptSubmission>,
         pub draft_locked: HashSet<BenutzerId>,
+        pub auto_start_at: Option<DateTime<Utc>>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,8 +315,8 @@ impl From<CompletedGame> for Game {
     }
 }
 
-/// Result of a player locking their draft prompts.
-pub enum DraftLockOutcome {
+/// Result of evaluating whether a ready drafting game should start active play.
+pub enum DraftStartOutcome {
     StillDrafting(DraftingGame),
     Started {
         game: ActiveGame,
@@ -479,6 +483,7 @@ impl LobbyGame {
             state: state::Drafting {
                 prompts: Vec::new(),
                 draft_locked: HashSet::new(),
+                auto_start_at: None,
             },
         })
     }
@@ -505,14 +510,32 @@ impl DraftingGame {
         self.state.draft_locked.contains(&user_id)
     }
 
-    /// Replace all prompts authored by `author` and unlock their draft.
+    pub fn auto_start_at(&self) -> Option<DateTime<Utc>> {
+        self.state.auto_start_at
+    }
+
+    pub fn all_players_locked(&self) -> bool {
+        self.players
+            .iter()
+            .all(|p| self.state.draft_locked.contains(&p.user_id))
+    }
+
+    pub fn is_ready_to_start(&self, now: DateTime<Utc>) -> bool {
+        self.all_players_locked() && self.state.auto_start_at.is_some_and(|t| now >= t)
+    }
+
+    /// Replace all prompts authored by `author`, unlock their draft, and cancel any pending countdown.
     pub fn save_author_prompts(
         &mut self,
         author: BenutzerId,
         submissions: Vec<PromptSubmission>,
+        now: DateTime<Utc>,
     ) -> ResultReport<(), GameError> {
         if !self.has_player(author) {
             return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        if self.is_ready_to_start(now) {
+            return Err(Report::new(GameError::InvalidStateTransition));
         }
         for sub in &submissions {
             if sub.author_user_id != author || sub.target_user_id == author {
@@ -526,18 +549,21 @@ impl DraftingGame {
         self.state.prompts.retain(|p| p.author_user_id != author);
         self.state.prompts.extend(submissions);
         self.state.draft_locked.remove(&author);
+        self.state.auto_start_at = None;
         Ok(())
     }
 
-    /// Validate `author`'s prompt quotas, lock their draft, and start active play once all players lock.
+    /// Validate `author`'s prompt quotas, mark them ready, and begin the shared countdown once all players lock.
     pub fn lock_author_prompts(
-        mut self,
+        &mut self,
         author: BenutzerId,
         now: DateTime<Utc>,
-        rng: &mut (impl Rng + ?Sized),
-    ) -> ResultReport<DraftLockOutcome, GameError> {
+    ) -> ResultReport<(), GameError> {
         if !self.has_player(author) {
             return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        if self.is_ready_to_start(now) {
+            return Err(Report::new(GameError::InvalidStateTransition));
         }
 
         let player_ids = self.sorted_player_ids();
@@ -557,40 +583,66 @@ impl DraftingGame {
         )?;
 
         self.state.draft_locked.insert(author);
-
-        if self
-            .players
-            .iter()
-            .all(|p| self.state.draft_locked.contains(&p.user_id))
-        {
-            let boards = assemble_boards(
-                self.id,
-                self.grid_size,
-                &player_ids,
-                &self.state.prompts,
-                rng,
-            )?;
-            let active = GameIn {
-                id: self.id,
-                invite_code: self.invite_code,
-                host_user_id: self.host_user_id,
-                title: self.title,
-                grid_size: self.grid_size,
-                visibility_mode: self.visibility_mode,
-                players: self.players,
-                created_at: self.created_at,
-                state: state::Active {
-                    prompts: self.state.prompts,
-                    started_at: now,
-                },
-            };
-            Ok(DraftLockOutcome::Started {
-                game: active,
-                boards,
-            })
-        } else {
-            Ok(DraftLockOutcome::StillDrafting(self))
+        if self.all_players_locked() && self.state.auto_start_at.is_none() {
+            self.state.auto_start_at =
+                Some(now + chrono::Duration::seconds(READY_GRACE_PERIOD_SECONDS));
         }
+        Ok(())
+    }
+
+    /// Withdraw `author`'s ready lock while still in drafting and cancel any active countdown.
+    pub fn unlock_author_prompts(
+        &mut self,
+        author: BenutzerId,
+        now: DateTime<Utc>,
+    ) -> ResultReport<(), GameError> {
+        if !self.has_player(author) {
+            return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        if self.is_ready_to_start(now) {
+            return Err(Report::new(GameError::InvalidStateTransition));
+        }
+        self.state.draft_locked.remove(&author);
+        self.state.auto_start_at = None;
+        Ok(())
+    }
+
+    /// Deal boards and transition to `Active` once all players stayed ready through the grace period.
+    pub fn finalize_ready_start(
+        self,
+        now: DateTime<Utc>,
+        rng: &mut (impl Rng + ?Sized),
+    ) -> ResultReport<DraftStartOutcome, GameError> {
+        if !self.is_ready_to_start(now) {
+            return Ok(DraftStartOutcome::StillDrafting(self));
+        }
+
+        let player_ids = self.sorted_player_ids();
+        let boards = assemble_boards(
+            self.id,
+            self.grid_size,
+            &player_ids,
+            &self.state.prompts,
+            rng,
+        )?;
+        let active = GameIn {
+            id: self.id,
+            invite_code: self.invite_code,
+            host_user_id: self.host_user_id,
+            title: self.title,
+            grid_size: self.grid_size,
+            visibility_mode: self.visibility_mode,
+            players: self.players,
+            created_at: self.created_at,
+            state: state::Active {
+                prompts: self.state.prompts,
+                started_at: now,
+            },
+        };
+        Ok(DraftStartOutcome::Started {
+            game: active,
+            boards,
+        })
     }
 }
 
@@ -1070,24 +1122,49 @@ mod tests {
                 .filter(|p| p.author_user_id == author)
                 .cloned()
                 .collect();
-            drafting.save_author_prompts(author, mine).unwrap();
+            drafting.save_author_prompts(author, mine, now).unwrap();
         }
 
-        let DraftLockOutcome::StillDrafting(d1) = drafting
-            .lock_author_prompts(players[0], now, &mut rng)
+        drafting.lock_author_prompts(players[0], now).unwrap();
+        assert!(drafting.auto_start_at().is_none());
+        drafting.lock_author_prompts(players[1], now).unwrap();
+        assert!(drafting.auto_start_at().is_none());
+
+        // Last player locks: enters 60s grace period rather than starting immediately.
+        drafting.lock_author_prompts(players[2], now).unwrap();
+        assert_eq!(
+            drafting.auto_start_at(),
+            Some(now + chrono::Duration::seconds(READY_GRACE_PERIOD_SECONDS))
+        );
+        assert!(!drafting.is_ready_to_start(now + chrono::Duration::seconds(59)));
+        assert!(drafting.is_ready_to_start(now + chrono::Duration::seconds(60)));
+
+        // Withdrawing readiness cancels the pending start and preserves prompts.
+        drafting
+            .unlock_author_prompts(players[2], now + chrono::Duration::seconds(30))
+            .unwrap();
+        assert!(drafting.auto_start_at().is_none());
+        assert!(!drafting.is_draft_locked(players[2]));
+        assert_eq!(drafting.prompts_by_author(players[2]).len(), 9);
+
+        // Re-locking starts a fresh 60s countdown from the new timestamp.
+        let relock_at = now + chrono::Duration::seconds(40);
+        drafting.lock_author_prompts(players[2], relock_at).unwrap();
+        assert_eq!(
+            drafting.auto_start_at(),
+            Some(relock_at + chrono::Duration::seconds(READY_GRACE_PERIOD_SECONDS))
+        );
+        let DraftStartOutcome::StillDrafting(drafting) = drafting
+            .finalize_ready_start(relock_at + chrono::Duration::seconds(59), &mut rng)
             .unwrap()
         else {
-            panic!("should still be drafting after 1 lock");
+            panic!("must not start before full grace period expires");
         };
-        let DraftLockOutcome::StillDrafting(d2) =
-            d1.lock_author_prompts(players[1], now, &mut rng).unwrap()
+        let DraftStartOutcome::Started { game, boards } = drafting
+            .finalize_ready_start(relock_at + chrono::Duration::seconds(60), &mut rng)
+            .unwrap()
         else {
-            panic!("should still be drafting after 2 locks");
-        };
-        let DraftLockOutcome::Started { game, boards } =
-            d2.lock_author_prompts(players[2], now, &mut rng).unwrap()
-        else {
-            panic!("should start active once all lock");
+            panic!("should start active once grace period expires");
         };
         assert_eq!(boards.len(), 3);
 

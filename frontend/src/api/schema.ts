@@ -642,8 +642,66 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Lock in the caller's draft prompts and start active play when all players are locked.
-         * @description Validates equal-distribution quotas and generates conflict-free Bingo boards once everyone locks.
+         * Mark the caller ready during drafting and start the shared 60-second countdown once all players lock.
+         * @description Validates equal-distribution quotas and begins the 60-second pre-game grace period once every player is ready.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/prompts/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw the caller's readiness lock before play starts and cancel any pending countdown.
+         * @description Preserves the caller's saved prompts so they can edit again before locking back in.
          */
         post: {
             parameters: {
@@ -1911,6 +1969,16 @@ export interface components {
             playableTileCount: number;
             /**
              * Format: date-time
+             * @description Shared countdown deadline once all players are ready during Drafting.
+             */
+            autoStartAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Server clock timestamp when this detail was generated.
+             */
+            serverNow: string;
+            /**
+             * Format: date-time
              * @description Timestamp when active play started.
              */
             startedAt?: string | null;
@@ -1971,9 +2039,43 @@ export interface components {
             status: components["schemas"]["GameStatus"] & unknown;
             /**
              * Format: uint32
+             * @description Playable tile count per player.
+             */
+            playableTileCount: number;
+            /**
+             * Format: uint32
              * @description Number of joined players.
              */
             playerCount: number;
+            /**
+             * Format: uint32
+             * @description Caller's captured tile count during Active/Completed play (own board only).
+             */
+            myCapturedTiles?: number | null;
+            /**
+             * Format: uint32
+             * @description Caller's saved prompt count during Drafting.
+             */
+            myDraftFilled?: number | null;
+            /** @description Whether the caller has locked prompts during Drafting. */
+            myDraftLocked?: boolean | null;
+            /**
+             * Format: uint32
+             * @description Number of players locked in during Drafting.
+             */
+            readyPlayerCount?: number | null;
+            /** @description Whether the caller currently has a pending action (e.g. start drafting or lock prompts). */
+            needsAction: boolean;
+            /**
+             * Format: date-time
+             * @description Shared countdown deadline once all players are ready during Drafting.
+             */
+            autoStartAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Server clock timestamp when this summary was generated.
+             */
+            serverNow: string;
             /** @description Winner badge if completed. */
             winner?: components["schemas"]["PlayerBadge"] | (never | null);
             /**

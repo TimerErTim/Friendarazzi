@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::{
     application::{ExecutionContext, uow::Versioned},
     domain::{
-        BenutzerId, DraftLockOutcome, Game, GameError, GameId, GridSize, InviteCode, MIN_PLAYERS,
+        BenutzerId, DraftStartOutcome, Game, GameError, GameId, GridSize, InviteCode, MIN_PLAYERS,
         NewGame, NonEmptyString, PromptSource, PromptSubmission, PromptSubmissionId,
         VisibilityMode,
     },
@@ -343,6 +343,7 @@ impl UseCase<()> for SaveDraftPrompts {
             .auth()
             .require_benutzer_id()
             .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
         let uow = ctx
             .enter()
             .await
@@ -386,7 +387,7 @@ impl UseCase<()> for SaveDraftPrompts {
             }
 
             drafting
-                .save_author_prompts(user_id, submissions)
+                .save_author_prompts(user_id, submissions, now)
                 .map_err(|e| {
                     let mapped = map_game_error(e.current_context());
                     e.change_context(mapped)
@@ -442,23 +443,138 @@ impl UseCase<Game> for LockDraftPrompts {
             }
 
             let version = game.v();
-            let Game::Drafting(drafting) = game.into_data() else {
+            let Game::Drafting(mut drafting) = game.into_data() else {
                 return Err(Report::new(GameUseCaseError::Conflict));
+            };
+
+            drafting.lock_author_prompts(user_id, now).map_err(|e| {
+                let mapped = map_game_error(e.current_context());
+                e.change_context(mapped)
+            })?;
+
+            let mut updated = Versioned::new(version, Game::Drafting(drafting));
+            uow.games()
+                .update(&mut updated)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
+            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+        }
+        .await;
+
+        uow.finish(result, GameUseCaseError::Persistence).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UnlockDraftPrompts {
+    pub game_id: GameId,
+}
+
+#[async_trait]
+impl UseCase<Game> for UnlockDraftPrompts {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(GameUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+
+            if !game.has_player(user_id) {
+                return Err(Report::new(GameUseCaseError::Forbidden));
+            }
+
+            let version = game.v();
+            let Game::Drafting(mut drafting) = game.into_data() else {
+                return Err(Report::new(GameUseCaseError::Conflict));
+            };
+
+            drafting.unlock_author_prompts(user_id, now).map_err(|e| {
+                let mapped = map_game_error(e.current_context());
+                e.change_context(mapped)
+            })?;
+
+            let mut updated = Versioned::new(version, Game::Drafting(drafting));
+            uow.games()
+                .update(&mut updated)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
+            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+        }
+        .await;
+
+        uow.finish(result, GameUseCaseError::Persistence).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FinalizeReadyGame {
+    pub game_id: GameId,
+}
+
+#[async_trait]
+impl UseCase<Game> for FinalizeReadyGame {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(GameUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+
+            if !game.has_player(user_id) {
+                return Err(Report::new(GameUseCaseError::Forbidden));
+            }
+
+            let version = game.v();
+            let game_data = game.into_data();
+            let Game::Drafting(drafting) = game_data else {
+                return Ok(game_data);
             };
 
             let outcome = {
                 let mut rng = ctx.rng();
-                drafting
-                    .lock_author_prompts(user_id, now, &mut *rng)
-                    .map_err(|e| {
-                        let mapped = map_game_error(e.current_context());
-                        e.change_context(mapped)
-                    })?
+                drafting.finalize_ready_start(now, &mut *rng).map_err(|e| {
+                    let mapped = map_game_error(e.current_context());
+                    e.change_context(mapped)
+                })?
             };
 
-            let next_game = match outcome {
-                DraftLockOutcome::StillDrafting(d) => Game::Drafting(d),
-                DraftLockOutcome::Started {
+            match outcome {
+                DraftStartOutcome::StillDrafting(d) => Ok(Game::Drafting(d)),
+                DraftStartOutcome::Started {
                     game: active,
                     boards,
                 } => {
@@ -467,20 +583,32 @@ impl UseCase<Game> for LockDraftPrompts {
                             .create(new_board)
                             .await
                             .map_err(IntoReport::into_report)
-                            .change_context(GameUseCaseError::Persistence)?;
+                            .map_err(|err| {
+                                if matches!(err.current_context(), RepositoryError::Conflict) {
+                                    err.change_context(GameUseCaseError::Conflict)
+                                } else {
+                                    err.change_context(GameUseCaseError::Persistence)
+                                }
+                            })?;
                     }
-                    Game::Active(active)
+                    let mut updated = Versioned::new(version, Game::Active(active));
+                    uow.games()
+                        .update(&mut updated)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .map_err(|err| {
+                            if matches!(
+                                err.current_context(),
+                                RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
+                            ) {
+                                err.change_context(GameUseCaseError::Conflict)
+                            } else {
+                                err.change_context(GameUseCaseError::Persistence)
+                            }
+                        })?;
+                    Ok(updated.into_data())
                 }
-            };
-
-            let mut updated = Versioned::new(version, next_game);
-            uow.games()
-                .update(&mut updated)
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
-
-            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+            }
         }
         .await;
 

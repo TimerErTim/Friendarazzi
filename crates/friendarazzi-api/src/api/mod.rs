@@ -3,23 +3,25 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use error_stack::{IntoReport, Report, ResultExt};
 use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
     domain::{
-        self, BenutzerId, BoardTileId, Capture, Game, GameAwards, GameId, InviteCode,
+        self, BenutzerId, BoardTileId, Capture, Game, GameAwards, GameId, InviteCode, MIN_PLAYERS,
         can_view_blurred_capture, can_view_full_capture, compute_game_awards,
         target_quotas_for_author,
     },
     ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
     service::{
         Abmeldung, AbmeldungFehler, Anmeldung, AnmeldungFehler, BenutzerLöschen,
-        BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
-        LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
-        PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
-        RegistrierungAbschließen, RegistrierungStarten, RegistrierungStartenFehler,
-        SessionAusgestellt, StartDrafting, SubmitCapture, UploadAvatar,
+        BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler,
+        FinalizeReadyGame, GameUseCaseError, LockDraftPrompts, PasswortVergessen,
+        PasswortVergessenFehler, PasswortWiederherstellen, PasswortWiederherstellenFehler,
+        ProfileUseCaseError, RegistrierungAbschliessenFehler, RegistrierungAbschließen,
+        RegistrierungStarten, RegistrierungStartenFehler, SessionAusgestellt, StartDrafting,
+        SubmitCapture, UnlockDraftPrompts, UploadAvatar,
     },
 };
 use tracing::warn;
@@ -107,16 +109,69 @@ impl FriendarazziAppApi {
 
     // ---------------------------------------------------------------- Games
 
+    async fn finalize_ready_games(
+        &self,
+        auth: AuthContext,
+        game_ids: Vec<GameId>,
+    ) -> ResultReport<(), GameReadError> {
+        for game_id in game_ids {
+            match self.app.execute(auth, FinalizeReadyGame { game_id }).await {
+                Ok(_) => {}
+                Err(err) if matches!(err.current_context(), GameUseCaseError::Conflict) => {}
+                Err(err) => return Err(err.change_context(GameReadError::Persistence)),
+            }
+        }
+        Ok(())
+    }
+
     pub async fn games_list(
         &self,
         auth: AuthContext,
     ) -> ResultReport<Vec<GameSummary>, GameReadError> {
+        let ready_ids = self
+            .app
+            .execute_fn(auth, async |ctx| {
+                let user_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
+                let now = ctx.clock().now();
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let games = uow
+                        .games()
+                        .find_by_participating_user(user_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameReadError::Persistence)?;
+                    let ids: Vec<GameId> = games
+                        .into_iter()
+                        .filter_map(|g| match g.into_data() {
+                            Game::Drafting(d) if d.is_ready_to_start(now) => Some(d.id()),
+                            _ => None,
+                        })
+                        .collect();
+                    Ok::<_, Report<GameReadError>>(ids)
+                }
+                .await;
+                uow.finish(res, GameReadError::Persistence).await
+            })
+            .await?;
+
+        if !ready_ids.is_empty() {
+            self.finalize_ready_games(auth, ready_ids).await?;
+        }
+
         self.app
             .execute_fn(auth, async |ctx| {
                 let user_id = ctx
                     .auth()
                     .require_benutzer_id()
                     .change_context(GameReadError::Unauthorized)?;
+                let now = ctx.clock().now();
                 let uow = ctx
                     .enter()
                     .await
@@ -145,7 +200,28 @@ impl FriendarazziAppApi {
                             }
                             Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
                         };
-                        summaries.push(game_to_summary(&game, winner));
+                        let my_captured_tiles = match &game {
+                            Game::Active(_) | Game::Completed(_) => uow
+                                .boards()
+                                .find_by_game_and_owner(game.id(), user_id)
+                                .await
+                                .ok()
+                                .map(|b| {
+                                    b.into_data()
+                                        .tiles()
+                                        .iter()
+                                        .filter(|t| t.capture_id().is_some())
+                                        .count() as u32
+                                }),
+                            Game::Lobby(_) | Game::Drafting(_) => None,
+                        };
+                        summaries.push(game_to_summary(
+                            &game,
+                            Some(user_id),
+                            my_captured_tiles,
+                            winner,
+                            now,
+                        ));
                     }
                     Ok::<_, Report<GameReadError>>(summaries)
                 }
@@ -167,6 +243,7 @@ impl FriendarazziAppApi {
                     .auth()
                     .require_benutzer_id()
                     .change_context(GameReadError::Unauthorized)?;
+                let now = ctx.clock().now();
                 let uow = ctx
                     .enter()
                     .await
@@ -192,7 +269,7 @@ impl FriendarazziAppApi {
                         }
                         Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
                     };
-                    Ok::<_, Report<GameReadError>>(game_to_summary(&game, winner))
+                    Ok::<_, Report<GameReadError>>(game_to_summary(&game, None, None, winner, now))
                 }
                 .await;
                 uow.finish(res, GameReadError::Persistence).await
@@ -266,6 +343,19 @@ impl FriendarazziAppApi {
             .await
     }
 
+    pub async fn game_unlock_prompts(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let game = self
+            .app
+            .execute(auth, UnlockDraftPrompts { game_id })
+            .await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
     async fn load_game_detail_after_write<E: friendarazzi_core::ThreadSafeError>(
         &self,
         auth: AuthContext,
@@ -282,12 +372,50 @@ impl FriendarazziAppApi {
         auth: AuthContext,
         game_id: GameId,
     ) -> ResultReport<GameDetail, GameReadError> {
+        let needs_finalize = self
+            .app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(GameReadError::Unauthorized)?;
+                let now = ctx.clock().now();
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(GameReadError::Persistence)?;
+                let res = async {
+                    let game = match uow.games().find_by_id(game_id).await {
+                        Ok(g) => g.into_data(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            return Err(Report::new(GameReadError::NotFound));
+                        }
+                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
+                    };
+                    if !game.has_player(viewer_id) {
+                        return Err(Report::new(GameReadError::Forbidden));
+                    }
+                    Ok::<_, Report<GameReadError>>(matches!(
+                        &game,
+                        Game::Drafting(d) if d.is_ready_to_start(now)
+                    ))
+                }
+                .await;
+                uow.finish(res, GameReadError::Persistence).await
+            })
+            .await?;
+
+        if needs_finalize {
+            self.finalize_ready_games(auth, vec![game_id]).await?;
+        }
+
         self.app
             .execute_fn(auth, async |ctx| {
                 let viewer_id = ctx
                     .auth()
                     .require_benutzer_id()
                     .change_context(GameReadError::Unauthorized)?;
+                let now = ctx.clock().now();
                 let uow = ctx
                     .enter()
                     .await
@@ -319,10 +447,12 @@ impl FriendarazziAppApi {
                         .filter_map(|pid| badges.get(pid).cloned())
                         .collect();
 
-                    let (started_at, ended_at, winner) = match &game {
-                        Game::Lobby(_) | Game::Drafting(_) => (None, None, None),
-                        Game::Active(a) => (Some(a.started_at()), None, None),
+                    let (auto_start_at, started_at, ended_at, winner) = match &game {
+                        Game::Lobby(_) => (None, None, None, None),
+                        Game::Drafting(d) => (d.auto_start_at(), None, None, None),
+                        Game::Active(a) => (None, Some(a.started_at()), None, None),
                         Game::Completed(c) => (
+                            None,
                             Some(c.started_at()),
                             Some(c.ended_at()),
                             badges.get(&c.winner_user_id()).cloned(),
@@ -468,6 +598,8 @@ impl FriendarazziAppApi {
                         visibility_mode: game.visibility_mode().into(),
                         status: (&game).into(),
                         playable_tile_count: game.playable_tile_count() as u32,
+                        auto_start_at,
+                        server_now: now,
                         started_at,
                         ended_at,
                         winner,
@@ -974,12 +1106,33 @@ impl FriendarazziAppApi {
     }
 }
 
-fn game_to_summary(game: &Game, winner: Option<PlayerBadge>) -> GameSummary {
+fn game_to_summary(
+    game: &Game,
+    viewer_id: Option<BenutzerId>,
+    my_captured_tiles: Option<u32>,
+    winner: Option<PlayerBadge>,
+    server_now: DateTime<Utc>,
+) -> GameSummary {
     let (started_at, ended_at) = match game {
         Game::Lobby(_) | Game::Drafting(_) => (None, None),
         Game::Active(a) => (Some(a.started_at()), None),
         Game::Completed(c) => (Some(c.started_at()), Some(c.ended_at())),
     };
+    let (my_draft_filled, my_draft_locked, ready_player_count, auto_start_at) = match game {
+        Game::Drafting(d) => (
+            viewer_id.map(|uid| d.prompts_by_author(uid).len() as u32),
+            viewer_id.map(|uid| d.is_draft_locked(uid)),
+            Some(d.draft_locked().len() as u32),
+            d.auto_start_at(),
+        ),
+        _ => (None, None, None, None),
+    };
+    let needs_action = match (game, viewer_id) {
+        (Game::Lobby(l), Some(uid)) => l.host_user_id() == uid && l.players().len() >= MIN_PLAYERS,
+        (Game::Drafting(d), Some(uid)) => !d.is_draft_locked(uid),
+        _ => false,
+    };
+
     GameSummary {
         id: game.id().0,
         invite_code: game.invite_code().as_str().to_owned(),
@@ -987,7 +1140,15 @@ fn game_to_summary(game: &Game, winner: Option<PlayerBadge>) -> GameSummary {
         grid_size: game.grid_size() as u8,
         visibility_mode: game.visibility_mode().into(),
         status: game.into(),
+        playable_tile_count: game.playable_tile_count() as u32,
         player_count: game.players().len() as u32,
+        my_captured_tiles,
+        my_draft_filled,
+        my_draft_locked,
+        ready_player_count,
+        needs_action,
+        auto_start_at,
+        server_now,
         winner,
         started_at,
         ended_at,

@@ -7,14 +7,15 @@ use friendarazzi_core::{
     application::{AppBuilder, AuthContext, IdentityProviderConfiguration, SetUowProvider},
     domain::{
         BenutzerId, BoardTile, EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource,
-        VisibilityMode,
+        READY_GRACE_PERIOD_SECONDS, VisibilityMode,
         konto::{AccessTokenClaims, KlartextPasswort, SecretToken, SessionId},
         target_quotas_for_author,
     },
     ports::{ClientKey, Clock, RepositoryError, Signing},
     service::{
-        CreateGame, DraftPromptInput, JoinGame, LockDraftPrompts, RegistrierungAbschließen,
-        RegistrierungStarten, SaveDraftPrompts, SessionPrüfen, StartDrafting,
+        CreateGame, DraftPromptInput, FinalizeReadyGame, JoinGame, LockDraftPrompts,
+        RegistrierungAbschließen, RegistrierungStarten, SaveDraftPrompts, SessionPrüfen,
+        StartDrafting,
     },
 };
 use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
@@ -238,8 +239,15 @@ pub async fn setup_active_game(
             .await
             .unwrap();
     }
-    assert!(matches!(last_state, Game::Active(_)));
-    last_state
+    assert!(matches!(last_state, Game::Drafting(_)));
+    harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
+    let active_state = harness
+        .app()
+        .execute(host, FinalizeReadyGame { game_id: game.id() })
+        .await
+        .unwrap();
+    assert!(matches!(active_state, Game::Active(_)));
+    active_state
 }
 
 pub async fn load_tiles(harness: &Harness, auth: AuthContext, game_id: GameId) -> Vec<BoardTile> {

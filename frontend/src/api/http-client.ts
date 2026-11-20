@@ -288,6 +288,15 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
     );
   }
 
+  async gameUnlockPrompts(gameId: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games/{game_id}/prompts/unlock", {
+        params: { path: { game_id: gameId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
   // ---------------------------------------------------------------- Captures & Media
 
   async captureSubmit(

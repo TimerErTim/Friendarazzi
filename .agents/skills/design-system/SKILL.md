@@ -144,7 +144,8 @@ Single-source brand assets live in `assets/` and are synced/verified into `front
 5. **Focus always visible.** `focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus`.
 6. **One primary action per screen.** Everything else `secondary` or `ghost`. Destructive uses
    `destructive`.
-7. **German UI copy, English code.** Labels German, identifiers and comments English.
+7. **State facts once and group related controls.** Avoid repeating the same phase, status, or metric across adjacent badges and headers, and keep all edits for one concept (such as profile avatar, display name, and title) in one surface rather than splitting them across banners and tabs.
+8. **German UI copy, English code.** Labels German, identifiers and comments English.
 8. **Spacing** uses Tailwind's scale (`4, 8, 12, 16, 24, 32`). Cards and page bodies `p-6`.
 9. **Variants come from `cva`.** Keep public variant names stable (`primary`, `secondary`, `ghost`,
    `destructive`, `default`, `success`, `warning`, `error`, `info`, `outline`).

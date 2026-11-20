@@ -42,6 +42,7 @@ owner: TimerErTim
    1200×630 Open Graph preview derive from `assets/favicon.svg`, `assets/favicon_io.zip`,
    `assets/favicon_raw.jpg`, and `assets/banner_landscape.png` via
    `tasks/scripts/sync-brand-assets.mjs`.
-7. **Dev gallery.** Running `mise run dev:frontend` exposes `/dev` with all primitives, contrast
+7. **Concept grouping and zero redundant chrome.** Each fact (phase, progress, mode, count) appears once per screen region, and related editing controls live together in one surface instead of being split across banners and tabs.
+8. **Dev gallery.** Running `mise run dev:frontend` exposes `/dev` with all primitives, contrast
    measurements, typography, and brand specimens in light and dark modes without requiring a backend
    (excluded from static production exports).

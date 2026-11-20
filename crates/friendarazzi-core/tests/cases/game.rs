@@ -2,17 +2,18 @@
 
 use std::collections::{HashMap, HashSet};
 
+use chrono::Duration;
 use friendarazzi_core::{
     application::AuthContext,
     domain::{
         BenutzerId, BoardTileId, Game, GameId, GridSize, InviteCode, NonEmptyString, PromptSource,
-        PromptSubmissionId, VisibilityMode,
+        PromptSubmissionId, READY_GRACE_PERIOD_SECONDS, VisibilityMode,
     },
     ports::RepositoryError,
     service::{
-        CaptureUseCaseError, CreateGame, DraftPromptInput, GameUseCaseError, JoinGame,
-        LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts, StartDrafting, SubmitCapture,
-        UpdateGameSettings, UpdateProfile, UploadAvatar,
+        CaptureUseCaseError, CreateGame, DraftPromptInput, FinalizeReadyGame, GameUseCaseError,
+        JoinGame, LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts, StartDrafting,
+        SubmitCapture, UnlockDraftPrompts, UpdateGameSettings, UpdateProfile, UploadAvatar,
     },
 };
 use friendarazzi_fakes::png_bytes_for_test;
@@ -590,13 +591,70 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
         assert!(matches!(state, Game::Drafting(_)));
     }
 
-    // Re-locking Alice completes all locks and activates the game with Alice's edited prompts only
-    let active = harness
+    // Re-locking Alice completes all locks and starts the 60s countdown rather than activating immediately
+    let countdown_game = harness
         .app()
         .execute(alice, LockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
+    let Game::Drafting(d) = countdown_game else {
+        panic!("expected drafting with countdown after all players lock");
+    };
+    assert!(d.auto_start_at().is_some());
+
+    // Before 60s pass, finalizing leaves the game in Drafting
+    harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
+    let still_waiting = harness
+        .app()
+        .execute(alice, FinalizeReadyGame { game_id: game.id() })
+        .await
+        .unwrap();
+    assert!(matches!(still_waiting, Game::Drafting(_)));
+
+    // Last player withdraws readiness during countdown -> cancels pending start and keeps prompts
+    let unlocked = harness
+        .app()
+        .execute(alice, UnlockDraftPrompts { game_id: game.id() })
+        .await
+        .unwrap();
+    let Game::Drafting(d_unlocked) = unlocked else {
+        panic!("expected drafting after unlock");
+    };
+    assert!(d_unlocked.auto_start_at().is_none());
+    assert!(!d_unlocked.is_draft_locked(alice_id));
+    assert_eq!(d_unlocked.prompts_by_author(alice_id).len(), tiles_needed);
+
+    // Re-locking starts a fresh full 60s countdown
+    let relocked = harness
+        .app()
+        .execute(alice, LockDraftPrompts { game_id: game.id() })
+        .await
+        .unwrap();
+    assert!(matches!(relocked, Game::Drafting(_)));
+
+    harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
+    let still_counting = harness
+        .app()
+        .execute(bob, FinalizeReadyGame { game_id: game.id() })
+        .await
+        .unwrap();
+    assert!(matches!(still_counting, Game::Drafting(_)));
+
+    harness.vorspulen(Duration::seconds(1));
+    let active = harness
+        .app()
+        .execute(bob, FinalizeReadyGame { game_id: game.id() })
+        .await
+        .unwrap();
     assert!(matches!(active, Game::Active(_)));
+
+    // Once Active, readiness cannot be withdrawn
+    let err = harness
+        .app()
+        .execute(alice, UnlockDraftPrompts { game_id: game.id() })
+        .await
+        .unwrap_err();
+    assert!(matches!(err.current_context(), GameUseCaseError::Conflict));
 
     let all_prompts = harness
         .app()

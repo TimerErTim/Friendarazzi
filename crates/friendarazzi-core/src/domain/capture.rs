@@ -311,7 +311,11 @@ mod tests {
     use chrono::Duration;
 
     use super::*;
-    use crate::domain::media::tests::png_bytes_for_test;
+    use crate::domain::media::tests::{
+        QuadrantColor::{Blue as B, Green as G, Red as R, Yellow as Y},
+        assert_no_exif_metadata, assert_quadrants, encode_with_exif, exif_tiff_chunk,
+        png_bytes_for_test, quadrant_image_for_test,
+    };
 
     fn mk_capture(catcher: BenutzerId, target: BenutzerId, at: DateTime<Utc>) -> Capture {
         Capture::new(
@@ -341,6 +345,23 @@ mod tests {
         let teaser = image::load_from_memory(&processed.blurred_webp).unwrap();
         assert_eq!(teaser.width(), 64);
         assert_eq!(teaser.height(), 64);
+    }
+
+    #[test_log::test]
+    fn process_photo_applies_exif_orientation_and_removes_exif() {
+        let src = quadrant_image_for_test(2400, 1200);
+        let raw = encode_with_exif(&src, image::ImageFormat::Jpeg, exif_tiff_chunk(6, false));
+        let processed = Capture::process_photo(&raw).unwrap();
+
+        assert_no_exif_metadata(&processed.full_webp);
+        assert_no_exif_metadata(&processed.blurred_webp);
+
+        let full = image::load_from_memory(&processed.full_webp).unwrap();
+        assert_eq!((full.width(), full.height()), (800, 1600));
+        assert_quadrants(&full, [B, R, Y, G]);
+
+        let teaser = image::load_from_memory(&processed.blurred_webp).unwrap();
+        assert_eq!((teaser.width(), teaser.height()), (64, 64));
     }
 
     #[test_log::test]

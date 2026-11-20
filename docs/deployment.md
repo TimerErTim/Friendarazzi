@@ -136,6 +136,8 @@ It exposes no environment variables or secrets. `deploy:vps` verifies `/api/vers
   ZO_ROOT_USER_PASSWORD=replace-with-strong-password
   ```
 
+  OpenObserve enforces `8–128` characters with at least one lowercase letter, one uppercase letter, one digit, and one special character (plain hex tokens panic on startup).
+
 - **Backend OTLP traces**: `backend` exports OpenTelemetry spans over OTLP HTTP to `http://openobserve:5080/api/default/v1/traces` (`stream-name: friendarazzi_traces`), authenticating via HTTP Basic auth from `secrets/openobserve.env`.
 - **Caddy logs**: Caddy logs remain in Docker's rotated `json-file` container log stream (`bash /opt/friendarazzi/repo/deploy/compose.sh logs caddy`) without an extra log-shipper sidecar in this iteration.
 - **Verification**: `deploy:vps` automatically verifies `friendarazzi_traces` after lifting maintenance mode. To query traces manually on the VPS:

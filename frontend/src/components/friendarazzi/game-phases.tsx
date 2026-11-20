@@ -61,6 +61,7 @@ import { autofillEmptySlots, rerollSingleSlot } from "@/lib/draft-prompts";
 
 import { BingoBoard } from "./bingo-board";
 import { CaptureGalleryCard } from "./capture-gallery-card";
+import { CaptureUploadControl } from "./capture-upload-control";
 import { GameTimeline } from "./game-timeline";
 import { InviteShareCard } from "./invite-share-card";
 import { AuthenticatedImage } from "./media-image";
@@ -1121,25 +1122,9 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
           ) : null}
 
           <div className="space-y-4">
-            <label className="brutal-press flex min-h-11 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-control bg-primary-subtle p-6 text-center hover:bg-primary/25">
-              <Camera className="size-7 text-ink" aria-hidden="true" />
-              <span className="text-sm font-bold text-ink">
-                Kamera öffnen oder Foto auswählen
-              </span>
-              <span className="font-mono text-xs text-secondary">
-                JPEG, PNG oder WebP (wird automatisch optimiert)
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="sr-only"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setSelectedFile(file);
-                }}
-              />
-            </label>
+            <CaptureUploadControl
+              onFileSelect={(file) => setSelectedFile(file)}
+            />
 
             {previewUrl ? (
               <div className="brutal-shadow-sm overflow-hidden rounded-md border-2 border-strong bg-surface p-1.5">

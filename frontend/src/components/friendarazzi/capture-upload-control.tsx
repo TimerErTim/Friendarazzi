@@ -76,7 +76,7 @@ export function CaptureUploadControl({
         </label>
 
         <p className="text-center font-mono text-xs text-secondary">
-          JPEG, PNG oder WebP (wird automatisch optimiert)
+          JPEG, PNG oder WebP
         </p>
       </div>
     );
@@ -97,7 +97,7 @@ export function CaptureUploadControl({
         Foto auswählen oder hierher ziehen
       </span>
       <span className="font-mono text-xs text-secondary">
-        JPEG, PNG oder WebP (wird automatisch optimiert)
+        JPEG, PNG oder WebP
       </span>
       <input
         type="file"

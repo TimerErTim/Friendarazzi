@@ -1,5 +1,9 @@
 use chrono::Duration;
-use friendarazzi_fakes::png_bytes_for_test;
+use friendarazzi_fakes::{
+    QuadrantColor::{Blue as B, Green as G, Red as R, Yellow as Y},
+    assert_webp_without_exif_for_test, inspect_normalized_webp_for_test, png_bytes_for_test,
+    quadrant_jpeg_with_exif_for_test,
+};
 use poem::http::StatusCode;
 use serde_json::json;
 
@@ -415,4 +419,73 @@ async fn e2e_live_feed_mode_and_non_participant_access_control() {
     let (st, bob_games) = harness.client.get_json_auth("/api/games", &t_bob).await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(bob_games.as_array().unwrap().len(), 1);
+}
+
+#[test_log::test(tokio::test)]
+async fn e2e_capture_normalizes_exif_orientation_and_strips_exif() {
+    let harness = E2eHarness::new().await;
+    let (t_alice, _) = neuer_benutzer(&harness, "exif-alice@example.at").await;
+    let (t_bob, _) = neuer_benutzer(&harness, "exif-bob@example.at").await;
+    let (t_carol, _) = neuer_benutzer(&harness, "exif-carol@example.at").await;
+
+    let (game_id, _) = enroll_and_start_game(
+        &harness,
+        &t_alice,
+        &[&t_bob, &t_carol],
+        "EXIF Orientation Check",
+        3,
+        "LiveFeed",
+    )
+    .await;
+
+    let (_, active) = harness
+        .client
+        .get_json_auth(&format!("/api/games/{game_id}"), &t_alice)
+        .await;
+    let tile_00 = active["myBoard"]["tiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["row"] == 0 && t["col"] == 0)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Orientation 6 (Rotate90 CW) on a 120x60 sensor JPEG must yield 60x120 upright pixels.
+    let jpeg = quadrant_jpeg_with_exif_for_test(120, 60, 6);
+    let (st, cap) = harness
+        .client
+        .post_multipart_file_auth(
+            &format!("/api/games/{game_id}/tiles/{tile_00}/capture"),
+            "file",
+            "rotated.jpg",
+            "image/jpeg",
+            jpeg,
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{cap}");
+
+    let full_key = cap["capture"]["imageStorageKey"].as_str().unwrap();
+    let thumb_key = cap["capture"]["thumbnailStorageKey"].as_str().unwrap();
+
+    let (full_st, full_bytes, full_ct) = harness
+        .client
+        .get_bytes_auth(&format!("/api/media/{full_key}"), &t_bob)
+        .await;
+    assert_eq!(full_st, StatusCode::OK);
+    assert_eq!(full_ct, "image/webp");
+    assert_eq!(
+        inspect_normalized_webp_for_test(&full_bytes),
+        (60, 120, [B, R, Y, G])
+    );
+
+    let (thumb_st, thumb_bytes, thumb_ct) = harness
+        .client
+        .get_bytes_auth(&format!("/api/media/{thumb_key}"), &t_bob)
+        .await;
+    assert_eq!(thumb_st, StatusCode::OK);
+    assert_eq!(thumb_ct, "image/webp");
+    assert_webp_without_exif_for_test(&thumb_bytes, 64, 64);
 }

@@ -12,6 +12,7 @@ import {
 } from "@/api/friendarazzi-api";
 import { useFriendarazziMutations } from "@/api/hooks";
 import { BingoBoard } from "@/components/friendarazzi/bingo-board";
+import { CaptureUploadControl } from "@/components/friendarazzi/capture-upload-control";
 import { AuthenticatedImage } from "@/components/friendarazzi/media-image";
 import { PhotoLightbox } from "@/components/friendarazzi/photo-lightbox";
 import {
@@ -245,25 +246,9 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
           ) : null}
 
           <div className="space-y-4">
-            <label className="brutal-press flex min-h-11 cursor-pointer flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed border-control bg-primary-subtle p-6 text-center hover:bg-primary/25">
-              <Camera className="size-7 text-ink" aria-hidden="true" />
-              <span className="text-sm font-bold text-ink">
-                Kamera öffnen oder Foto auswählen
-              </span>
-              <span className="font-mono text-xs text-secondary">
-                JPEG, PNG oder WebP (wird automatisch optimiert)
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="sr-only"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setSelectedFile(file);
-                }}
-              />
-            </label>
+            <CaptureUploadControl
+              onFileSelect={(file) => setSelectedFile(file)}
+            />
 
             {previewUrl ? (
               <div className="brutal-shadow-sm overflow-hidden rounded-md border-2 border-strong bg-surface p-1.5">

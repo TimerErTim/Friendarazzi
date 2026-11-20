@@ -81,8 +81,8 @@ if "${compose[@]}" exec -T mailserver test -s "$key_file" 2>/dev/null; then
 else
   "${compose[@]}" exec -T mailserver setup config dkim domain "$mail_domain"
   echo "   generated a key for ${mail_domain} (selector: mail)"
-  echo "   restart the container so outgoing mail is signed with it:"
-  echo "     ${compose[*]} restart mailserver"
+  echo "   recreate the container so OpenDKIM loads the generated tables:"
+  echo "     ${compose[*]} up -d --force-recreate mailserver"
 fi
 
 echo
@@ -91,9 +91,10 @@ echo
 echo "1. DKIM — TXT on mail._domainkey.${mail_domain}"
 echo "   Value (one line, quotes and whitespace between parts removed):"
 "${compose[@]}" exec -T mailserver cat "$key_file" 2>/dev/null |
-  sed -n 's/^[^(]*(\(.*\))$/\1/p' |
-  tr -d '"' | tr -d '\n' | tr -s ' ' | sed 's/^ *//; s/ *$//' |
+  { grep -o '"[^"]*"' || true; } |
+  tr -d '"\r\n' |
   sed 's/^/     /'
+echo
 echo
 echo "2. SPF — TXT on ${mail_domain}"
 echo "     v=spf1 mx ~all"

@@ -5,7 +5,8 @@ run = "cargo nextest run --workspace --profile unit --release --all-features"
 
 ["test:frontend"]
 description = "Run frontend unit tests"
-run = "node --test {{ vars.REPO_ROOT }}/frontend/src/lib/invite-url.test.ts {{ vars.REPO_ROOT }}/frontend/src/lib/media-capture.test.ts"
+dir = "{{ vars.REPO_ROOT }}/frontend"
+run = "npm test"
 
 ["test:e2e"]
 description = "Run the end-to-end tests (nextest profile `e2e`) against a real Mailpit"

@@ -57,6 +57,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
+import { autofillEmptySlots, rerollSingleSlot } from "@/lib/draft-prompts";
 
 import { BingoBoard } from "./bingo-board";
 import { CaptureGalleryCard } from "./capture-gallery-card";
@@ -485,6 +486,7 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
   const [selectedDeckSlug, setSelectedDeckSlug] = useState<string>("night-out");
   const [slots, setSlots] = useState<DraftSlot[]>([]);
   const [justSavedDraft, setJustSavedDraft] = useState(false);
+  const [deckNotice, setDeckNotice] = useState<string | null>(null);
 
   const initializedRef = useRef(false);
   const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -578,59 +580,56 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
     return list.find((d) => d.slug === selectedDeckSlug) ?? list[0];
   }, [decks.data, selectedDeckSlug]);
 
-  function fillTemplate(template: string, name: string): string {
-    return template.replaceAll("{name}", name);
-  }
-
   function autofillEmpty() {
     if (!activeDeck || activeDeck.prompts.length === 0) return;
-    const used = new Set(slots.map((s) => s.text.trim()).filter(Boolean));
-    const pool = [...activeDeck.prompts].sort(() => Math.random() - 0.5);
-    let cursor = 0;
+    const {
+      slots: nextSlots,
+      filledCount: addedCount,
+      remainingEmptyCount,
+    } = autofillEmptySlots(slots, activeDeck.prompts, (slot, text) => ({
+      ...slot,
+      text,
+      source: PromptSource.StarterDeck,
+    }));
 
-    const nextSlots = slots.map((slot) => {
-      if (slot.text.trim()) return slot;
-      let candidate = "";
-      for (let tries = 0; tries < pool.length; tries += 1) {
-        const tpl = pool[(cursor + tries) % pool.length] ?? "";
-        const filled = fillTemplate(tpl, slot.targetName);
-        if (!used.has(filled)) {
-          candidate = filled;
-          used.add(filled);
-          cursor = (cursor + tries + 1) % pool.length;
-          break;
-        }
-      }
-      if (!candidate) {
-        const tpl = pool[cursor % pool.length] ?? "{name} macht etwas Lustiges";
-        candidate = fillTemplate(tpl, slot.targetName);
-        cursor += 1;
-      }
-      return {
-        ...slot,
-        text: candidate,
-        source: PromptSource.StarterDeck,
-      };
-    });
+    if (addedCount > 0) {
+      setSlots(nextSlots);
+      if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
+      commitDraft(nextSlots);
+    }
 
-    setSlots(nextSlots);
-    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
-    commitDraft(nextSlots);
+    if (remainingEmptyCount > 0) {
+      setDeckNotice(
+        addedCount > 0
+          ? `Es sind keine weiteren eindeutigen Vorschläge im Deck „${activeDeck.name}“ übrig. Wechsle das Deck oder formuliere die übrigen ${remainingEmptyCount} Felder selbst.`
+          : `Im Deck „${activeDeck.name}“ gibt es keine unbenutzten Vorschläge mehr. Wechsle das Deck oder schreibe eigene Aufträge.`,
+      );
+    } else {
+      setDeckNotice(null);
+    }
   }
 
   function rerollSlot(key: string) {
     if (!activeDeck || activeDeck.prompts.length === 0) return;
-    const pool = activeDeck.prompts;
-    const nextSlots = slots.map((slot) => {
-      if (slot.key !== key) return slot;
-      const idx = Math.floor(Math.random() * pool.length);
-      const tpl = pool[idx] ?? "{name} lacht laut";
-      return {
+    const { slots: nextSlots, changed } = rerollSingleSlot(
+      slots,
+      key,
+      activeDeck.prompts,
+      (slot, text) => ({
         ...slot,
-        text: fillTemplate(tpl, slot.targetName),
+        text,
         source: PromptSource.StarterDeck,
-      };
-    });
+      }),
+    );
+
+    if (!changed) {
+      setDeckNotice(
+        `Im Deck „${activeDeck.name}“ gibt es für dieses Feld keinen weiteren eindeutigen Vorschlag. Wechsle das Deck oder passe den Text manuell an.`,
+      );
+      return;
+    }
+
+    setDeckNotice(null);
     setSlots(nextSlots);
     if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
     commitDraft(nextSlots);
@@ -722,7 +721,10 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
                     type="button"
                     disabled={isLocked}
                     aria-pressed={selected}
-                    onClick={() => setSelectedDeckSlug(deck.slug)}
+                    onClick={() => {
+                      setSelectedDeckSlug(deck.slug);
+                      setDeckNotice(null);
+                    }}
                     className={cn(
                       "brutal-press flex min-h-12 cursor-pointer flex-col justify-center rounded-sm border-2 border-control px-2.5 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50",
                       "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
@@ -743,6 +745,7 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
                 {activeDeck.description}
               </p>
             ) : null}
+            {deckNotice ? <Alert variant="info">{deckNotice}</Alert> : null}
           </CardContent>
         </Card>
       </div>
@@ -793,6 +796,7 @@ export function DraftingPhase({ game }: { game: GameDetail }) {
                               }
                             : item,
                         );
+                        setDeckNotice(null);
                         setSlots(nextSlots);
                         scheduleDraftSave(nextSlots);
                       }}

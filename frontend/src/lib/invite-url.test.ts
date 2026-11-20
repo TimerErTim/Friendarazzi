@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import { describe, expect, it } from "vitest";
 
 import {
   authHrefWithRedirect,
@@ -9,54 +8,50 @@ import {
   withBasePath,
 } from "./invite-url.ts";
 
-test("inviteUrl handles empty basePath and custom domain", () => {
-  assert.equal(
-    inviteUrl("ab12cd", { origin: "https://friendarazzi.app", basePath: "" }),
-    "https://friendarazzi.app/join/?code=AB12CD",
-  );
-});
+describe("invite-url", () => {
+  it("inviteUrl handles empty basePath and custom domain", () => {
+    expect(
+      inviteUrl("ab12cd", { origin: "https://friendarazzi.app", basePath: "" }),
+    ).toBe("https://friendarazzi.app/join/?code=AB12CD");
+  });
 
-test("inviteUrl handles GitHub Pages basePath with or without trailing slash", () => {
-  assert.equal(
-    inviteUrl("A7K9P2", {
-      origin: "https://timerertim.github.io/",
-      basePath: "/Friendarazzi/",
-    }),
-    "https://timerertim.github.io/Friendarazzi/join/?code=A7K9P2",
-  );
-});
+  it("inviteUrl handles GitHub Pages basePath with or without trailing slash", () => {
+    expect(
+      inviteUrl("A7K9P2", {
+        origin: "https://timerertim.github.io/",
+        basePath: "/Friendarazzi/",
+      }),
+    ).toBe("https://timerertim.github.io/Friendarazzi/join/?code=A7K9P2");
+  });
 
-test("inviteUrl encodes special characters cleanly", () => {
-  assert.equal(
-    inviteUrl("a+b/c", { origin: "http://localhost:3000", basePath: "" }),
-    "http://localhost:3000/join/?code=A%2BB%2FC",
-  );
-});
+  it("inviteUrl encodes special characters cleanly", () => {
+    expect(
+      inviteUrl("a+b/c", { origin: "http://localhost:3000", basePath: "" }),
+    ).toBe("http://localhost:3000/join/?code=A%2BB%2FC");
+  });
 
-test("normalizeBasePath and withBasePath avoid double prefixes", () => {
-  assert.equal(normalizeBasePath("Friendarazzi/"), "/Friendarazzi");
-  assert.equal(normalizeBasePath("/"), "");
-  assert.equal(
-    withBasePath("/Friendarazzi/join", "/Friendarazzi"),
-    "/Friendarazzi/join",
-  );
-});
+  it("normalizeBasePath and withBasePath avoid double prefixes", () => {
+    expect(normalizeBasePath("Friendarazzi/")).toBe("/Friendarazzi");
+    expect(normalizeBasePath("/")).toBe("");
+    expect(withBasePath("/Friendarazzi/join", "/Friendarazzi")).toBe(
+      "/Friendarazzi/join",
+    );
+  });
 
-test("safeRedirectPath rejects external/protocol-relative redirects", () => {
-  assert.equal(safeRedirectPath("/join?code=XYZ"), "/join?code=XYZ");
-  assert.equal(safeRedirectPath("https://evil.example"), "/");
-  assert.equal(safeRedirectPath("//evil.example/join"), "/");
-  assert.equal(safeRedirectPath("/\\evil.example"), "/");
-  assert.equal(safeRedirectPath("javascript:alert(1)"), "/");
-});
+  it("safeRedirectPath rejects external/protocol-relative redirects", () => {
+    expect(safeRedirectPath("/join?code=XYZ")).toBe("/join?code=XYZ");
+    expect(safeRedirectPath("https://evil.example")).toBe("/");
+    expect(safeRedirectPath("//evil.example/join")).toBe("/");
+    expect(safeRedirectPath("/\\evil.example")).toBe("/");
+    expect(safeRedirectPath("javascript:alert(1)")).toBe("/");
+  });
 
-test("authHrefWithRedirect preserves in-app join redirects", () => {
-  assert.equal(
-    authHrefWithRedirect("/anmeldung", "/join?code=A7K9P2"),
-    "/anmeldung?redirect=%2Fjoin%3Fcode%3DA7K9P2",
-  );
-  assert.equal(
-    authHrefWithRedirect("/registrierung", "https://evil.example"),
-    "/registrierung",
-  );
+  it("authHrefWithRedirect preserves in-app join redirects", () => {
+    expect(authHrefWithRedirect("/anmeldung", "/join?code=A7K9P2")).toBe(
+      "/anmeldung?redirect=%2Fjoin%3Fcode%3DA7K9P2",
+    );
+    expect(authHrefWithRedirect("/registrierung", "https://evil.example")).toBe(
+      "/registrierung",
+    );
+  });
 });

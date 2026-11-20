@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Duration;
 use friendarazzi_core::{
+    adapters::BlockingEventQueue,
     application::AuthContext,
     domain::{
         BenutzerId, BoardTileId, Game, GameId, GridSize, InviteCode, NonEmptyString, PromptSource,
@@ -11,16 +12,18 @@ use friendarazzi_core::{
     },
     ports::RepositoryError,
     service::{
-        CaptureUseCaseError, CreateGame, DraftPromptInput, FinalizeReadyGame, GameUseCaseError,
-        JoinGame, LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts, StartDrafting,
-        SubmitCapture, UnlockDraftPrompts, UpdateGameSettings, UpdateProfile, UploadAvatar,
+        CaptureUseCaseError, CreateGame, DelayedGameStart, DraftPromptInput, Event,
+        FinalizeReadyGame, GameUseCaseError, JoinGame, LockDraftPrompts, ProfileUseCaseError,
+        SaveDraftPrompts, StartDrafting, SubmitCapture, UnlockDraftPrompts, UpdateGameSettings,
+        UpdateProfile, UploadAvatar,
     },
 };
 use friendarazzi_fakes::png_bytes_for_test;
 use uuid::Uuid;
 
 use super::helpers::{
-    balanced_prompts_for, build, load_tiles, register_user, setup_active_game, user_id_of,
+    balanced_prompts_for, build, build_with_event_queue, load_tiles, register_user,
+    setup_active_game, user_id_of,
 };
 
 #[test_log::test(pollster::test)]
@@ -743,5 +746,169 @@ async fn board_assembly_4x4_and_5x5_enforce_author_and_target_constraints() {
             }
         }
         assert_eq!(placed.len(), prompts.len());
+    }
+}
+
+#[test_log::test(pollster::test)]
+async fn delayed_game_start_event_ignores_stale_countdown_and_activates_current_one() {
+    let harness = build_with_event_queue(
+        super::super::base_app_builder().await,
+        BlockingEventQueue::adapter(),
+    );
+    let alice = register_user(&harness, "alice-ev@example.at").await;
+    let bob = register_user(&harness, "bob-ev@example.at").await;
+    let carol = register_user(&harness, "carol-ev@example.at").await;
+
+    let game = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Event Start Test").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+            },
+        )
+        .await
+        .unwrap();
+    let game_id = game.id();
+
+    for guest in [bob, carol] {
+        harness.vorspulen(Duration::seconds(1));
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: game.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    let drafted = harness
+        .app()
+        .execute(alice, StartDrafting { game_id })
+        .await
+        .unwrap();
+    let player_ids = vec![user_id_of(alice), user_id_of(bob), user_id_of(carol)];
+    let tiles_needed = drafted.playable_tile_count();
+    for (idx, auth) in [alice, bob, carol].into_iter().enumerate() {
+        let prompts = balanced_prompts_for(
+            &player_ids,
+            user_id_of(auth),
+            tiles_needed,
+            PromptSource::Custom,
+            &format!("Ev{idx}"),
+        );
+        harness
+            .app()
+            .execute(auth, SaveDraftPrompts { game_id, prompts })
+            .await
+            .unwrap();
+        harness
+            .app()
+            .execute(auth, LockDraftPrompts { game_id })
+            .await
+            .unwrap();
+    }
+
+    let first_start_at = harness
+        .app()
+        .execute_fn(alice, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let loaded = uow.games().find_by_id(game_id).await.unwrap();
+            let Game::Drafting(d) = loaded.into_data() else {
+                panic!("expected drafting");
+            };
+            uow.finish(
+                Ok::<_, error_stack::Report<RepositoryError>>(d.auto_start_at().unwrap()),
+                RepositoryError::Unknown,
+            )
+            .await
+        })
+        .await
+        .unwrap();
+
+    // Unlock and re-lock to supersede the first countdown timestamp.
+    harness.vorspulen(Duration::seconds(5));
+    harness
+        .app()
+        .execute(carol, UnlockDraftPrompts { game_id })
+        .await
+        .unwrap();
+    let Game::Drafting(relocked) = harness
+        .app()
+        .execute(carol, LockDraftPrompts { game_id })
+        .await
+        .unwrap()
+    else {
+        panic!("expected drafting");
+    };
+    let second_start_at = relocked.auto_start_at().unwrap();
+    assert!(second_start_at > first_start_at);
+
+    // Advance past both timestamps; stale event must be a no-op because scheduled_for differs.
+    harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
+    harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            Event::DelayedGameStart(DelayedGameStart {
+                game_id,
+                scheduled_for: first_start_at,
+            }),
+        )
+        .await
+        .unwrap();
+
+    let still_drafting = harness
+        .app()
+        .execute_fn(alice, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let loaded = uow.games().find_by_id(game_id).await.unwrap();
+            uow.finish(
+                Ok::<_, error_stack::Report<RepositoryError>>(loaded.into_data()),
+                RepositoryError::Unknown,
+            )
+            .await
+        })
+        .await
+        .unwrap();
+    assert!(matches!(still_drafting, Game::Drafting(_)));
+
+    // Current event activates the game and deals boards.
+    harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            Event::DelayedGameStart(DelayedGameStart {
+                game_id,
+                scheduled_for: second_start_at,
+            }),
+        )
+        .await
+        .unwrap();
+
+    let active = harness
+        .app()
+        .execute_fn(alice, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let loaded = uow.games().find_by_id(game_id).await.unwrap();
+            uow.finish(
+                Ok::<_, error_stack::Report<RepositoryError>>(loaded.into_data()),
+                RepositoryError::Unknown,
+            )
+            .await
+        })
+        .await
+        .unwrap();
+    assert!(matches!(active, Game::Active(_)));
+    for auth in [alice, bob, carol] {
+        assert_eq!(
+            load_tiles(&harness, auth, game_id).await.len(),
+            tiles_needed
+        );
     }
 }

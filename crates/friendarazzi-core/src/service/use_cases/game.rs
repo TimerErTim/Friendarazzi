@@ -1,19 +1,21 @@
 //! Game lobby, joining, settings, drafting, and board assembly use cases.
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use error_stack::{IntoReport, Report, ResultExt};
-use tracing::{error, instrument, warn};
+use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    application::{ExecutionContext, uow::Versioned},
+    application::{ExecutionContext, uow::UnitOfWork, uow::Versioned},
     domain::{
-        BenutzerId, DraftStartOutcome, Game, GameError, GameId, GridSize, InviteCode, MIN_PLAYERS,
-        NewGame, NonEmptyString, PromptSource, PromptSubmission, PromptSubmissionId,
-        VisibilityMode,
+        ActiveGame, BenutzerId, DraftStartOutcome, Game, GameError, GameId, GridSize, InviteCode,
+        MIN_PLAYERS, NewBoard, NewGame, NonEmptyString, PromptSource, PromptSubmission,
+        PromptSubmissionId, VisibilityMode,
     },
     ports::RepositoryError,
-    service::UseCase,
+    service::{Event, UseCase},
 };
 
 const MAX_INVITE_CODE_ATTEMPTS: usize = 8;
@@ -366,6 +368,7 @@ impl UseCase<()> for SaveDraftPrompts {
             let Game::Drafting(mut drafting) = game.into_data() else {
                 return Err(Report::new(GameUseCaseError::Conflict));
             };
+            let had_countdown = drafting.auto_start_at().is_some();
 
             let mut submissions = Vec::with_capacity(self.prompts.len());
             for item in self.prompts {
@@ -400,11 +403,15 @@ impl UseCase<()> for SaveDraftPrompts {
                 .map_err(IntoReport::into_report)
                 .change_context(GameUseCaseError::Persistence)?;
 
-            Ok::<_, Report<GameUseCaseError>>(())
+            Ok::<_, Report<GameUseCaseError>>(had_countdown)
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        let had_countdown = uow.finish(result, GameUseCaseError::Persistence).await?;
+        if had_countdown {
+            cancel_delayed_game_start(&ctx, self.game_id).await;
+        }
+        Ok(())
     }
 }
 
@@ -446,11 +453,16 @@ impl UseCase<Game> for LockDraftPrompts {
             let Game::Drafting(mut drafting) = game.into_data() else {
                 return Err(Report::new(GameUseCaseError::Conflict));
             };
+            let prev_auto_start_at = drafting.auto_start_at();
 
             drafting.lock_author_prompts(user_id, now).map_err(|e| {
                 let mapped = map_game_error(e.current_context());
                 e.change_context(mapped)
             })?;
+            let new_auto_start_at = match (prev_auto_start_at, drafting.auto_start_at()) {
+                (None, Some(at)) => Some(at),
+                _ => None,
+            };
 
             let mut updated = Versioned::new(version, Game::Drafting(drafting));
             uow.games()
@@ -459,11 +471,34 @@ impl UseCase<Game> for LockDraftPrompts {
                 .map_err(IntoReport::into_report)
                 .change_context(GameUseCaseError::Persistence)?;
 
-            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+            Ok::<_, Report<GameUseCaseError>>((updated.into_data(), new_auto_start_at))
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        let (game, new_auto_start_at) = uow.finish(result, GameUseCaseError::Persistence).await?;
+        if let Some(scheduled_for) = new_auto_start_at {
+            let key = delayed_game_start_key(self.game_id);
+            if let Err(err) = ctx
+                .event_queue()
+                .schedule(
+                    Event::DelayedGameStart(DelayedGameStart {
+                        game_id: self.game_id,
+                        scheduled_for,
+                    }),
+                    scheduled_for,
+                    Some(&key),
+                )
+                .await
+            {
+                warn!(
+                    game_id = ?self.game_id,
+                    %scheduled_for,
+                    ?err,
+                    "failed to schedule delayed game start event"
+                );
+            }
+        }
+        Ok(game)
     }
 }
 
@@ -504,6 +539,7 @@ impl UseCase<Game> for UnlockDraftPrompts {
             let Game::Drafting(mut drafting) = game.into_data() else {
                 return Err(Report::new(GameUseCaseError::Conflict));
             };
+            let had_countdown = drafting.auto_start_at().is_some();
 
             drafting.unlock_author_prompts(user_id, now).map_err(|e| {
                 let mapped = map_game_error(e.current_context());
@@ -517,11 +553,15 @@ impl UseCase<Game> for UnlockDraftPrompts {
                 .map_err(IntoReport::into_report)
                 .change_context(GameUseCaseError::Persistence)?;
 
-            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+            Ok::<_, Report<GameUseCaseError>>((updated.into_data(), had_countdown))
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        let (game, had_countdown) = uow.finish(result, GameUseCaseError::Persistence).await?;
+        if had_countdown {
+            cancel_delayed_game_start(&ctx, self.game_id).await;
+        }
+        Ok(game)
     }
 }
 
@@ -561,7 +601,7 @@ impl UseCase<Game> for FinalizeReadyGame {
             let version = game.v();
             let game_data = game.into_data();
             let Game::Drafting(drafting) = game_data else {
-                return Ok(game_data);
+                return Ok((false, game_data));
             };
 
             let outcome = {
@@ -572,42 +612,175 @@ impl UseCase<Game> for FinalizeReadyGame {
                 })?
             };
 
-            match outcome {
-                DraftStartOutcome::StillDrafting(d) => Ok(Game::Drafting(d)),
+            let (activated, result_game) = match outcome {
+                DraftStartOutcome::StillDrafting(d) => (false, Game::Drafting(d)),
                 DraftStartOutcome::Started {
                     game: active,
                     boards,
-                } => {
-                    for new_board in boards {
-                        uow.boards()
-                            .create(new_board)
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .map_err(|err| {
-                                if matches!(err.current_context(), RepositoryError::Conflict) {
-                                    err.change_context(GameUseCaseError::Conflict)
-                                } else {
-                                    err.change_context(GameUseCaseError::Persistence)
-                                }
-                            })?;
-                    }
-                    let mut updated = Versioned::new(version, Game::Active(active));
-                    uow.games()
-                        .update(&mut updated)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .map_err(|err| {
-                            if matches!(
-                                err.current_context(),
-                                RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
-                            ) {
-                                err.change_context(GameUseCaseError::Conflict)
-                            } else {
-                                err.change_context(GameUseCaseError::Persistence)
-                            }
-                        })?;
-                    Ok(updated.into_data())
+                } => (
+                    true,
+                    persist_started_game(&uow, version, active, boards).await?,
+                ),
+            };
+            Ok::<_, Report<GameUseCaseError>>((activated, result_game))
+        }
+        .await;
+
+        let (activated, game) = uow.finish(result, GameUseCaseError::Persistence).await?;
+        if activated {
+            cancel_delayed_game_start(&ctx, self.game_id).await;
+        }
+        Ok(game)
+    }
+}
+
+/// Deduplication key used when scheduling or cancelling a [`DelayedGameStart`] event.
+pub fn delayed_game_start_key(game_id: GameId) -> String {
+    format!("delayed_game_start:{}", game_id.0)
+}
+
+async fn cancel_delayed_game_start(ctx: &ExecutionContext<'_>, game_id: GameId) {
+    let key = delayed_game_start_key(game_id);
+    if let Err(err) = ctx.event_queue().cancel(&key).await {
+        warn!(game_id = ?game_id, ?err, "failed to cancel delayed game start event");
+    }
+}
+
+async fn persist_started_game(
+    uow: &UnitOfWork<'_>,
+    version: u64,
+    active: ActiveGame,
+    boards: Vec<NewBoard>,
+) -> Result<Game, Report<GameUseCaseError>> {
+    for new_board in boards {
+        uow.boards()
+            .create(new_board)
+            .await
+            .map_err(IntoReport::into_report)
+            .map_err(|err| {
+                if matches!(err.current_context(), RepositoryError::Conflict) {
+                    err.change_context(GameUseCaseError::Conflict)
+                } else {
+                    err.change_context(GameUseCaseError::Persistence)
                 }
+            })?;
+    }
+    let mut updated = Versioned::new(version, Game::Active(active));
+    uow.games()
+        .update(&mut updated)
+        .await
+        .map_err(IntoReport::into_report)
+        .map_err(|err| {
+            if matches!(
+                err.current_context(),
+                RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
+            ) {
+                err.change_context(GameUseCaseError::Conflict)
+            } else {
+                err.change_context(GameUseCaseError::Persistence)
+            }
+        })?;
+    Ok(updated.into_data())
+}
+
+mod game_id_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use uuid::Uuid;
+
+    use crate::domain::GameId;
+
+    pub fn serialize<S>(id: &GameId, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        id.0.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<GameId, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Uuid::deserialize(deserializer).map(GameId)
+    }
+}
+
+/// Queued background event that transitions a locked game from `Drafting` to `Active`
+/// once its ready countdown (`scheduled_for`) expires.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DelayedGameStart {
+    #[serde(with = "game_id_serde")]
+    pub game_id: GameId,
+    pub scheduled_for: DateTime<Utc>,
+}
+
+#[async_trait]
+impl UseCase<()> for DelayedGameStart {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<(), Self::Error> {
+        let now = ctx.clock().now();
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    debug!(game_id = ?self.game_id, "delayed game start skipped: game not found");
+                    return Ok(());
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+
+            let version = game.v();
+            let Game::Drafting(drafting) = game.into_data() else {
+                debug!(game_id = ?self.game_id, "delayed game start skipped: game no longer drafting");
+                return Ok(());
+            };
+
+            // Ignore stale events whose countdown was cancelled or superseded by a re-lock.
+            if drafting.auto_start_at() != Some(self.scheduled_for) {
+                debug!(
+                    game_id = ?self.game_id,
+                    expected = %self.scheduled_for,
+                    actual = ?drafting.auto_start_at(),
+                    "delayed game start skipped: countdown changed"
+                );
+                return Ok(());
+            }
+
+            let outcome = {
+                let mut rng = ctx.rng();
+                drafting.finalize_ready_start(now, &mut *rng).map_err(|e| {
+                    let mapped = map_game_error(e.current_context());
+                    e.change_context(mapped)
+                })?
+            };
+
+            match outcome {
+                DraftStartOutcome::StillDrafting(_) => {
+                    debug!(game_id = ?self.game_id, %now, "delayed game start skipped: not yet due");
+                    Ok(())
+                }
+                DraftStartOutcome::Started {
+                    game: active,
+                    boards,
+                } => match persist_started_game(&uow, version, active, boards).await {
+                    Ok(_) => {
+                        info!(game_id = ?self.game_id, "delayed game start finalized");
+                        Ok(())
+                    }
+                    Err(err) if matches!(err.current_context(), GameUseCaseError::Conflict) => {
+                        debug!(
+                            game_id = ?self.game_id,
+                            "delayed game start lost optimistic lock race; ignoring"
+                        );
+                        Ok(())
+                    }
+                    Err(err) => Err(err),
+                },
             }
         }
         .await;

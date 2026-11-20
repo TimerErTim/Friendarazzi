@@ -43,7 +43,7 @@ impl UnitOfWorkProvider for SQLiteInstance {
     async fn begin(&self) -> ResultReport<Box<dyn UnitOfWorkImpl>, RepositoryError> {
         let connection: SQLiteConnection = self.create_connection().await?;
         let tx = connection
-            .transaction_with_behavior(libsql::TransactionBehavior::Deferred)
+            .transaction_with_behavior(libsql::TransactionBehavior::Immediate)
             .await
             .contextualize_with(libsql_error_to_persistence_error)?;
         let tx = Arc::new(Mutex::new(Some(tx)));

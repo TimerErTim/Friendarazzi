@@ -1,10 +1,12 @@
 use crate::ResultReport;
 
 use async_trait::async_trait;
+mod events;
 mod use_cases;
 
 pub use crate::application::ExecutionContext;
 use error_stack::IntoReport;
+pub use events::*;
 #[allow(unused_imports)]
 pub use use_cases::*;
 

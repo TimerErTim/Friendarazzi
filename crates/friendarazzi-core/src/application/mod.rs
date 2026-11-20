@@ -1,13 +1,16 @@
-use std::sync::Arc;
+use std::ops::Deref;
+use std::sync::{Arc, Weak};
 
 use tracing::instrument;
 
 use crate::adapters::{
-    BlankPdfRenderer, InMemoryObjectStore, InMemorySigning, InMemoryThrottle, NullMailSender,
-    SystemClock, SystemRng,
+    BlankPdfRenderer, InMemoryObjectStore, InMemorySigning, InMemoryThrottle,
+    MultithreadedEventQueue, NullMailSender, SystemClock, SystemRng,
 };
 use crate::application::context::ContextPorts;
-use crate::ports::{Clock, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle};
+use crate::ports::{
+    Clock, EventQueue, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle,
+};
 use crate::service::UseCase;
 use crate::uow::UnitOfWorkProvider;
 
@@ -32,31 +35,120 @@ pub use errors::ErrorReportExt;
 pub use errors::ResultReport;
 pub use errors::ThreadSafeError;
 
-#[derive(bon::Builder)]
-pub struct App {
+/// Weak handle to an [`App`] used by in-process adapters (such as the core event queues)
+/// that live inside `App` and execute queued work back onto it without creating an `Arc`
+/// reference cycle.
+#[derive(Clone, Default)]
+pub struct WeakApp(Weak<AppInner>);
+
+impl WeakApp {
+    pub fn upgrade(&self) -> Option<App> {
+        self.0.upgrade().map(App)
+    }
+}
+
+/// Initialization input for `App::builder().event_queue(...)`.
+///
+/// Accepts either a ready `Arc<T>` / `Arc<dyn EventQueue>` (for adapters like
+/// `SqliteEventQueue` that do not need `App`) or a factory `FnOnce(WeakApp) -> Arc<dyn EventQueue>`
+/// (for in-process adapters like [`BlockingEventQueue`](crate::adapters::BlockingEventQueue)).
+pub struct EventQueueInit(Box<dyn FnOnce(WeakApp) -> Arc<dyn EventQueue> + Send>);
+
+impl EventQueueInit {
+    pub fn build(self, app: WeakApp) -> Arc<dyn EventQueue> {
+        (self.0)(app)
+    }
+}
+
+impl<T: EventQueue + 'static> From<Arc<T>> for EventQueueInit {
+    fn from(queue: Arc<T>) -> Self {
+        Self(Box::new(move |_| queue))
+    }
+}
+
+impl From<Arc<dyn EventQueue>> for EventQueueInit {
+    fn from(queue: Arc<dyn EventQueue>) -> Self {
+        Self(Box::new(move |_| queue))
+    }
+}
+
+impl<F> From<F> for EventQueueInit
+where
+    F: FnOnce(WeakApp) -> Arc<dyn EventQueue> + Send + 'static,
+{
+    fn from(factory: F) -> Self {
+        Self(Box::new(factory))
+    }
+}
+
+pub struct AppInner {
     pub uow_provider: Box<dyn UnitOfWorkProvider>,
     /// Key material behind an application port; the algorithm beneath it is domain code.
     /// The default is a fresh keypair per process, which is right for a throwaway run and
     /// wrong for a deployment that must not end every session on restart.
-    #[builder(default = Arc::new(InMemorySigning::random()))]
     pub signing: Arc<dyn Signing>,
     /// Client-scoped rate limiting. `InMemoryThrottle` is the production adapter for a
     /// single-process deployment, so it is also the default.
-    #[builder(default = Arc::new(InMemoryThrottle::new()))]
     pub throttle: Arc<dyn Throttle>,
     /// Transaction mail. No relay configured fails every send and logs it (NFR-5).
-    #[builder(default = Arc::new(NullMailSender))]
     pub mail_sender: Arc<dyn MailSender>,
     /// Mailed link targets and token identity. Deployment data, not behaviour.
     pub konto: IdentityProviderConfiguration,
-    #[builder(default = Arc::new(SystemClock))]
     pub clock: Arc<dyn Clock>,
-    #[builder(default = Arc::new(SystemRng))]
     pub rng: Arc<dyn RngSource>,
-    #[builder(default = Arc::new(InMemoryObjectStore::new()))]
     pub object_store: Arc<dyn ObjectStore>,
-    #[builder(default = Arc::new(BlankPdfRenderer))]
     pub pdf_renderer: Arc<dyn PdfRenderer>,
+    pub event_queue: Arc<dyn EventQueue>,
+}
+
+#[derive(Clone)]
+pub struct App(Arc<AppInner>);
+
+impl Deref for App {
+    type Target = AppInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[bon::bon]
+impl App {
+    #[builder(builder_type = AppBuilder, state_mod = app_builder)]
+    pub fn builder(
+        uow_provider: Box<dyn UnitOfWorkProvider>,
+        #[builder(default = Arc::new(InMemorySigning::random()))] signing: Arc<dyn Signing>,
+        #[builder(default = Arc::new(InMemoryThrottle::new()))] throttle: Arc<dyn Throttle>,
+        #[builder(default = Arc::new(NullMailSender))] mail_sender: Arc<dyn MailSender>,
+        konto: IdentityProviderConfiguration,
+        #[builder(default = Arc::new(SystemClock))] clock: Arc<dyn Clock>,
+        #[builder(default = Arc::new(SystemRng))] rng: Arc<dyn RngSource>,
+        #[builder(default = Arc::new(InMemoryObjectStore::new()))] object_store: Arc<
+            dyn ObjectStore,
+        >,
+        #[builder(default = Arc::new(BlankPdfRenderer))] pdf_renderer: Arc<dyn PdfRenderer>,
+        #[builder(into)] event_queue: Option<EventQueueInit>,
+    ) -> Self {
+        Self(Arc::new_cyclic(|weak| {
+            let weak_app = WeakApp(weak.clone());
+            let event_queue = match event_queue {
+                Some(init) => init.build(weak_app),
+                None => Arc::new(MultithreadedEventQueue::new(weak_app)),
+            };
+            AppInner {
+                uow_provider,
+                signing,
+                throttle,
+                mail_sender,
+                konto,
+                clock,
+                rng,
+                object_store,
+                pdf_renderer,
+                event_queue,
+            }
+        }))
+    }
 }
 
 pub use app_builder::{SetClock, SetUowProvider};
@@ -99,6 +191,7 @@ impl App {
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),
                 mail_sender: Arc::clone(&self.mail_sender),
+                event_queue: Arc::clone(&self.event_queue),
                 identity_provider_conf: self.konto.clone(),
             },
         )

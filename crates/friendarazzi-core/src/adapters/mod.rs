@@ -4,6 +4,7 @@
 //! for a single-process deployment; the rest are deployment choices and have none.
 
 mod blank_pdf_renderer;
+mod event_queue;
 mod in_memory_object_store;
 mod in_memory_throttle;
 mod null_mail_sender;
@@ -12,6 +13,7 @@ mod signing;
 mod system_clock;
 
 pub use blank_pdf_renderer::{BLANK_PDF, BlankPdfRenderer};
+pub use event_queue::{BlockingEventQueue, MultithreadedEventQueue};
 pub use in_memory_object_store::InMemoryObjectStore;
 pub use in_memory_throttle::InMemoryThrottle;
 pub use null_mail_sender::NullMailSender;

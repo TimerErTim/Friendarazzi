@@ -11,6 +11,7 @@ repository.workspace = true
 friendarazzi-core = { path = "../friendarazzi-core" }
 
 async-trait = { workspace = true }
+async-lock = "3.4.2"
 error-stack = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }

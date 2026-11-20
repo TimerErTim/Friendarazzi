@@ -15,6 +15,7 @@ use friendarazzi_core::{
 use friendarazzi_filesystemstore::FileSystemObjectStore;
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
 use friendarazzi_sqlite::SQLiteInstance;
+use friendarazzi_sqlite_eventqueue::SqliteEventQueue;
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
 use poem::{EndpointExt, IntoResponse, Route, Server, listener::TcpListener};
@@ -232,6 +233,12 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .await
         .change_context(BackendServerError)?;
 
+    let event_queue = Arc::new(SqliteEventQueue::new(Arc::clone(&sqlite)));
+    event_queue
+        .migrate_to_latest()
+        .await
+        .change_context(BackendServerError)?;
+
     let object_store = FileSystemObjectStore::new(config.object_store_dir.clone())
         .change_context(BackendServerError)?;
 
@@ -248,8 +255,18 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .signing(Arc::new(signing_key))
         .throttle(Arc::new(InMemoryThrottle::new()))
         .mail_sender(mail_sender)
+        .event_queue(Arc::clone(&event_queue))
         .konto(konto)
         .build();
+
+    let (eq_shutdown_tx, mut eq_shutdown_rx) = tokio::sync::watch::channel(false);
+    let eq_worker = tokio::spawn(friendarazzi_sqlite_eventqueue::run(
+        Arc::clone(&event_queue),
+        app.clone(),
+        async move {
+            let _ = eq_shutdown_rx.wait_for(|&stopped| stopped).await;
+        },
+    ));
 
     let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
     let api_url = config
@@ -287,6 +304,26 @@ async fn main() -> Result<(), Report<BackendServerError>> {
     .run_with_graceful_shutdown(app, shutdown_signal(), None)
     .await
     .change_context(BackendServerError);
+
+    tracing::info!("stopping sqlite event queue worker");
+    let _ = eq_shutdown_tx.send(true);
+    match eq_worker.await {
+        Ok(Ok(report)) => {
+            tracing::info!(
+                processed = report.processed,
+                failed = report.failed,
+                retried = report.retried,
+                recovered = report.recovered,
+                "sqlite event queue worker stopped"
+            );
+        }
+        Ok(Err(err)) => {
+            tracing::error!(?err, "sqlite event queue worker exited with error");
+        }
+        Err(err) => {
+            tracing::error!(?err, "sqlite event queue worker task failed");
+        }
+    }
 
     tracing_guard.shutdown();
     result

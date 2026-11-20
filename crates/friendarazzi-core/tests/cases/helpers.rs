@@ -4,7 +4,9 @@ use chrono::{DateTime, Duration, Utc};
 use friendarazzi_core::{
     App,
     adapters::{InMemorySigning, InMemoryThrottle},
-    application::{AppBuilder, AuthContext, IdentityProviderConfiguration, SetUowProvider},
+    application::{
+        AppBuilder, AuthContext, EventQueueInit, IdentityProviderConfiguration, SetUowProvider,
+    },
     domain::{
         BenutzerId, BoardTile, EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource,
         READY_GRACE_PERIOD_SECONDS, VisibilityMode,
@@ -89,6 +91,20 @@ impl Harness {
 }
 
 pub fn build(builder: AppBuilder<SetUowProvider>) -> Harness {
+    build_inner(builder, None)
+}
+
+pub fn build_with_event_queue(
+    builder: AppBuilder<SetUowProvider>,
+    event_queue: EventQueueInit,
+) -> Harness {
+    build_inner(builder, Some(event_queue))
+}
+
+fn build_inner(
+    builder: AppBuilder<SetUowProvider>,
+    event_queue: Option<EventQueueInit>,
+) -> Harness {
     let clock = Arc::new(FixedClock::new(jetzt()));
     let mail = Arc::new(FakeMailSender::new());
     let app = builder
@@ -98,6 +114,7 @@ pub fn build(builder: AppBuilder<SetUowProvider>) -> Harness {
         .konto(test_konfiguration())
         .clock(clock.clone())
         .rng(Arc::new(FixedRng::default()))
+        .maybe_event_queue(event_queue)
         .build();
     Harness { app, clock, mail }
 }

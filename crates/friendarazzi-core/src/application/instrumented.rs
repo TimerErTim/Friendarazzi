@@ -10,11 +10,12 @@ use crate::application::instrumented_repos::RepoStorage;
 use crate::application::uow::UnitOfWorkImpl;
 use crate::ports::{
     BenutzerRepository, BoardRepository, CaptureRepository, ClientKey, DeckRepository,
-    EmailBestätigungRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
-    ObjectStore, ObjectStoreError, ObjectStream, PasswortWiederherstellungRepository, PdfDokument,
-    PdfRenderError, PdfRenderer, RepositoryResult, RngSource, SessionRepository, Throttle,
-    ThrottleAction, ThrottleError,
+    EmailBestätigungRepository, EventQueue, EventQueueError, GameRepository, KontoRepository, Mail,
+    MailError, MailSender, ObjectStore, ObjectStoreError, ObjectStream,
+    PasswortWiederherstellungRepository, PdfDokument, PdfRenderError, PdfRenderer,
+    RepositoryResult, RngSource, SessionRepository, Throttle, ThrottleAction, ThrottleError,
 };
+use crate::service::Event;
 
 #[derive(Clone)]
 pub struct InstrumentedObjectStore {
@@ -220,5 +221,39 @@ impl RngSource for InstrumentedRngSource {
     fn rng(&self) -> Box<dyn Rng + '_> {
         trace!("rng requested");
         self.inner.rng()
+    }
+}
+
+#[derive(Clone)]
+pub struct InstrumentedEventQueue {
+    inner: Arc<dyn EventQueue>,
+}
+
+impl InstrumentedEventQueue {
+    pub fn new(inner: Arc<dyn EventQueue>) -> Arc<dyn EventQueue> {
+        Arc::new(Self { inner })
+    }
+}
+
+#[async_trait]
+impl EventQueue for InstrumentedEventQueue {
+    #[instrument(skip(self, event), fields(kind = event.kind()), level = "debug", err(Debug))]
+    async fn enqueue(&self, event: Event) -> ResultReport<(), EventQueueError> {
+        self.inner.enqueue(event).await
+    }
+
+    #[instrument(skip(self, event), fields(kind = event.kind(), %run_at, key), level = "debug", err(Debug))]
+    async fn schedule(
+        &self,
+        event: Event,
+        run_at: chrono::DateTime<chrono::Utc>,
+        key: Option<&str>,
+    ) -> ResultReport<(), EventQueueError> {
+        self.inner.schedule(event, run_at, key).await
+    }
+
+    #[instrument(skip(self), fields(key), level = "debug", err(Debug))]
+    async fn cancel(&self, key: &str) -> ResultReport<(), EventQueueError> {
+        self.inner.cancel(key).await
     }
 }

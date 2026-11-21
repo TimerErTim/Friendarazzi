@@ -407,7 +407,7 @@ impl GameRepository for SQLiteGameRepository {
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
-        let mut rows = tx
+        let rows = tx
             .query(
                 r#"SELECT g.id, g.invite_code, g.host_user_id, g.title, g.grid_size, g.visibility_mode, g.status, g.auto_start_at, g.started_at, g.ended_at, g.winner_user_id, g.created_at, g._version
                    FROM "game" g
@@ -419,21 +419,24 @@ impl GameRepository for SQLiteGameRepository {
             .await
             .contextualize_with(libsql_error_to_persistence_error)?;
 
-        let mut game_rows = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .contextualize_with(libsql_error_to_persistence_error)?
-        {
-            game_rows.push(read_game_row(&row)?);
-        }
-        drop(rows);
+        hydrate_game_rows(tx, rows).await
+    }
 
-        let mut out = Vec::with_capacity(game_rows.len());
-        for game_row in game_rows {
-            out.push(hydrate_game(tx, game_row).await?);
-        }
-        Ok(out)
+    async fn find_drafting_with_countdown(&self) -> RepositoryResult<Vec<Versioned<Game>>> {
+        let mut guard = self.tx.lock().await;
+        let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
+
+        let rows = tx
+            .query(
+                &format!(
+                    r#"{SELECT_GAME} WHERE status = ?1 AND auto_start_at IS NOT NULL ORDER BY auto_start_at ASC"#
+                ),
+                [DbGameStatus::Drafting.as_str()],
+            )
+            .await
+            .contextualize_with(libsql_error_to_persistence_error)?;
+
+        hydrate_game_rows(tx, rows).await
     }
 
     async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()> {
@@ -515,4 +518,25 @@ impl GameRepository for SQLiteGameRepository {
         game.increment();
         Ok(())
     }
+}
+
+async fn hydrate_game_rows(
+    tx: &Transaction,
+    mut rows: libsql::Rows,
+) -> RepositoryResult<Vec<Versioned<Game>>> {
+    let mut game_rows = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .contextualize_with(libsql_error_to_persistence_error)?
+    {
+        game_rows.push(read_game_row(&row)?);
+    }
+    drop(rows);
+
+    let mut out = Vec::with_capacity(game_rows.len());
+    for game_row in game_rows {
+        out.push(hydrate_game(tx, game_row).await?);
+    }
+    Ok(out)
 }

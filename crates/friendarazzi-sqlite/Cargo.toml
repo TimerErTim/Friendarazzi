@@ -28,10 +28,13 @@ async-lock = "3.4.2"
 tracing = { workspace = true }
 futures = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync", "time", "rt"], optional = true }
+cloudiful-scheduler = { workspace = true, optional = true }
+chrono-tz = { workspace = true, optional = true }
 
 [features]
 default = []
 event-queue = ["dep:tokio", "dep:futures"]
+scheduler = ["dep:cloudiful-scheduler", "dep:chrono-tz", "dep:tokio"]
 
 [dev-dependencies]
 futures = { workspace = true }

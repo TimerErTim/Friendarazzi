@@ -17,6 +17,7 @@ use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
 use friendarazzi_sqlite::{
     SQLiteInstance,
     event_queue::{self, SqliteEventQueue},
+    scheduler::{FriendarazziScheduler, FriendarazziSchedulerConfig, SQLiteStateStore},
 };
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
@@ -241,6 +242,12 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .await
         .change_context(BackendServerError)?;
 
+    let scheduler_store = SQLiteStateStore::new(Arc::clone(&sqlite));
+    scheduler_store
+        .migrate_to_latest()
+        .await
+        .change_context(BackendServerError)?;
+
     let object_store = FileSystemObjectStore::new(config.object_store_dir.clone())
         .change_context(BackendServerError)?;
 
@@ -269,6 +276,15 @@ async fn main() -> Result<(), Report<BackendServerError>> {
             let _ = eq_shutdown_rx.wait_for(|&stopped| stopped).await;
         },
     ));
+
+    let (sched_shutdown_tx, mut sched_shutdown_rx) = tokio::sync::watch::channel(false);
+    let sched_worker = tokio::spawn(
+        FriendarazziScheduler::new(app.clone())
+            .state_store(scheduler_store)
+            .run_until(FriendarazziSchedulerConfig::default(), async move {
+                let _ = sched_shutdown_rx.wait_for(|&stopped| stopped).await;
+            }),
+    );
 
     let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
     let api_url = config
@@ -307,8 +323,22 @@ async fn main() -> Result<(), Report<BackendServerError>> {
     .await
     .change_context(BackendServerError);
 
-    tracing::info!("stopping sqlite event queue worker");
+    tracing::info!("stopping sqlite scheduler and event queue workers");
+    let _ = sched_shutdown_tx.send(true);
     let _ = eq_shutdown_tx.send(true);
+
+    match sched_worker.await {
+        Ok(Ok(report)) => {
+            tracing::info!(?report, "sqlite scheduler stopped");
+        }
+        Ok(Err(err)) => {
+            tracing::error!(?err, "sqlite scheduler exited with error");
+        }
+        Err(err) => {
+            tracing::error!(?err, "sqlite scheduler task failed");
+        }
+    }
+
     match eq_worker.await {
         Ok(Ok(report)) => {
             tracing::info!(

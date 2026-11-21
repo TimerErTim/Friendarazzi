@@ -1,7 +1,4 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
 use error_stack::Report;
@@ -245,24 +242,15 @@ async fn blocking_event_queue_runs_after_uow_commit_without_deadlock() {
     let (_alice, _bob, carol, game_id) =
         setup_drafting_ready_for_last_lock(&app, &mail, &clock).await;
 
-    // `LockDraftPrompts` submits `DelayedGameStart` inside an open UoW for `now + 60s`.
-    // Because staging defers dispatch until after the UoW commits, `BlockingEventQueue`
-    // cannot deadlock on the outer UoW. Advance `FixedClock` from a background thread so
-    // the inline `sleep_until` unblocks once `LockDraftPrompts` finishes its UoW.
-    let advancer_clock = Arc::clone(&clock);
-    let advancer = std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        advancer_clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
-    });
+    // Because staging defers dispatch until after the UoW commits, submitting an event
+    // inside an open UoW with `BlockingEventQueue` cannot deadlock on the outer UoW.
     let locked = app
         .execute(carol, LockDraftPrompts { game_id })
         .await
         .unwrap();
-    advancer.join().unwrap();
     assert!(matches!(locked, Game::Drafting(_)));
-    assert!(matches!(load_game(&app, game_id).await, Game::Active(_)));
 
-    // Also verify direct submission inside an open UoW when the deadline is already due.
+    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
     let scheduled_for = clock.now();
     app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
         let uow = ctx.enter().await?;
@@ -274,10 +262,11 @@ async fn blocking_event_queue_runs_after_uow_commit_without_deadlock() {
     })
     .await
     .unwrap();
+    assert!(matches!(load_game(&app, game_id).await, Game::Active(_)));
 }
 
 #[test_log::test(pollster::test)]
-async fn default_multithreaded_event_queue_waits_for_deadline_and_activates_game() {
+async fn default_multithreaded_event_queue_handles_stale_and_due_events() {
     let clock = Arc::new(FixedClock::new(test_time()));
     let mail = Arc::new(FakeMailSender::new());
 
@@ -298,31 +287,44 @@ async fn default_multithreaded_event_queue_waits_for_deadline_and_activates_game
     let (_alice, _bob, carol, game_id) =
         setup_drafting_ready_for_last_lock(&app, &mail, &clock).await;
 
-    // Lock -> countdown starts, game stays Drafting while clock < 60s.
     let drafting = app
         .execute(carol, LockDraftPrompts { game_id })
         .await
         .unwrap();
-    assert!(matches!(drafting, Game::Drafting(_)));
+    let Game::Drafting(first) = drafting else {
+        panic!("expected Drafting game");
+    };
+    let stale_deadline = first.auto_start_at().expect("countdown set");
 
-    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    assert!(matches!(load_game(&app, game_id).await, Game::Drafting(_)));
-
-    // Unlock and re-lock -> stale event sees mismatch when woken; new event sleeps for +60s.
     app.execute(carol, UnlockDraftPrompts { game_id })
         .await
         .unwrap();
-    app.execute(carol, LockDraftPrompts { game_id })
+    let relocked = app
+        .execute(carol, LockDraftPrompts { game_id })
         .await
         .unwrap();
+    let Game::Drafting(second) = relocked else {
+        panic!("expected Drafting game");
+    };
+    let current_deadline = second.auto_start_at().expect("countdown set");
 
-    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
-    std::thread::sleep(std::time::Duration::from_millis(20));
-    assert!(matches!(load_game(&app, game_id).await, Game::Drafting(_)));
+    // Advance past the countdown and submit both stale and current events via staged UoW.
+    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
+    app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
+        let uow = ctx.enter().await?;
+        ctx.event_queue().submit(DelayedGameStart {
+            game_id,
+            scheduled_for: stale_deadline,
+        });
+        ctx.event_queue().submit(DelayedGameStart {
+            game_id,
+            scheduled_for: current_deadline,
+        });
+        uow.commit().await
+    })
+    .await
+    .unwrap();
 
-    // Final second elapses -> background worker activates game automatically.
-    clock.advance_by(Duration::seconds(1));
     for _ in 0..100 {
         if matches!(load_game(&app, game_id).await, Game::Active(_)) {
             break;
@@ -333,7 +335,7 @@ async fn default_multithreaded_event_queue_waits_for_deadline_and_activates_game
 }
 
 #[test_log::test(pollster::test)]
-async fn dropping_app_shuts_down_sleeping_multithreaded_workers_promptly() {
+async fn dropping_app_shuts_down_multithreaded_workers_promptly() {
     let clock = Arc::new(FixedClock::new(test_time()));
     let mail = Arc::new(FakeMailSender::new());
     let app = App::builder()
@@ -349,15 +351,7 @@ async fn dropping_app_shuts_down_sleeping_multithreaded_workers_promptly() {
         .rng(Arc::new(FixedRng::default()))
         .build();
 
-    let (_alice, _bob, carol, game_id) =
-        setup_drafting_ready_for_last_lock(&app, &mail, &clock).await;
-    app.execute(carol, LockDraftPrompts { game_id })
-        .await
-        .unwrap();
-
-    // Even with a worker sleeping on a 60s FixedClock deadline, dropping App returns immediately.
     let drop_start = std::time::Instant::now();
     drop(app);
     assert!(drop_start.elapsed() < std::time::Duration::from_secs(1));
-    let _ = AtomicUsize::new(0).load(Ordering::Relaxed);
 }

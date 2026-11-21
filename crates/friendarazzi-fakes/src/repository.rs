@@ -229,6 +229,21 @@ impl GameRepository for FakeGameRepository {
         Ok(out)
     }
 
+    async fn find_drafting_with_countdown(&self) -> RepositoryResult<Vec<Versioned<Game>>> {
+        let mut out: Vec<_> = self
+            .datastore
+            .games()
+            .values()
+            .filter(|g| matches!(***g, Game::Drafting(ref d) if d.auto_start_at().is_some()))
+            .cloned()
+            .collect();
+        out.sort_by_key(|g| match &**g {
+            Game::Drafting(d) => d.auto_start_at(),
+            _ => None,
+        });
+        Ok(out)
+    }
+
     async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()> {
         let mut map = self.datastore.games();
         store_update(&mut map, game.id(), game)

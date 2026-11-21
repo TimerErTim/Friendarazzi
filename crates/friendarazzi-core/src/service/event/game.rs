@@ -7,7 +7,7 @@ use crate::{
     application::ExecutionContext,
     domain::{DraftStartOutcome, Game, GameId},
     ports::RepositoryError,
-    service::{EventHandler, GameUseCaseError, persist_started_game},
+    service::{EventHandler, GameUseCaseError, map_game_error, persist_started_game},
 };
 
 /// Queued background event that transitions a locked game from `Drafting` to `Active`
@@ -23,18 +23,7 @@ impl EventHandler for DelayedGameStart {
     type Error = Report<GameUseCaseError>;
 
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<(), Self::Error> {
-        let mut now = ctx.clock().now();
-        if now < self.scheduled_for {
-            debug!(
-                game_id = ?self.game_id,
-                %now,
-                scheduled_for = %self.scheduled_for,
-                "delayed game start waiting until scheduled deadline"
-            );
-            ctx.clock().sleep_until(self.scheduled_for).await;
-            now = ctx.clock().now();
-        }
-
+        let now = ctx.clock().now();
         let uow = ctx
             .enter()
             .await
@@ -70,14 +59,7 @@ impl EventHandler for DelayedGameStart {
             let outcome = {
                 let mut rng = ctx.rng();
                 drafting.finalize_ready_start(now, &mut *rng).map_err(|e| {
-                    let mapped = match e.current_context() {
-                        crate::domain::GameError::InvalidStateTransition
-                        | crate::domain::GameError::BoardAssemblyFailed
-                        | crate::domain::GameError::BoardNotCompleted => GameUseCaseError::Conflict,
-                        crate::domain::GameError::TooFewPlayers => GameUseCaseError::TooFewPlayers,
-                        crate::domain::GameError::PlayerNotInGame => GameUseCaseError::Forbidden,
-                        _ => GameUseCaseError::BadRequest,
-                    };
+                    let mapped = map_game_error(e.current_context());
                     e.change_context(mapped)
                 })?
             };

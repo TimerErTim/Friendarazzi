@@ -188,18 +188,43 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
     app.execute(bob, LockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
-    app.execute(carol, LockDraftPrompts { game_id: game.id() })
+    let first = app
+        .execute(carol, LockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
-    assert_eq!(queue.pending_count().await.unwrap(), 1);
+    let Game::Drafting(first) = first else {
+        panic!("expected Drafting game");
+    };
+    let stale_deadline = first.auto_start_at().expect("countdown set");
 
-    // Unlock + re-lock enqueues a second event; the first event becomes a stale no-op.
+    // Unlock + re-lock gives a new deadline; the first event becomes a stale no-op.
     app.execute(carol, UnlockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
-    app.execute(carol, LockDraftPrompts { game_id: game.id() })
+    let second = app
+        .execute(carol, LockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
+    let Game::Drafting(second) = second else {
+        panic!("expected Drafting game");
+    };
+    let current_deadline = second.auto_start_at().expect("countdown set");
+
+    let game_id = game.id();
+    app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
+        let uow = ctx.enter().await?;
+        ctx.event_queue().submit(DelayedGameStart {
+            game_id,
+            scheduled_for: stale_deadline,
+        });
+        ctx.event_queue().submit(DelayedGameStart {
+            game_id,
+            scheduled_for: current_deadline,
+        });
+        uow.commit().await
+    })
+    .await
+    .unwrap();
     assert_eq!(queue.pending_count().await.unwrap(), 2);
 
     // Simulate process restart on the same SQLite file.
@@ -297,7 +322,7 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
             .unwrap();
     }
 
-    // Also enqueue a future event whose handler will sleep on FixedClock.
+    // Also enqueue a future event that stays unclaimed until its scheduled_for deadline.
     let future_at = clock.now() + Duration::seconds(600);
     queue
         .enqueue_submitted(vec![Event::from(DelayedGameStart {
@@ -321,7 +346,7 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
         },
     ));
 
-    // Wait until the recovered due event is processed and only the sleeping future row remains.
+    // Wait until both the recovered row and second pending row are processed.
     for _ in 0..100 {
         let conn = sqlite.create_connection().await.unwrap();
         let mut rows = conn
@@ -329,14 +354,13 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
             .await
             .unwrap();
         let total: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
-        if total == 1 {
+        if total == 0 {
             break;
         }
         tokio::time::sleep(StdDuration::from_millis(10)).await;
     }
 
-    // Give the second task a moment to enter sleep_until, then verify graceful shutdown
-    // aborts the sleeping handler promptly and resets it to 'pending' in SQLite.
+    // Verify graceful shutdown wakes an idle worker promptly instead of waiting 60s.
     tokio::time::sleep(StdDuration::from_millis(20)).await;
     let _ = shutdown_tx.send(true);
     let report = tokio::time::timeout(StdDuration::from_secs(2), worker)
@@ -346,8 +370,8 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
         .unwrap();
 
     assert_eq!(report.recovered, 1);
-    assert_eq!(report.processed, 1);
+    assert_eq!(report.processed, 2);
     assert_eq!(report.failed, 0);
-    assert_eq!(queue.pending_count().await.unwrap(), 1);
+    assert_eq!(queue.pending_count().await.unwrap(), 0);
     assert_eq!(queue.failed_count().await.unwrap(), 0);
 }

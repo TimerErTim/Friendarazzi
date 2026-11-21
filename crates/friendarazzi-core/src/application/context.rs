@@ -1,22 +1,49 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     application::instrumented::{
-        InstrumentedEventQueue, InstrumentedMailSender, InstrumentedObjectStore,
-        InstrumentedPdfRenderer, InstrumentedRngSource, InstrumentedThrottle,
-        InstrumentedUnitOfWork,
+        InstrumentedMailSender, InstrumentedObjectStore, InstrumentedPdfRenderer,
+        InstrumentedRngSource, InstrumentedThrottle, InstrumentedUnitOfWork,
     },
     application::uow::{UnitOfWork, UnitOfWorkImpl, UnitOfWorkProvider},
     ports::{
-        Clock, EventQueue, MailSender, ObjectStore, PdfRenderer, RepositoryResult, RngSource,
-        Signing, Throttle,
+        Clock, MailSender, ObjectStore, PdfRenderer, RepositoryResult, RngSource, Signing, Throttle,
     },
+    service::Event,
 };
 use rand::Rng;
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use super::auth::AuthContext;
 use super::konfiguration::IdentityProviderConfiguration;
+
+/// Per-execution buffer that collects events submitted by use cases before [`App`](crate::App)
+/// dispatches them to [`EventQueue`](crate::ports::EventQueue) after execution succeeds.
+#[derive(Clone, Default)]
+pub struct StagedEventQueue {
+    events: Arc<Mutex<Vec<Event>>>,
+}
+
+impl StagedEventQueue {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stage an event to be enqueued after the current `App::execute` / `execute_fn`
+    /// completes successfully.
+    pub fn submit(&self, event: impl Into<Event>) {
+        let event = event.into();
+        debug!("staged event for post-execution dispatch");
+        self.events
+            .lock()
+            .expect("event stage mutex poisoned")
+            .push(event);
+    }
+
+    pub(crate) fn take(&self) -> Vec<Event> {
+        std::mem::take(&mut *self.events.lock().expect("event stage mutex poisoned"))
+    }
+}
 
 #[derive(Clone, Copy)]
 enum ExecutionSource<'a> {
@@ -37,7 +64,7 @@ pub struct ExecutionContext<'a> {
     pdf_renderer: Arc<dyn PdfRenderer>,
     throttle: Arc<dyn Throttle>,
     mail_sender: Arc<dyn MailSender>,
-    event_queue: Arc<dyn EventQueue>,
+    event_queue: StagedEventQueue,
     identity_provider_conf: IdentityProviderConfiguration,
 }
 
@@ -52,7 +79,7 @@ pub(crate) struct ContextPorts {
     pub(crate) pdf_renderer: Arc<dyn PdfRenderer>,
     pub(crate) throttle: Arc<dyn Throttle>,
     pub(crate) mail_sender: Arc<dyn MailSender>,
-    pub(crate) event_queue: Arc<dyn EventQueue>,
+    pub(crate) event_queue: StagedEventQueue,
     pub(crate) identity_provider_conf: IdentityProviderConfiguration,
 }
 
@@ -71,7 +98,7 @@ impl<'a> ExecutionContext<'a> {
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
             mail_sender: InstrumentedMailSender::new(ports.mail_sender),
-            event_queue: InstrumentedEventQueue::new(ports.event_queue),
+            event_queue: ports.event_queue,
             identity_provider_conf: ports.identity_provider_conf,
         }
     }
@@ -87,7 +114,7 @@ impl<'a> ExecutionContext<'a> {
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
             mail_sender: InstrumentedMailSender::new(ports.mail_sender),
-            event_queue: InstrumentedEventQueue::new(ports.event_queue),
+            event_queue: ports.event_queue,
             identity_provider_conf: ports.identity_provider_conf,
         }
     }
@@ -118,8 +145,9 @@ impl<'a> ExecutionContext<'a> {
         self.mail_sender.as_ref()
     }
 
-    pub fn event_queue(&self) -> &dyn EventQueue {
-        self.event_queue.as_ref()
+    /// Staged event submission handle for the current execution.
+    pub fn event_queue(&self) -> &StagedEventQueue {
+        &self.event_queue
     }
 
     /// Mailed link targets and token identity of this deployment.
@@ -138,8 +166,8 @@ impl<'a> ExecutionContext<'a> {
         self.signing.as_ref()
     }
 
-    /// Nested context that joins `uow`'s transaction and copies this context's ports and
-    /// identity.
+    /// Nested context that joins `uow`'s transaction and copies this context's ports,
+    /// event stage, and identity.
     pub fn sub<'b>(&self, uow: &'b UnitOfWork<'b>) -> ExecutionContext<'b> {
         ExecutionContext::nested(
             uow.as_impl(),
@@ -152,7 +180,7 @@ impl<'a> ExecutionContext<'a> {
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),
                 mail_sender: Arc::clone(&self.mail_sender),
-                event_queue: Arc::clone(&self.event_queue),
+                event_queue: self.event_queue.clone(),
                 identity_provider_conf: self.identity_provider_conf.clone(),
             },
         )

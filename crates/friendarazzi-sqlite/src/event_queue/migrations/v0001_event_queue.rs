@@ -19,9 +19,7 @@ impl UpMigration<libsql::Transaction, libsql::Error> for Migration {
                 "
                 CREATE TABLE IF NOT EXISTS _event_queue (
                     id TEXT PRIMARY KEY NOT NULL,
-                    dedupe_key TEXT,
                     payload TEXT NOT NULL,
-                    run_at TEXT NOT NULL,
                     status TEXT NOT NULL,
                     attempts INTEGER NOT NULL DEFAULT 0,
                     last_error TEXT,
@@ -29,11 +27,8 @@ impl UpMigration<libsql::Transaction, libsql::Error> for Migration {
                     updated_at TEXT NOT NULL,
                     locked_at TEXT
                 );
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_event_queue_pending_dedupe
-                    ON _event_queue (dedupe_key)
-                    WHERE dedupe_key IS NOT NULL AND status = 'pending';
-                CREATE INDEX IF NOT EXISTS idx_event_queue_due
-                    ON _event_queue (status, run_at);
+                CREATE INDEX IF NOT EXISTS idx_event_queue_pending
+                    ON _event_queue (status, created_at);
                 ",
             )
             .await?;

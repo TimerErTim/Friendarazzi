@@ -237,23 +237,8 @@ impl InstrumentedEventQueue {
 
 #[async_trait]
 impl EventQueue for InstrumentedEventQueue {
-    #[instrument(skip(self, event), fields(kind = event.kind()), level = "debug", err(Debug))]
-    async fn enqueue(&self, event: Event) -> ResultReport<(), EventQueueError> {
-        self.inner.enqueue(event).await
-    }
-
-    #[instrument(skip(self, event), fields(kind = event.kind(), %run_at, key), level = "debug", err(Debug))]
-    async fn schedule(
-        &self,
-        event: Event,
-        run_at: chrono::DateTime<chrono::Utc>,
-        key: Option<&str>,
-    ) -> ResultReport<(), EventQueueError> {
-        self.inner.schedule(event, run_at, key).await
-    }
-
-    #[instrument(skip(self), fields(key), level = "debug", err(Debug))]
-    async fn cancel(&self, key: &str) -> ResultReport<(), EventQueueError> {
-        self.inner.cancel(key).await
+    #[instrument(skip(self, events), fields(count = events.len()), level = "debug", err(Debug))]
+    async fn enqueue_submitted(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
+        self.inner.enqueue_submitted(events).await
     }
 }

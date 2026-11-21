@@ -1,4 +1,6 @@
 mod errors;
+#[cfg(feature = "event-queue")]
+pub mod event_queue;
 mod migrations;
 pub mod repos;
 mod uow;

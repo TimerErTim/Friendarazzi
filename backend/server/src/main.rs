@@ -14,8 +14,10 @@ use friendarazzi_core::{
 };
 use friendarazzi_filesystemstore::FileSystemObjectStore;
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
-use friendarazzi_sqlite::SQLiteInstance;
-use friendarazzi_sqlite_eventqueue::SqliteEventQueue;
+use friendarazzi_sqlite::{
+    SQLiteInstance,
+    event_queue::{self, SqliteEventQueue},
+};
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
 use poem::{EndpointExt, IntoResponse, Route, Server, listener::TcpListener};
@@ -260,7 +262,7 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .build();
 
     let (eq_shutdown_tx, mut eq_shutdown_rx) = tokio::sync::watch::channel(false);
-    let eq_worker = tokio::spawn(friendarazzi_sqlite_eventqueue::run(
+    let eq_worker = tokio::spawn(event_queue::run(
         Arc::clone(&event_queue),
         app.clone(),
         async move {

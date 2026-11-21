@@ -10,7 +10,6 @@ repository.workspace = true
 thiserror = { workspace = true }
 error-stack = { workspace = true }
 tracing = { workspace = true }
-serde = { workspace = true }
 
 async-trait = { workspace = true }
 rustc-hash = { workspace = true }

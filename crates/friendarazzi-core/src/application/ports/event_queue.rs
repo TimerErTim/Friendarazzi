@@ -1,5 +1,3 @@
-use chrono::{DateTime, Utc};
-
 use crate::application::ResultReport;
 use crate::service::Event;
 
@@ -11,26 +9,14 @@ pub enum EventQueueError {
     Serialization,
 }
 
-/// Application port for enqueuing and scheduling background [`Event`]s.
+/// Application port for dispatching staged background [`Event`]s.
 ///
-/// Implementations may execute inline, dispatch to in-memory worker threads, or persist to
-/// durable storage for a background worker process.
+/// Use cases gather events during execution via [`ExecutionContext::event_queue`], and
+/// [`App`](crate::App) invokes [`EventQueue::enqueue_submitted`] only after the execution
+/// (and any open `UnitOfWork`) succeeds.
+///
+/// [`ExecutionContext::event_queue`]: crate::application::ExecutionContext::event_queue
 #[async_trait::async_trait]
 pub trait EventQueue: Send + Sync {
-    /// Enqueue an event to run as soon as possible.
-    async fn enqueue(&self, event: Event) -> ResultReport<(), EventQueueError>;
-
-    /// Schedule an event to run at or after `run_at`.
-    ///
-    /// When `key` is `Some`, any pending (not yet started) event with the same key is
-    /// replaced so at most one pending event exists for that key.
-    async fn schedule(
-        &self,
-        event: Event,
-        run_at: DateTime<Utc>,
-        key: Option<&str>,
-    ) -> ResultReport<(), EventQueueError>;
-
-    /// Cancel any pending (not yet started) event matching `key`.
-    async fn cancel(&self, key: &str) -> ResultReport<(), EventQueueError>;
+    async fn enqueue_submitted(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError>;
 }

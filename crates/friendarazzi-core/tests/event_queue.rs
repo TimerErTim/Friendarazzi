@@ -1,17 +1,21 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use chrono::{DateTime, Duration, Utc};
+use error_stack::Report;
 use friendarazzi_core::{
     App,
-    adapters::{BlockingEventQueue, InMemorySigning, InMemoryThrottle, MultithreadedEventQueue},
-    application::{AuthContext, IdentityProviderConfiguration, WeakApp},
+    adapters::{BlockingEventQueue, InMemorySigning, InMemoryThrottle},
+    application::{AuthContext, IdentityProviderConfiguration},
     domain::{
         EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource,
         READY_GRACE_PERIOD_SECONDS, VisibilityMode,
         konto::{KlartextPasswort, SecretToken, SessionId},
         target_quotas_for_author,
     },
-    ports::{ClientKey, Clock, EventQueue, RepositoryError},
+    ports::{ClientKey, Clock, EventQueue, EventQueueError, RepositoryError},
     service::{
         CreateGame, DelayedGameStart, DraftPromptInput, Event, JoinGame, LockDraftPrompts,
         RegistrierungAbschließen, RegistrierungStarten, SaveDraftPrompts, StartDrafting,
@@ -147,12 +151,82 @@ async fn load_game(app: &App, game_id: GameId) -> Game {
     .unwrap()
 }
 
+struct RecordingEventQueue {
+    batches: std::sync::Mutex<Vec<Vec<Event>>>,
+}
+
+impl RecordingEventQueue {
+    fn new() -> Self {
+        Self {
+            batches: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn total_events(&self) -> usize {
+        self.batches.lock().unwrap().iter().map(Vec::len).sum()
+    }
+}
+
+#[async_trait::async_trait]
+impl EventQueue for RecordingEventQueue {
+    async fn enqueue_submitted(&self, events: Vec<Event>) -> Result<(), Report<EventQueueError>> {
+        self.batches.lock().unwrap().push(events);
+        Ok(())
+    }
+}
+
 #[test_log::test(pollster::test)]
-async fn blocking_event_queue_schedules_cancels_and_runs_due_delayed_game_start() {
+async fn staged_events_are_only_dispatched_after_execution_succeeds() {
+    let clock = Arc::new(FixedClock::new(test_time()));
+    let recorder = Arc::new(RecordingEventQueue::new());
+    let app = App::builder()
+        .uow_provider(Box::new(FakeUnitOfWorkProvider::empty()))
+        .konto(IdentityProviderConfiguration::neu(
+            "friendarazzi.app",
+            "friendarazzi-api",
+        ))
+        .clock(Arc::clone(&clock) as Arc<dyn Clock>)
+        .event_queue(Arc::clone(&recorder))
+        .build();
+
+    let dummy = DelayedGameStart {
+        game_id: GameId(Uuid::new_v4()),
+        scheduled_for: clock.now(),
+    };
+
+    // Failing execution must discard staged events even if submitted before the error.
+    let err_res = app
+        .execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, {
+            let ev = dummy.clone();
+            async move |ctx| {
+                let uow = ctx.enter().await?;
+                ctx.event_queue().submit(ev);
+                uow.rollback().await?;
+                Err(Report::new(RepositoryError::Conflict))
+            }
+        })
+        .await;
+    assert!(err_res.is_err());
+    assert_eq!(recorder.total_events(), 0);
+
+    // Succeeding execution dispatches staged events after the UoW closes.
+    app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, {
+        let ev = dummy.clone();
+        async move |ctx| {
+            let uow = ctx.enter().await?;
+            ctx.event_queue().submit(ev);
+            uow.commit().await
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(recorder.total_events(), 1);
+}
+
+#[test_log::test(pollster::test)]
+async fn blocking_event_queue_runs_after_uow_commit_without_deadlock() {
     let clock = Arc::new(FixedClock::new(test_time()));
     let mail = Arc::new(FakeMailSender::new());
-    let queue_slot = Arc::new(OnceLock::new());
-    let queue_slot_clone = Arc::clone(&queue_slot);
 
     let app = App::builder()
         .uow_provider(Box::new(FakeUnitOfWorkProvider::empty()))
@@ -165,59 +239,103 @@ async fn blocking_event_queue_schedules_cancels_and_runs_due_delayed_game_start(
         ))
         .clock(Arc::clone(&clock) as Arc<dyn Clock>)
         .rng(Arc::new(FixedRng::default()))
-        .event_queue(move |weak: WeakApp| {
-            let q = Arc::new(BlockingEventQueue::new(weak));
-            let _ = queue_slot_clone.set(Arc::clone(&q));
-            q as Arc<dyn EventQueue>
-        })
+        .event_queue(BlockingEventQueue::from_app)
         .build();
-    let queue = queue_slot.get().unwrap();
 
     let (_alice, _bob, carol, game_id) =
         setup_drafting_ready_for_last_lock(&app, &mail, &clock).await;
-    assert_eq!(queue.pending_len(), 0);
 
-    // Last player locks -> schedules delayed start for +60s, game remains Drafting.
+    // `LockDraftPrompts` submits `DelayedGameStart` inside an open UoW for `now + 60s`.
+    // Because staging defers dispatch until after the UoW commits, `BlockingEventQueue`
+    // cannot deadlock on the outer UoW. Advance `FixedClock` from a background thread so
+    // the inline `sleep_until` unblocks once `LockDraftPrompts` finishes its UoW.
+    let advancer_clock = Arc::clone(&clock);
+    let advancer = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        advancer_clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
+    });
+    let locked = app
+        .execute(carol, LockDraftPrompts { game_id })
+        .await
+        .unwrap();
+    advancer.join().unwrap();
+    assert!(matches!(locked, Game::Drafting(_)));
+    assert!(matches!(load_game(&app, game_id).await, Game::Active(_)));
+
+    // Also verify direct submission inside an open UoW when the deadline is already due.
+    let scheduled_for = clock.now();
+    app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
+        let uow = ctx.enter().await?;
+        ctx.event_queue().submit(DelayedGameStart {
+            game_id,
+            scheduled_for,
+        });
+        uow.commit().await
+    })
+    .await
+    .unwrap();
+}
+
+#[test_log::test(pollster::test)]
+async fn default_multithreaded_event_queue_waits_for_deadline_and_activates_game() {
+    let clock = Arc::new(FixedClock::new(test_time()));
+    let mail = Arc::new(FakeMailSender::new());
+
+    // Default App::builder() uses MultithreadedEventQueue.
+    let app = App::builder()
+        .uow_provider(Box::new(FakeUnitOfWorkProvider::empty()))
+        .signing(Arc::new(InMemorySigning::from_secret_bytes(&[7u8; 32])))
+        .throttle(Arc::new(InMemoryThrottle::new()))
+        .mail_sender(Arc::clone(&mail) as Arc<dyn friendarazzi_core::ports::MailSender>)
+        .konto(IdentityProviderConfiguration::neu(
+            "friendarazzi.app",
+            "friendarazzi-api",
+        ))
+        .clock(Arc::clone(&clock) as Arc<dyn Clock>)
+        .rng(Arc::new(FixedRng::default()))
+        .build();
+
+    let (_alice, _bob, carol, game_id) =
+        setup_drafting_ready_for_last_lock(&app, &mail, &clock).await;
+
+    // Lock -> countdown starts, game stays Drafting while clock < 60s.
     let drafting = app
         .execute(carol, LockDraftPrompts { game_id })
         .await
         .unwrap();
     assert!(matches!(drafting, Game::Drafting(_)));
-    assert_eq!(queue.pending_len(), 1);
 
-    // Before 60s elapse, running due events does nothing.
     clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
-    assert_eq!(queue.run_due().await, 0);
-    assert_eq!(queue.pending_len(), 1);
+    std::thread::sleep(std::time::Duration::from_millis(20));
     assert!(matches!(load_game(&app, game_id).await, Game::Drafting(_)));
 
-    // Unlock cancels the scheduled event.
+    // Unlock and re-lock -> stale event sees mismatch when woken; new event sleeps for +60s.
     app.execute(carol, UnlockDraftPrompts { game_id })
         .await
         .unwrap();
-    assert_eq!(queue.pending_len(), 0);
-    clock.advance_by(Duration::seconds(10));
-    assert_eq!(queue.run_due().await, 0);
-    assert!(matches!(load_game(&app, game_id).await, Game::Drafting(_)));
-
-    // Re-lock schedules a fresh 60s countdown.
     app.execute(carol, LockDraftPrompts { game_id })
         .await
         .unwrap();
-    assert_eq!(queue.pending_len(), 1);
 
-    // Once 60s elapse, run_due executes DelayedGameStart and activates the game.
-    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
-    assert_eq!(queue.run_due().await, 1);
-    assert_eq!(queue.pending_len(), 0);
+    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert!(matches!(load_game(&app, game_id).await, Game::Drafting(_)));
+
+    // Final second elapses -> background worker activates game automatically.
+    clock.advance_by(Duration::seconds(1));
+    for _ in 0..100 {
+        if matches!(load_game(&app, game_id).await, Game::Active(_)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert!(matches!(load_game(&app, game_id).await, Game::Active(_)));
 }
 
 #[test_log::test(pollster::test)]
-async fn blocking_event_queue_executes_immediate_enqueue_inline() {
+async fn dropping_app_shuts_down_sleeping_multithreaded_workers_promptly() {
     let clock = Arc::new(FixedClock::new(test_time()));
     let mail = Arc::new(FakeMailSender::new());
-
     let app = App::builder()
         .uow_provider(Box::new(FakeUnitOfWorkProvider::empty()))
         .signing(Arc::new(InMemorySigning::from_secret_bytes(&[7u8; 32])))
@@ -229,96 +347,17 @@ async fn blocking_event_queue_executes_immediate_enqueue_inline() {
         ))
         .clock(Arc::clone(&clock) as Arc<dyn Clock>)
         .rng(Arc::new(FixedRng::default()))
-        .event_queue(BlockingEventQueue::adapter())
         .build();
 
     let (_alice, _bob, carol, game_id) =
         setup_drafting_ready_for_last_lock(&app, &mail, &clock).await;
-    let Game::Drafting(d) = app
-        .execute(carol, LockDraftPrompts { game_id })
-        .await
-        .unwrap()
-    else {
-        panic!("expected drafting");
-    };
-    let scheduled_for = d.auto_start_at().unwrap();
-
-    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
-    app.event_queue
-        .enqueue(Event::DelayedGameStart(DelayedGameStart {
-            game_id,
-            scheduled_for,
-        }))
+    app.execute(carol, LockDraftPrompts { game_id })
         .await
         .unwrap();
 
-    assert!(matches!(load_game(&app, game_id).await, Game::Active(_)));
-}
-
-#[test_log::test(pollster::test)]
-async fn default_multithreaded_event_queue_executes_due_events_asynchronously() {
-    let clock = Arc::new(FixedClock::new(test_time()));
-    let mail = Arc::new(FakeMailSender::new());
-    let queue_slot = Arc::new(OnceLock::new());
-    let queue_slot_clone = Arc::clone(&queue_slot);
-
-    // Explicitly construct via MultithreadedEventQueue::new to verify non-blocking worker execution,
-    // and also verify default App::builder() builds without `.event_queue(...)`.
-    let default_app = App::builder()
-        .uow_provider(Box::new(FakeUnitOfWorkProvider::empty()))
-        .konto(IdentityProviderConfiguration::neu(
-            "friendarazzi.app",
-            "friendarazzi-api",
-        ))
-        .build();
-    drop(default_app);
-
-    let app = App::builder()
-        .uow_provider(Box::new(FakeUnitOfWorkProvider::empty()))
-        .signing(Arc::new(InMemorySigning::from_secret_bytes(&[7u8; 32])))
-        .throttle(Arc::new(InMemoryThrottle::new()))
-        .mail_sender(Arc::clone(&mail) as Arc<dyn friendarazzi_core::ports::MailSender>)
-        .konto(IdentityProviderConfiguration::neu(
-            "friendarazzi.app",
-            "friendarazzi-api",
-        ))
-        .clock(Arc::clone(&clock) as Arc<dyn Clock>)
-        .rng(Arc::new(FixedRng::default()))
-        .event_queue(move |weak: WeakApp| {
-            let q = Arc::new(MultithreadedEventQueue::with_workers(weak, 2));
-            let _ = queue_slot_clone.set(Arc::clone(&q));
-            q as Arc<dyn EventQueue>
-        })
-        .build();
-    let queue = queue_slot.get().unwrap();
-
-    let (_alice, _bob, carol, game_id) =
-        setup_drafting_ready_for_last_lock(&app, &mail, &clock).await;
-    let Game::Drafting(d) = app
-        .execute(carol, LockDraftPrompts { game_id })
-        .await
-        .unwrap()
-    else {
-        panic!("expected drafting");
-    };
-    let scheduled_for = d.auto_start_at().unwrap();
-
-    // Advance FixedClock and wake workers; worker thread runs DelayedGameStart on App.
-    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
-    queue.notify();
-    queue.wait_due_idle();
-
-    let game = load_game(&app, game_id).await;
-    assert!(matches!(game, Game::Active(_)));
-
-    // Immediate enqueue of an idempotent event also completes cleanly on workers.
-    app.event_queue
-        .enqueue(Event::DelayedGameStart(DelayedGameStart {
-            game_id,
-            scheduled_for,
-        }))
-        .await
-        .unwrap();
-    queue.wait_due_idle();
-    assert_eq!(queue.pending_len(), 0);
+    // Even with a worker sleeping on a 60s FixedClock deadline, dropping App returns immediately.
+    let drop_start = std::time::Instant::now();
+    drop(app);
+    assert!(drop_start.elapsed() < std::time::Duration::from_secs(1));
+    let _ = AtomicUsize::new(0).load(Ordering::Relaxed);
 }

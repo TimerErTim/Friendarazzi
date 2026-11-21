@@ -1,3 +1,5 @@
+#![cfg(feature = "event-queue")]
+
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -21,7 +23,7 @@ use friendarazzi_core::{
 };
 use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
 use friendarazzi_sqlite::SQLiteInstance;
-use friendarazzi_sqlite_eventqueue::{EventQueueConfig, SqliteEventQueue};
+use friendarazzi_sqlite::event_queue::{self, EventQueueConfig, SqliteEventQueue};
 use tempdir::TempDir;
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -191,17 +193,14 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
         .unwrap();
     assert_eq!(queue.pending_count().await.unwrap(), 1);
 
-    // Unlock cancels the persisted event.
+    // Unlock + re-lock enqueues a second event; the first event becomes a stale no-op.
     app.execute(carol, UnlockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
-    assert_eq!(queue.pending_count().await.unwrap(), 0);
-
-    // Re-lock persists a new scheduled event.
     app.execute(carol, LockDraftPrompts { game_id: game.id() })
         .await
         .unwrap();
-    assert_eq!(queue.pending_count().await.unwrap(), 1);
+    assert_eq!(queue.pending_count().await.unwrap(), 2);
 
     // Simulate process restart on the same SQLite file.
     drop(app);
@@ -215,7 +214,7 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
             .with_clock(Arc::clone(&clock) as Arc<dyn Clock>),
     );
     queue2.migrate_to_latest().await.unwrap();
-    assert_eq!(queue2.pending_count().await.unwrap(), 1);
+    assert_eq!(queue2.pending_count().await.unwrap(), 2);
 
     let app2 = build_app_on_db(
         Arc::clone(&sqlite2),
@@ -228,12 +227,11 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
     clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-    let worker = tokio::spawn(friendarazzi_sqlite_eventqueue::run_with_config(
+    let worker = tokio::spawn(event_queue::run_with_config(
         Arc::clone(&queue2),
         app2.clone(),
         EventQueueConfig {
             idle_poll_interval: StdDuration::from_millis(20),
-            max_sleep_interval: StdDuration::from_millis(20),
             ..EventQueueConfig::default()
         },
         async move {
@@ -241,9 +239,15 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
         },
     ));
 
-    // Wait until the persisted event is processed.
+    // Wait until both events are processed and deleted from _event_queue.
     for _ in 0..100 {
-        if queue2.pending_count().await.unwrap() == 0 {
+        let conn = sqlite2.create_connection().await.unwrap();
+        let mut rows = conn
+            .query("SELECT COUNT(*) FROM _event_queue", ())
+            .await
+            .unwrap();
+        let total: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        if total == 0 {
             break;
         }
         tokio::time::sleep(StdDuration::from_millis(10)).await;
@@ -251,7 +255,7 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
 
     let _ = shutdown_tx.send(true);
     let report = worker.await.unwrap().unwrap();
-    assert_eq!(report.processed, 1);
+    assert_eq!(report.processed, 2);
     assert_eq!(report.failed, 0);
     assert_eq!(queue2.pending_count().await.unwrap(), 0);
     assert!(matches!(load_game(&app2, game.id()).await, Game::Active(_)));
@@ -275,18 +279,14 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
     )
     .await;
 
-    // Schedule a future event, then simulate a crashed worker that left it in 'processing'.
+    // Enqueue a due event, then simulate a crashed worker that left it in 'processing'.
     let game_id = GameId(Uuid::new_v4());
     let due_at = clock.now();
     queue
-        .schedule(
-            Event::DelayedGameStart(DelayedGameStart {
-                game_id,
-                scheduled_for: due_at,
-            }),
-            due_at,
-            Some("stale-test"),
-        )
+        .enqueue_submitted(vec![Event::from(DelayedGameStart {
+            game_id,
+            scheduled_for: due_at,
+        })])
         .await
         .unwrap();
 
@@ -297,27 +297,23 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
             .unwrap();
     }
 
-    // Also schedule a future event that must remain persisted after shutdown.
+    // Also enqueue a future event whose handler will sleep on FixedClock.
     let future_at = clock.now() + Duration::seconds(600);
     queue
-        .schedule(
-            Event::DelayedGameStart(DelayedGameStart {
-                game_id,
-                scheduled_for: future_at,
-            }),
-            future_at,
-            Some("future-test"),
-        )
+        .enqueue_submitted(vec![Event::from(DelayedGameStart {
+            game_id,
+            scheduled_for: future_at,
+        })])
         .await
         .unwrap();
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-    let worker = tokio::spawn(friendarazzi_sqlite_eventqueue::run_with_config(
+    let worker = tokio::spawn(event_queue::run_with_config(
         Arc::clone(&queue),
         app,
         EventQueueConfig {
             idle_poll_interval: StdDuration::from_secs(60),
-            max_sleep_interval: StdDuration::from_secs(60),
+            shutdown_grace_period: StdDuration::from_millis(50),
             ..EventQueueConfig::default()
         },
         async move {
@@ -325,6 +321,7 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
         },
     ));
 
+    // Wait until the recovered due event is processed and only the sleeping future row remains.
     for _ in 0..100 {
         let conn = sqlite.create_connection().await.unwrap();
         let mut rows = conn
@@ -338,7 +335,9 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
         tokio::time::sleep(StdDuration::from_millis(10)).await;
     }
 
-    // Graceful shutdown must interrupt the 60s sleep promptly and keep the future event.
+    // Give the second task a moment to enter sleep_until, then verify graceful shutdown
+    // aborts the sleeping handler promptly and resets it to 'pending' in SQLite.
+    tokio::time::sleep(StdDuration::from_millis(20)).await;
     let _ = shutdown_tx.send(true);
     let report = tokio::time::timeout(StdDuration::from_secs(2), worker)
         .await

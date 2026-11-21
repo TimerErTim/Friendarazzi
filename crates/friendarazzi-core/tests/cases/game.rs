@@ -1,21 +1,22 @@
 //! Shared game lobby, drafting, and board assembly conformance tests.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use chrono::Duration;
 use friendarazzi_core::{
-    adapters::BlockingEventQueue,
+    ResultReport,
     application::AuthContext,
     domain::{
         BenutzerId, BoardTileId, Game, GameId, GridSize, InviteCode, NonEmptyString, PromptSource,
         PromptSubmissionId, READY_GRACE_PERIOD_SECONDS, VisibilityMode,
     },
-    ports::RepositoryError,
+    ports::{EventQueue, EventQueueError, RepositoryError},
     service::{
-        CaptureUseCaseError, CreateGame, DelayedGameStart, DraftPromptInput, Event,
-        FinalizeReadyGame, GameUseCaseError, JoinGame, LockDraftPrompts, ProfileUseCaseError,
-        SaveDraftPrompts, StartDrafting, SubmitCapture, UnlockDraftPrompts, UpdateGameSettings,
-        UpdateProfile, UploadAvatar,
+        CaptureUseCaseError, CreateGame, DelayedGameStart, DraftPromptInput, FinalizeReadyGame,
+        GameUseCaseError, JoinGame, LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts,
+        StartDrafting, SubmitCapture, UnlockDraftPrompts, UpdateGameSettings, UpdateProfile,
+        UploadAvatar,
     },
 };
 use friendarazzi_fakes::png_bytes_for_test;
@@ -749,11 +750,23 @@ async fn board_assembly_4x4_and_5x5_enforce_author_and_target_constraints() {
     }
 }
 
+struct NoopEventQueue;
+
+#[async_trait::async_trait]
+impl EventQueue for NoopEventQueue {
+    async fn enqueue_submitted(
+        &self,
+        _events: Vec<friendarazzi_core::service::Event>,
+    ) -> ResultReport<(), EventQueueError> {
+        Ok(())
+    }
+}
+
 #[test_log::test(pollster::test)]
 async fn delayed_game_start_event_ignores_stale_countdown_and_activates_current_one() {
     let harness = build_with_event_queue(
         super::super::base_app_builder().await,
-        BlockingEventQueue::adapter(),
+        Arc::new(NoopEventQueue).into(),
     );
     let alice = register_user(&harness, "alice-ev@example.at").await;
     let bob = register_user(&harness, "bob-ev@example.at").await;
@@ -855,10 +868,10 @@ async fn delayed_game_start_event_ignores_stale_countdown_and_activates_current_
         .app()
         .execute(
             AuthContext::Anonymous,
-            Event::DelayedGameStart(DelayedGameStart {
+            DelayedGameStart {
                 game_id,
                 scheduled_for: first_start_at,
-            }),
+            },
         )
         .await
         .unwrap();
@@ -883,10 +896,10 @@ async fn delayed_game_start_event_ignores_stale_countdown_and_activates_current_
         .app()
         .execute(
             AuthContext::Anonymous,
-            Event::DelayedGameStart(DelayedGameStart {
+            DelayedGameStart {
                 game_id,
                 scheduled_for: second_start_at,
-            }),
+            },
         )
         .await
         .unwrap();

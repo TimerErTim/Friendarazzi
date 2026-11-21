@@ -1,14 +1,20 @@
-use std::sync::Arc;
+use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
-use tracing::instrument;
+use futures::channel::oneshot;
+use tracing::{instrument, warn};
 
 use crate::adapters::{
-    BlankPdfRenderer, InMemoryObjectStore, InMemorySigning, InMemoryThrottle, NullMailSender,
-    SystemClock, SystemRng,
+    BlankPdfRenderer, InMemoryObjectStore, InMemorySigning, InMemoryThrottle,
+    MultithreadedEventQueue, NullMailSender, SystemClock, SystemRng,
 };
-use crate::application::context::ContextPorts;
-use crate::ports::{Clock, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle};
-use crate::service::UseCase;
+use crate::application::context::{ContextPorts, StagedEventQueue};
+use crate::application::instrumented::InstrumentedEventQueue;
+use crate::ports::{
+    Clock, EventQueue, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle,
+};
+use crate::service::{Event, UseCase};
 use crate::uow::UnitOfWorkProvider;
 
 pub mod uow;
@@ -19,7 +25,7 @@ pub mod auth;
 pub use auth::{AccessError, AuthContext};
 
 mod context;
-pub use context::ExecutionContext;
+pub use context::{ExecutionContext, StagedEventQueue as EventStage};
 
 mod konfiguration;
 pub use konfiguration::IdentityProviderConfiguration;
@@ -32,62 +38,145 @@ pub use errors::ErrorReportExt;
 pub use errors::ResultReport;
 pub use errors::ThreadSafeError;
 
-#[derive(bon::Builder)]
-pub struct App {
+#[derive(Clone, Default)]
+pub(crate) struct ShutdownSignal {
+    inner: Arc<ShutdownInner>,
+}
+
+#[derive(Default)]
+struct ShutdownInner {
+    cancelled: AtomicBool,
+    waiters: Mutex<Vec<oneshot::Sender<()>>>,
+}
+
+impl ShutdownSignal {
+    pub(crate) fn cancel(&self) {
+        if !self.inner.cancelled.swap(true, Ordering::SeqCst) {
+            let waiters = std::mem::take(
+                &mut *self
+                    .inner
+                    .waiters
+                    .lock()
+                    .expect("shutdown waiters mutex poisoned"),
+            );
+            for tx in waiters {
+                let _ = tx.send(());
+            }
+        }
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.inner.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub(crate) async fn notified(&self) {
+        let rx = {
+            let mut waiters = self
+                .inner
+                .waiters
+                .lock()
+                .expect("shutdown waiters mutex poisoned");
+            if self.inner.cancelled.load(Ordering::SeqCst) {
+                return;
+            }
+            let (tx, rx) = oneshot::channel();
+            waiters.push(tx);
+            rx
+        };
+        let _ = rx.await;
+    }
+}
+
+struct AppDropGuard(ShutdownSignal);
+
+impl Drop for AppDropGuard {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+/// Weak handle to an [`App`] used by in-process adapters (such as the core event queues)
+/// that live inside `App` and execute queued work back onto it without creating an `Arc`
+/// reference cycle.
+#[derive(Clone, Default)]
+pub struct WeakApp {
+    inner: Weak<AppInner>,
+    shutdown: ShutdownSignal,
+}
+
+impl WeakApp {
+    pub(crate) fn upgrade_inner(&self) -> Option<Arc<AppInner>> {
+        if self.shutdown.is_cancelled() {
+            return None;
+        }
+        self.inner.upgrade()
+    }
+
+    pub(crate) fn shutdown_signal(&self) -> &ShutdownSignal {
+        &self.shutdown
+    }
+}
+
+/// Initialization input for `App::builder().event_queue(...)`.
+///
+/// Accepts either a ready `Arc<T>` / `Arc<dyn EventQueue>` (for adapters like
+/// `SqliteEventQueue` that do not need `App`) or a factory `FnOnce(WeakApp) -> Arc<dyn EventQueue>`
+/// (for in-process adapters like [`BlockingEventQueue::from_app`](crate::adapters::BlockingEventQueue::from_app)).
+pub struct EventQueueInit(Box<dyn FnOnce(WeakApp) -> Arc<dyn EventQueue> + Send>);
+
+impl EventQueueInit {
+    pub fn build(self, app: WeakApp) -> Arc<dyn EventQueue> {
+        (self.0)(app)
+    }
+}
+
+impl<T: EventQueue + 'static> From<Arc<T>> for EventQueueInit {
+    fn from(queue: Arc<T>) -> Self {
+        Self(Box::new(move |_| queue))
+    }
+}
+
+impl From<Arc<dyn EventQueue>> for EventQueueInit {
+    fn from(queue: Arc<dyn EventQueue>) -> Self {
+        Self(Box::new(move |_| queue))
+    }
+}
+
+impl<F> From<F> for EventQueueInit
+where
+    F: FnOnce(WeakApp) -> Arc<dyn EventQueue> + Send + 'static,
+{
+    fn from(factory: F) -> Self {
+        Self(Box::new(factory))
+    }
+}
+
+pub struct AppInner {
     pub uow_provider: Box<dyn UnitOfWorkProvider>,
     /// Key material behind an application port; the algorithm beneath it is domain code.
     /// The default is a fresh keypair per process, which is right for a throwaway run and
     /// wrong for a deployment that must not end every session on restart.
-    #[builder(default = Arc::new(InMemorySigning::random()))]
     pub signing: Arc<dyn Signing>,
     /// Client-scoped rate limiting. `InMemoryThrottle` is the production adapter for a
     /// single-process deployment, so it is also the default.
-    #[builder(default = Arc::new(InMemoryThrottle::new()))]
     pub throttle: Arc<dyn Throttle>,
     /// Transaction mail. No relay configured fails every send and logs it (NFR-5).
-    #[builder(default = Arc::new(NullMailSender))]
     pub mail_sender: Arc<dyn MailSender>,
     /// Mailed link targets and token identity. Deployment data, not behaviour.
     pub konto: IdentityProviderConfiguration,
-    #[builder(default = Arc::new(SystemClock))]
     pub clock: Arc<dyn Clock>,
-    #[builder(default = Arc::new(SystemRng))]
     pub rng: Arc<dyn RngSource>,
-    #[builder(default = Arc::new(InMemoryObjectStore::new()))]
     pub object_store: Arc<dyn ObjectStore>,
-    #[builder(default = Arc::new(BlankPdfRenderer))]
     pub pdf_renderer: Arc<dyn PdfRenderer>,
+    pub event_queue: Arc<dyn EventQueue>,
 }
 
-pub use app_builder::{SetClock, SetUowProvider};
-
-impl App {
-    #[instrument(
-        skip(self, use_case),
-        fields(use_case = std::any::type_name::<U>(), auth = ?auth),
-        err(Debug)
-    )]
-    pub async fn execute<U: UseCase<O> + Send, O>(
+impl AppInner {
+    fn new_execution_context(
         &self,
         auth: AuthContext,
-        use_case: U,
-    ) -> ResultReport<O, <U::Error as error_stack::IntoReport>::Context> {
-        use_case.perform(self.new_execution_context(auth)).await
-    }
-
-    #[instrument(skip(self, f), fields(execute_fn = true, auth = ?auth), err(Debug))]
-    pub async fn execute_fn<F, O, E: ThreadSafeError>(
-        &self,
-        auth: AuthContext,
-        f: F,
-    ) -> ResultReport<O, E>
-    where
-        for<'a> F: AsyncFnOnce(ExecutionContext<'a>) -> ResultReport<O, E> + Send,
-    {
-        f(self.new_execution_context(auth)).await
-    }
-
-    fn new_execution_context(&self, auth: AuthContext) -> ExecutionContext<'_> {
+        stage: StagedEventQueue,
+    ) -> ExecutionContext<'_> {
         ExecutionContext::root(
             self.uow_provider.as_ref(),
             ContextPorts {
@@ -99,8 +188,155 @@ impl App {
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),
                 mail_sender: Arc::clone(&self.mail_sender),
+                event_queue: stage,
                 identity_provider_conf: self.konto.clone(),
             },
         )
+    }
+
+    async fn flush_stage(&self, stage: StagedEventQueue) {
+        let events = stage.take();
+        if events.is_empty() {
+            return;
+        }
+        if let Err(err) = self.event_queue.enqueue_submitted(events).await {
+            warn!(?err, "failed to enqueue submitted events");
+        }
+    }
+
+    #[instrument(
+        skip(self, use_case),
+        fields(use_case = std::any::type_name::<U>(), auth = ?auth),
+        err(Debug)
+    )]
+    pub(crate) async fn execute<U: UseCase<O> + Send, O>(
+        &self,
+        auth: AuthContext,
+        use_case: U,
+    ) -> ResultReport<O, <U::Error as error_stack::IntoReport>::Context> {
+        let stage = StagedEventQueue::new();
+        let result = use_case
+            .perform(self.new_execution_context(auth, stage.clone()))
+            .await;
+        if result.is_ok() {
+            self.flush_stage(stage).await;
+        }
+        result
+    }
+
+    #[instrument(skip(self, f), fields(execute_fn = true, auth = ?auth), err(Debug))]
+    pub(crate) async fn execute_fn<F, O, E: ThreadSafeError>(
+        &self,
+        auth: AuthContext,
+        f: F,
+    ) -> ResultReport<O, E>
+    where
+        for<'a> F: AsyncFnOnce(ExecutionContext<'a>) -> ResultReport<O, E> + Send,
+    {
+        let stage = StagedEventQueue::new();
+        let result = f(self.new_execution_context(auth, stage.clone())).await;
+        if result.is_ok() {
+            self.flush_stage(stage).await;
+        }
+        result
+    }
+
+    pub(crate) async fn dispatch_event(&self, event: Event) -> Result<(), String> {
+        match event {
+            Event::DelayedGameStart(event) => self
+                .execute(AuthContext::Anonymous, *event)
+                .await
+                .map_err(|err| format!("{err:?}")),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct App {
+    inner: Arc<AppInner>,
+    _drop_guard: Arc<AppDropGuard>,
+}
+
+impl Deref for App {
+    type Target = AppInner;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+#[bon::bon]
+impl App {
+    #[builder(builder_type = AppBuilder, state_mod = app_builder)]
+    pub fn builder(
+        uow_provider: Box<dyn UnitOfWorkProvider>,
+        #[builder(default = Arc::new(InMemorySigning::random()))] signing: Arc<dyn Signing>,
+        #[builder(default = Arc::new(InMemoryThrottle::new()))] throttle: Arc<dyn Throttle>,
+        #[builder(default = Arc::new(NullMailSender))] mail_sender: Arc<dyn MailSender>,
+        konto: IdentityProviderConfiguration,
+        #[builder(default = Arc::new(SystemClock))] clock: Arc<dyn Clock>,
+        #[builder(default = Arc::new(SystemRng))] rng: Arc<dyn RngSource>,
+        #[builder(default = Arc::new(InMemoryObjectStore::new()))] object_store: Arc<
+            dyn ObjectStore,
+        >,
+        #[builder(default = Arc::new(BlankPdfRenderer))] pdf_renderer: Arc<dyn PdfRenderer>,
+        #[builder(into)] event_queue: Option<EventQueueInit>,
+    ) -> Self {
+        let shutdown = ShutdownSignal::default();
+        let inner = Arc::new_cyclic(|weak| {
+            let weak_app = WeakApp {
+                inner: weak.clone(),
+                shutdown: shutdown.clone(),
+            };
+            let raw_queue = match event_queue {
+                Some(init) => init.build(weak_app),
+                None => MultithreadedEventQueue::from_app(weak_app),
+            };
+            AppInner {
+                uow_provider,
+                signing,
+                throttle,
+                mail_sender,
+                konto,
+                clock,
+                rng,
+                object_store,
+                pdf_renderer,
+                event_queue: InstrumentedEventQueue::new(raw_queue),
+            }
+        });
+        Self {
+            inner,
+            _drop_guard: Arc::new(AppDropGuard(shutdown)),
+        }
+    }
+}
+
+pub use app_builder::{SetClock, SetUowProvider};
+
+impl App {
+    pub async fn execute<U: UseCase<O> + Send, O>(
+        &self,
+        auth: AuthContext,
+        use_case: U,
+    ) -> ResultReport<O, <U::Error as error_stack::IntoReport>::Context> {
+        self.inner.execute(auth, use_case).await
+    }
+
+    pub async fn execute_fn<F, O, E: ThreadSafeError>(
+        &self,
+        auth: AuthContext,
+        f: F,
+    ) -> ResultReport<O, E>
+    where
+        for<'a> F: AsyncFnOnce(ExecutionContext<'a>) -> ResultReport<O, E> + Send,
+    {
+        self.inner.execute_fn(auth, f).await
+    }
+
+    /// Execute a deserialized [`Event`] directly against [`App`] (used by external
+    /// event queue workers such as `SqliteEventQueue`).
+    pub async fn handle_event(&self, event: Event) -> Result<(), String> {
+        self.inner.dispatch_event(event).await
     }
 }

@@ -31,6 +31,7 @@ export interface FriendarazziApi {
     prompts: DraftPromptRequestItem[],
   ): Promise<GameDetail>;
   gameLockPrompts(gameId: string): Promise<GameDetail>;
+  gameUnlockPrompts(gameId: string): Promise<GameDetail>;
 
   // ---------------------------------------------------------------- Captures & Media
   captureSubmit(

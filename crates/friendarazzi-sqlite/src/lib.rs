@@ -1,6 +1,10 @@
 mod errors;
+#[cfg(feature = "event-queue")]
+pub mod event_queue;
 mod migrations;
 pub mod repos;
+#[cfg(feature = "scheduler")]
+pub mod scheduler;
 mod uow;
 
 use std::{

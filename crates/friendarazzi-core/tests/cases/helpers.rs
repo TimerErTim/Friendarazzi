@@ -4,17 +4,20 @@ use chrono::{DateTime, Duration, Utc};
 use friendarazzi_core::{
     App,
     adapters::{InMemorySigning, InMemoryThrottle},
-    application::{AppBuilder, AuthContext, IdentityProviderConfiguration, SetUowProvider},
+    application::{
+        AppBuilder, AuthContext, EventQueueInit, IdentityProviderConfiguration, SetUowProvider,
+    },
     domain::{
         BenutzerId, BoardTile, EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource,
-        VisibilityMode,
+        READY_GRACE_PERIOD_SECONDS, VisibilityMode,
         konto::{AccessTokenClaims, KlartextPasswort, SecretToken, SessionId},
         target_quotas_for_author,
     },
     ports::{ClientKey, Clock, RepositoryError, Signing},
     service::{
-        CreateGame, DraftPromptInput, JoinGame, LockDraftPrompts, RegistrierungAbschließen,
-        RegistrierungStarten, SaveDraftPrompts, SessionPrüfen, StartDrafting,
+        CreateGame, DraftPromptInput, FinalizeReadyGame, JoinGame, LockDraftPrompts,
+        RegistrierungAbschließen, RegistrierungStarten, SaveDraftPrompts, SessionPrüfen,
+        StartDrafting,
     },
 };
 use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
@@ -88,6 +91,20 @@ impl Harness {
 }
 
 pub fn build(builder: AppBuilder<SetUowProvider>) -> Harness {
+    build_inner(builder, None)
+}
+
+pub fn build_with_event_queue(
+    builder: AppBuilder<SetUowProvider>,
+    event_queue: EventQueueInit,
+) -> Harness {
+    build_inner(builder, Some(event_queue))
+}
+
+fn build_inner(
+    builder: AppBuilder<SetUowProvider>,
+    event_queue: Option<EventQueueInit>,
+) -> Harness {
     let clock = Arc::new(FixedClock::new(jetzt()));
     let mail = Arc::new(FakeMailSender::new());
     let app = builder
@@ -97,6 +114,7 @@ pub fn build(builder: AppBuilder<SetUowProvider>) -> Harness {
         .konto(test_konfiguration())
         .clock(clock.clone())
         .rng(Arc::new(FixedRng::default()))
+        .maybe_event_queue(event_queue)
         .build();
     Harness { app, clock, mail }
 }
@@ -238,8 +256,15 @@ pub async fn setup_active_game(
             .await
             .unwrap();
     }
-    assert!(matches!(last_state, Game::Active(_)));
-    last_state
+    assert!(matches!(last_state, Game::Drafting(_)));
+    harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
+    let active_state = harness
+        .app()
+        .execute(host, FinalizeReadyGame { game_id: game.id() })
+        .await
+        .unwrap();
+    assert!(matches!(active_state, Game::Active(_)));
+    active_state
 }
 
 pub async fn load_tiles(harness: &Harness, auth: AuthContext, game_id: GameId) -> Vec<BoardTile> {

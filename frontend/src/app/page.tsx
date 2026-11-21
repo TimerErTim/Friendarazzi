@@ -52,7 +52,13 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
+import {
+  formatGameProgress,
+  gameNextActionLabel,
+  sortActiveGames,
+} from "@/lib/game-overview";
 import { gameHref, joinHref, paths } from "@/lib/navigation";
+import { useGameCountdown } from "@/lib/use-game-countdown";
 
 function statusLabel(status: GameStatus): string {
   switch (status) {
@@ -608,7 +614,9 @@ function AuthenticatedHome() {
   }
 
   const all = games.data ?? [];
-  const active = all.filter((g) => g.status !== GameStatus.Completed);
+  const active = sortActiveGames(
+    all.filter((g) => g.status !== GameStatus.Completed),
+  );
   const completed = all.filter((g) => g.status === GameStatus.Completed);
 
   return (
@@ -617,10 +625,6 @@ function AuthenticatedHome() {
       <section className="brutal-shadow-lg rounded-md border-[2.5px] border-strong bg-surface p-5 sm:p-7">
         <div className="grid items-center gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="primary">Spielzentrale</Badge>
-              <SparkleIcon tone="accent" className="size-5" />
-            </div>
             <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
               Nächste Runde starten oder beitreten
             </h1>
@@ -688,7 +692,11 @@ function AuthenticatedHome() {
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {active.map((game) => (
-              <ActiveGameCard key={game.id} game={game} />
+              <ActiveGameCard
+                key={game.id}
+                game={game}
+                dataUpdatedAt={games.dataUpdatedAt}
+              />
             ))}
           </div>
         )}
@@ -831,13 +839,20 @@ function AuthenticatedHome() {
   );
 }
 
-function ActiveGameCard({ game }: { game: GameSummary }) {
-  const ctaLabel =
-    game.status === GameStatus.Active
-      ? "Brett öffnen"
-      : game.status === GameStatus.Drafting
-        ? "Zum Entwurf"
-        : "Zur Lobby";
+function ActiveGameCard({
+  game,
+  dataUpdatedAt,
+}: {
+  game: GameSummary;
+  dataUpdatedAt: number;
+}) {
+  const countdownSeconds = useGameCountdown(
+    game.autoStartAt,
+    game.serverNow,
+    dataUpdatedAt,
+  );
+  const progress = formatGameProgress(game, countdownSeconds);
+  const ctaLabel = gameNextActionLabel(game);
 
   return (
     <Card className="flex flex-col justify-between overflow-hidden">
@@ -848,19 +863,22 @@ function ActiveGameCard({ game }: { game: GameSummary }) {
           </h3>
           <div className="flex flex-wrap items-center gap-1.5">
             <CodeTag tone="surface">Code: {game.inviteCode}</CodeTag>
+            {game.needsAction ? (
+              <Badge variant="warning">Aktion nötig</Badge>
+            ) : null}
           </div>
         </div>
         <Badge variant="primary">{statusLabel(game.status)}</Badge>
       </div>
       <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 pb-4">
         <div className="flex flex-wrap items-center gap-3 font-mono text-xs font-bold text-secondary">
-          <span className="inline-flex items-center gap-1">
-            <Camera className="size-3.5 text-ink" aria-hidden="true" />
-            {game.gridSize}×{game.gridSize}
+          <span className="inline-flex items-center gap-1 text-ink">
+            <Camera className="size-3.5" aria-hidden="true" />
+            {progress}
           </span>
           <span className="inline-flex items-center gap-1">
             <Users className="size-3.5 text-ink" aria-hidden="true" />
-            {game.playerCount} Spieler
+            {game.gridSize}×{game.gridSize} · {game.playerCount}P
           </span>
         </div>
         <Button size="sm" asChild>

@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use async_lock::{Mutex as AsyncMutex, MutexGuardArc};
 use async_trait::async_trait;
 use friendarazzi_core::{
     ports::{
@@ -19,6 +20,7 @@ use crate::repository::{
 pub struct FakeUnitOfWorkProvider {
     pub log: Arc<Mutex<Vec<UoWEvent>>>,
     pub datastore: Arc<FakeDatastore>,
+    tx_lock: Arc<AsyncMutex<()>>,
 }
 
 impl FakeUnitOfWorkProvider {
@@ -26,6 +28,7 @@ impl FakeUnitOfWorkProvider {
         Self {
             log: Arc::new(Mutex::new(Vec::new())),
             datastore,
+            tx_lock: Arc::new(AsyncMutex::new(())),
         }
     }
 
@@ -43,10 +46,12 @@ impl Default for FakeUnitOfWorkProvider {
 #[async_trait]
 impl UnitOfWorkProvider for FakeUnitOfWorkProvider {
     async fn begin(&self) -> RepositoryResult<Box<dyn UnitOfWorkImpl>> {
+        let tx_guard = self.tx_lock.lock_arc().await;
         self.log.lock().unwrap().push(UoWEvent::Begin);
         Ok(Box::new(FakeUnitOfWork::new(
             Arc::clone(&self.log),
             Arc::clone(&self.datastore),
+            tx_guard,
         )))
     }
 }
@@ -55,6 +60,8 @@ pub struct FakeUnitOfWork {
     log: Arc<Mutex<Vec<UoWEvent>>>,
     backing_datastore: Arc<FakeDatastore>,
     transaction_datastore: Arc<FakeDatastore>,
+    #[allow(dead_code)]
+    tx_guard: MutexGuardArc<()>,
     games: FakeGameRepository,
     boards: FakeBoardRepository,
     captures: FakeCaptureRepository,
@@ -67,11 +74,16 @@ pub struct FakeUnitOfWork {
 }
 
 impl FakeUnitOfWork {
-    pub fn new(log: Arc<Mutex<Vec<UoWEvent>>>, datastore: Arc<FakeDatastore>) -> Self {
+    pub fn new(
+        log: Arc<Mutex<Vec<UoWEvent>>>,
+        datastore: Arc<FakeDatastore>,
+        tx_guard: MutexGuardArc<()>,
+    ) -> Self {
         let transaction_datastore = Arc::new(FakeDatastore::clone(datastore.as_ref()));
         Self {
             log,
             backing_datastore: datastore,
+            tx_guard,
             games: FakeGameRepository::new(Arc::clone(&transaction_datastore)),
             boards: FakeBoardRepository::new(Arc::clone(&transaction_datastore)),
             captures: FakeCaptureRepository::new(Arc::clone(&transaction_datastore)),

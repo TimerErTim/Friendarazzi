@@ -111,6 +111,8 @@ async fn e2e_friendarazzi_undercover_bingo_and_galleries() {
         assert_eq!(status, StatusCode::OK, "{locked}");
     }
 
+    harness.vorspulen(Duration::seconds(60));
+
     // Now Active! Read Alice's board
     let (status, active) = harness
         .client

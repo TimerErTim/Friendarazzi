@@ -58,6 +58,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import { autofillEmptySlots, rerollSingleSlot } from "@/lib/draft-prompts";
+import { normalizeImageForUpload } from "@/lib/media-capture";
 
 import { BingoBoard } from "./bingo-board";
 import { CaptureGalleryCard } from "./capture-gallery-card";
@@ -903,6 +904,7 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   const mutations = useFriendarazziMutations();
   const [selectedTile, setSelectedTile] = useState<BoardTileView | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isPreparingUpload, setIsPreparingUpload] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [lightboxCapture, setLightboxCapture] =
     useState<CaptureFeedItem | null>(null);
@@ -931,15 +933,23 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   const pct =
     totalCount > 0 ? Math.round((capturedCount / totalCount) * 100) : 0;
 
+  const isUploading = isPreparingUpload || mutations.submitCapture.isPending;
+
   async function submitTilePhoto() {
-    if (!selectedTile || !selectedFile) return;
-    await mutations.submitCapture.mutateAsync({
-      gameId: game.id,
-      tileId: selectedTile.id,
-      file: selectedFile,
-    });
-    setSelectedTile(null);
-    setSelectedFile(null);
+    if (!selectedTile || !selectedFile || isUploading) return;
+    setIsPreparingUpload(true);
+    try {
+      const normalized = await normalizeImageForUpload(selectedFile);
+      await mutations.submitCapture.mutateAsync({
+        gameId: game.id,
+        tileId: selectedTile.id,
+        file: normalized,
+      });
+      setSelectedTile(null);
+      setSelectedFile(null);
+    } finally {
+      setIsPreparingUpload(false);
+    }
   }
 
   return (
@@ -1151,19 +1161,17 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
               type="button"
               variant="secondary"
               onClick={() => setSelectedTile(null)}
-              disabled={mutations.submitCapture.isPending}
+              disabled={isUploading}
             >
               Abbrechen
             </Button>
             <Button
               type="button"
-              disabled={!selectedFile || mutations.submitCapture.isPending}
+              disabled={!selectedFile || isUploading}
               onClick={() => void submitTilePhoto()}
             >
               <Upload className="size-4" aria-hidden="true" />
-              {mutations.submitCapture.isPending
-                ? "Wird hochgeladen …"
-                : "Beweis einreichen"}
+              {isUploading ? "Wird hochgeladen …" : "Beweis einreichen"}
             </Button>
           </DialogFooter>
         </DialogContent>

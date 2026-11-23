@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { normalizeImageForUpload } from "@/lib/media-capture";
 
 export default function ProfilePage() {
   const phase = useAuth();
@@ -62,7 +63,8 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (!file) return;
     feedback.verwerfen();
-    await mutations.uploadAvatar.mutateAsync(file);
+    const normalized = await normalizeImageForUpload(file);
+    await mutations.uploadAvatar.mutateAsync(normalized);
     feedback.melden("Profilbild aktualisiert.");
   }
 

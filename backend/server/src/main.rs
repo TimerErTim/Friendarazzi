@@ -135,6 +135,45 @@ fn prüfe_mail_verbindung(sender: Arc<SmtpMailSender>) {
     });
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct PublicUrl {
+    origin: String,
+    api_url: String,
+}
+
+/// Normalize `public_url` (which may be a bare hostname like `api.friendarazzi.app`)
+/// into an HTTP origin for CORS and an `/api`-mounted server URL for OpenAPI.
+fn normalize_public_url(raw: &str) -> Option<PublicUrl> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let with_scheme = if trimmed.contains("://") {
+        trimmed.to_owned()
+    } else {
+        format!("https://{trimmed}")
+    };
+
+    let api_url = if with_scheme.ends_with("/api") {
+        with_scheme.clone()
+    } else {
+        format!("{with_scheme}/api")
+    };
+
+    let origin = with_scheme
+        .parse::<poem::http::Uri>()
+        .ok()
+        .and_then(|uri| {
+            let scheme = uri.scheme_str()?;
+            let authority = uri.authority()?;
+            Some(format!("{scheme}://{authority}"))
+        })
+        .unwrap_or(with_scheme);
+
+    Some(PublicUrl { origin, api_url })
+}
+
 /// Origin allowlist: the configured frontend plus the documented dev-server ports.
 fn allowed_origins(config: &config::ServerConfig) -> Vec<poem::http::HeaderValue> {
     let mut origins: HashSet<String> = vec![config.frontend_basis_url.clone()]
@@ -156,8 +195,8 @@ fn allowed_origins(config: &config::ServerConfig) -> Vec<poem::http::HeaderValue
         "http://{}:{}",
         config.bind_address, config.bind_port
     ));
-    if let Some(public_url) = &config.public_url {
-        origins.insert(public_url.clone());
+    if let Some(public_url) = config.public_url.as_deref().and_then(normalize_public_url) {
+        origins.insert(public_url.origin);
     }
 
     if let Ok(extra) = std::env::var("FRIENDARAZZI_CORS_ORIGIN") {
@@ -254,7 +293,9 @@ async fn main() -> Result<(), Report<BackendServerError>> {
     let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
     let api_url = config
         .public_url
-        .clone()
+        .as_deref()
+        .and_then(normalize_public_url)
+        .map(|public_url| public_url.api_url)
         .unwrap_or_else(|| local_api_url.clone());
     let api_service = openapi_service(app, [api_url.clone()]);
 
@@ -344,5 +385,61 @@ mod tests {
     fn a_bare_file_name_needs_no_directory() {
         ensure_database_directory("friendarazzi.db").expect("no directory to create");
         ensure_database_directory(":memory:").expect("no directory to create");
+    }
+
+    #[test_log::test]
+    fn normalizes_bare_domain_public_url_for_openapi_and_cors() {
+        assert_eq!(
+            normalize_public_url("api.friendarazzi.app"),
+            Some(PublicUrl {
+                origin: "https://api.friendarazzi.app".into(),
+                api_url: "https://api.friendarazzi.app/api".into(),
+            })
+        );
+        assert_eq!(
+            normalize_public_url("  api.friendarazzi.app/ "),
+            Some(PublicUrl {
+                origin: "https://api.friendarazzi.app".into(),
+                api_url: "https://api.friendarazzi.app/api".into(),
+            })
+        );
+    }
+
+    #[test_log::test]
+    fn preserves_explicit_scheme_and_avoids_duplicate_api_prefix() {
+        assert_eq!(
+            normalize_public_url("http://test.friendarazzi.app/"),
+            Some(PublicUrl {
+                origin: "http://test.friendarazzi.app".into(),
+                api_url: "http://test.friendarazzi.app/api".into(),
+            })
+        );
+        assert_eq!(
+            normalize_public_url("https://api.friendarazzi.app/api/"),
+            Some(PublicUrl {
+                origin: "https://api.friendarazzi.app".into(),
+                api_url: "https://api.friendarazzi.app/api".into(),
+            })
+        );
+        assert_eq!(normalize_public_url("   "), None);
+    }
+
+    #[test_log::test]
+    fn allowed_origins_uses_normalized_origin_for_bare_public_url() {
+        let config = config::ServerConfig {
+            public_url: Some("api.friendarazzi.app".into()),
+            ..config::ServerConfig::default()
+        };
+        let origins = allowed_origins(&config);
+        assert!(
+            origins
+                .iter()
+                .any(|origin| origin == "https://api.friendarazzi.app")
+        );
+        assert!(
+            !origins
+                .iter()
+                .any(|origin| origin == "api.friendarazzi.app")
+        );
     }
 }

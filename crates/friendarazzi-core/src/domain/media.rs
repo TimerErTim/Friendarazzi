@@ -54,20 +54,20 @@ fn orientation_from_decoder_and_bytes<D: ImageDecoder>(
     decoder: &mut D,
     bytes: &[u8],
 ) -> image::ImageResult<Orientation> {
-    match decoder.orientation()? {
-        Orientation::NoTransforms => {}
-        orientation => return Ok(orientation),
+    let decoded = decoder.orientation()?;
+    if decoded != Orientation::NoTransforms {
+        return Ok(decoded);
     }
 
-    if let Some(exif) = decoder.exif_metadata()?
-        && let Some(orientation) = parse_exif_orientation(&exif)
+    // zune-jpeg overwrites exif_data on multiple APP1 segments; scan JPEG APP1 headers directly.
+    if bytes.starts_with(&[0xFF, 0xD8])
+        && let Some(orientation) = scan_jpeg_app1_orientation(bytes)
     {
         return Ok(orientation);
     }
 
-    // zune-jpeg overwrites exif_data if a second APP1 Exif segment appears; scan all APP1 headers.
-    if bytes.starts_with(&[0xFF, 0xD8])
-        && let Some(orientation) = scan_jpeg_app1_orientation(bytes)
+    if let Some(exif) = decoder.exif_metadata()?
+        && let Some(orientation) = parse_exif_orientation(&exif)
     {
         return Ok(orientation);
     }
@@ -106,11 +106,7 @@ impl Endian {
 }
 
 fn parse_exif_orientation(chunk: &[u8]) -> Option<Orientation> {
-    let tiff = chunk.strip_prefix(b"Exif\0\0").unwrap_or(chunk);
-    if let Some(orientation) = Orientation::from_exif_chunk(tiff) {
-        return Some(orientation);
-    }
-    parse_tiff_orientation(tiff)
+    parse_tiff_orientation(chunk.strip_prefix(b"Exif\0\0").unwrap_or(chunk))
 }
 
 fn parse_tiff_orientation(tiff: &[u8]) -> Option<Orientation> {
@@ -156,20 +152,31 @@ fn scan_ifd_for_orientation(
         };
         let value_field = &entry[8..12];
 
-        if tag == 0x0112 && count == 1 {
-            let value = match format {
-                1 | 6 => Some(u32::from(value_field[0])),
-                3 | 8 => endian.read_u16(value_field).map(u32::from),
-                4 | 9 => endian.read_u32(value_field),
-                _ => None,
+        if tag == 0x0112 {
+            let value = if count == 1 {
+                match format {
+                    1 | 6 => Some(u32::from(value_field[0])),
+                    3 | 8 => endian.read_u16(value_field).map(u32::from),
+                    4 | 9 => endian.read_u32(value_field),
+                    _ => None,
+                }
+            } else {
+                None
             };
-            if let Some(orient) = value
-                .and_then(|v| u8::try_from(v).ok())
+            let ascii_value = (format == 2 && (1..=4).contains(&count))
+                .then(|| {
+                    std::str::from_utf8(&value_field[..count as usize])
+                        .ok()
+                        .and_then(|s| s.trim_matches(['\0', ' ']).parse::<u8>().ok())
+                })
+                .flatten();
+            if let Some(orient) = ascii_value
+                .or_else(|| value.and_then(|v| u8::try_from(v).ok()))
                 .and_then(Orientation::from_exif)
             {
                 return (Some(orient), exif_ifd_offset);
             }
-        } else if tag == 0x8769 && format == 4 && count == 1 {
+        } else if tag == 0x8769 && (format == 4 || format == 13) && count == 1 {
             exif_ifd_offset = endian
                 .read_u32(value_field)
                 .and_then(|v| usize::try_from(v).ok());
@@ -180,6 +187,7 @@ fn scan_ifd_for_orientation(
 
 fn scan_jpeg_app1_orientation(bytes: &[u8]) -> Option<Orientation> {
     let mut pos = 2;
+    let mut saw_exif_identity = false;
     let mut xmp_fallback = None;
 
     while pos < bytes.len() {
@@ -212,8 +220,10 @@ fn scan_jpeg_app1_orientation(bytes: &[u8]) -> Option<Orientation> {
 
         if marker == 0xE1 {
             if let Some(tiff) = payload.strip_prefix(b"Exif\0\0") {
-                if let Some(orient) = parse_exif_orientation(tiff) {
-                    return Some(orient);
+                match parse_exif_orientation(tiff) {
+                    Some(Orientation::NoTransforms) => saw_exif_identity = true,
+                    Some(orient) => return Some(orient),
+                    None => {}
                 }
             } else if xmp_fallback.is_none()
                 && let Some(xmp) = payload.strip_prefix(b"http://ns.adobe.com/xap/1.0/\0")
@@ -225,7 +235,11 @@ fn scan_jpeg_app1_orientation(bytes: &[u8]) -> Option<Orientation> {
         pos += segment_len;
     }
 
-    xmp_fallback
+    if saw_exif_identity {
+        Some(Orientation::NoTransforms)
+    } else {
+        xmp_fallback
+    }
 }
 
 fn parse_xmp_orientation(xmp: &[u8]) -> Option<Orientation> {
@@ -689,9 +703,44 @@ pub(crate) mod tests {
         // Explicit EXIF IFD0 Orientation=1 must take precedence over XMP.
         let mut app1_orient1 = b"Exif\0\0".to_vec();
         app1_orient1.extend_from_slice(&exif_tiff_chunk(1, false));
-        let jpeg_exif1_plus_xmp = inject_jpeg_app1_segments(&plain_jpeg, &[app1_orient1, xmp_attr]);
+        let jpeg_exif1_plus_xmp =
+            inject_jpeg_app1_segments(&plain_jpeg, &[app1_orient1.clone(), xmp_attr]);
         let decoded = decode_image_within_limit(&jpeg_exif1_plus_xmp, 1024 * 1024).unwrap();
         assert_eq!((decoded.width(), decoded.height()), (64, 32));
         assert_quadrants(&decoded, [R, G, B, Y]);
+
+        // Secondary APP1 Exif Orientation=1 must not suppress an Orientation=6 APP1 in either order.
+        let mut app1_orient6 = b"Exif\0\0".to_vec();
+        app1_orient6.extend_from_slice(&exif_tiff_chunk(6, false));
+        for pair in [
+            [app1_orient6.clone(), app1_orient1.clone()],
+            [app1_orient1, app1_orient6],
+        ] {
+            let jpeg = inject_jpeg_app1_segments(&plain_jpeg, &pair);
+            let decoded = decode_image_within_limit(&jpeg, 1024 * 1024).unwrap();
+            assert_eq!((decoded.width(), decoded.height()), (32, 64));
+            assert_quadrants(&decoded, [B, R, Y, G]);
+        }
+
+        // ExifIFD with TIFF IFD pointer type 13 and ASCII Orientation tag (format=2).
+        let mut exif_ifd_type13 = tiff_with_exif_ifd_orientation(8, true);
+        exif_ifd_type13[12..14].copy_from_slice(&13u16.to_be_bytes());
+        let decoded = decode_image_within_limit(
+            &encode_with_exif(&src, ImageFormat::Jpeg, exif_ifd_type13),
+            1024 * 1024,
+        )
+        .unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (32, 64));
+        assert_quadrants(&decoded, [G, Y, R, B]);
+
+        let ascii_orient =
+            *b"II*\x00\x08\x00\x00\x00\x01\x00\x12\x01\x02\x00\x02\x00\x00\x006\0\0\0\0\0\0\0";
+        let decoded = decode_image_within_limit(
+            &encode_with_exif(&src, ImageFormat::Jpeg, ascii_orient.to_vec()),
+            1024 * 1024,
+        )
+        .unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (32, 64));
+        assert_quadrants(&decoded, [B, R, Y, G]);
     }
 }

@@ -97,82 +97,63 @@ describe("normalizeImageForUpload", () => {
     return { canvas, drawImage, toBlob };
   }
 
-  it("bakes rotated portrait orientation into canvas pixels when browser swaps dimensions", async () => {
-    const original = new File(["jpeg-exif6"], "camera-shot.jpg", {
-      type: "image/jpeg",
-      lastModified: 123456,
-    });
-    const fromImage = makeMockBitmap(3024, 4032);
-    const raw = makeMockBitmap(4032, 3024);
-    const createBitmap = vi
-      .fn()
-      .mockResolvedValueOnce(fromImage)
-      .mockResolvedValueOnce(raw);
-    const { canvas, drawImage } = makeMockCanvas();
+  it("passes native JPEG/PNG/WebP files through untouched without browser decoding", async () => {
+    for (const [name, type] of [
+      ["camera-shot.jpg", "image/jpeg"],
+      ["shot.png", "image/png"],
+      ["shot.webp", "image/webp"],
+      ["unknown.jpg", ""],
+    ]) {
+      const original = new File(["raw-bytes"], name, { type });
+      const createBitmap = vi.fn();
+      const createCanvas = vi.fn();
 
-    const result = await normalizeImageForUpload(original, {
-      createBitmap: createBitmap as unknown as typeof createImageBitmap,
-      createCanvas: () => canvas,
-    });
+      const result = await normalizeImageForUpload(original, {
+        createBitmap: createBitmap as unknown as typeof createImageBitmap,
+        createCanvas,
+      });
 
-    expect(canvas.width).toBe(1200);
-    expect(canvas.height).toBe(1600);
-    expect(drawImage).toHaveBeenCalledWith(fromImage, 0, 0, 1200, 1600);
-    expect(fromImage.close).toHaveBeenCalledOnce();
-    expect(raw.close).toHaveBeenCalledOnce();
-    expect(result).not.toBe(original);
-    expect(result.name).toBe("camera-shot.jpg");
-    expect(result.type).toBe("image/jpeg");
-    expect(result.lastModified).toBe(123456);
+      expect(result).toBe(original);
+      expect(createBitmap).not.toHaveBeenCalled();
+      expect(createCanvas).not.toHaveBeenCalled();
+    }
   });
 
-  it("returns original native file untouched when browser did not rotate dimensions", async () => {
-    const original = new File(["jpeg-bytes"], "portrait.jpg", {
-      type: "image/jpeg",
-    });
-    const fromImage = makeMockBitmap(4032, 3024);
-    const raw = makeMockBitmap(4032, 3024);
-    const createBitmap = vi
-      .fn()
-      .mockResolvedValueOnce(fromImage)
-      .mockResolvedValueOnce(raw);
-    const createCanvas = vi.fn();
+  it("transcodes non-native formats like HEIC and empty-MIME .heic into bounded JPEG", async () => {
+    for (const [name, type] of [
+      ["photo.heic", "image/heic"],
+      ["photo.HEIC", ""],
+      ["photo.avif", ""],
+    ]) {
+      const original = new File(["heic-bytes"], name, {
+        type,
+        lastModified: 123456,
+      });
+      const bitmap = makeMockBitmap(3024, 4032);
+      const createBitmap = vi.fn().mockResolvedValueOnce(bitmap);
+      const { canvas, drawImage } = makeMockCanvas();
 
-    const result = await normalizeImageForUpload(original, {
-      createBitmap: createBitmap as unknown as typeof createImageBitmap,
-      createCanvas,
-    });
+      const result = await normalizeImageForUpload(original, {
+        createBitmap: createBitmap as unknown as typeof createImageBitmap,
+        createCanvas: () => canvas,
+      });
 
-    expect(result).toBe(original);
-    expect(createCanvas).not.toHaveBeenCalled();
-    expect(fromImage.close).toHaveBeenCalledOnce();
-    expect(raw.close).toHaveBeenCalledOnce();
+      expect(createBitmap).toHaveBeenCalledWith(original, {
+        imageOrientation: "from-image",
+      });
+      expect(canvas.width).toBe(1200);
+      expect(canvas.height).toBe(1600);
+      expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0, 1200, 1600);
+      expect(bitmap.close).toHaveBeenCalledOnce();
+      expect(result).not.toBe(original);
+      expect(result.name).toBe("photo.jpg");
+      expect(result.type).toBe("image/jpeg");
+      expect(result.lastModified).toBe(123456);
+    }
   });
 
-  it("transcodes non-native formats like HEIC into upright JPEG", async () => {
-    const original = new File(["heic-bytes"], "photo.heic", {
-      type: "image/heic",
-    });
-    const fromImage = makeMockBitmap(1200, 1600);
-    const raw = makeMockBitmap(1200, 1600);
-    const createBitmap = vi
-      .fn()
-      .mockResolvedValueOnce(fromImage)
-      .mockResolvedValueOnce(raw);
-    const { canvas } = makeMockCanvas();
-
-    const result = await normalizeImageForUpload(original, {
-      createBitmap: createBitmap as unknown as typeof createImageBitmap,
-      createCanvas: () => canvas,
-    });
-
-    expect(result).not.toBe(original);
-    expect(result.name).toBe("photo.jpg");
-    expect(result.type).toBe("image/jpeg");
-  });
-
-  it("falls back to original file when createImageBitmap is unavailable or throws", async () => {
-    const original = new File(["raw"], "shot.jpg", { type: "image/jpeg" });
+  it("falls back to original non-native file when createImageBitmap is unavailable or throws", async () => {
+    const original = new File(["raw"], "shot.heic", { type: "image/heic" });
     expect(await normalizeImageForUpload(original)).toBe(original);
 
     const failing = vi.fn().mockRejectedValue(new Error("unsupported"));

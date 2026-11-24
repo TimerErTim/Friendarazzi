@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- Keep vertical mobile camera captures (`capture="environment"`) upright instead of storing rotated landscape images by normalizing browser-decoded orientation before upload and reading multi-APP1 EXIF, non-SHORT TIFF tags, ExifIFD, and XMP orientation on the server.
+- Keep vertical mobile camera captures (`capture="environment"`) upright instead of storing rotated landscape images by preserving raw native uploads for server-side EXIF/XMP/multi-APP1 orientation normalization and only transcoding non-native browser formats like HEIC/AVIF before upload.
 - Quick-Start deck autofill and slot reroll now guarantee unique rendered prompts per player draft and leave remaining slots empty with guidance if a deck runs out of unused suggestions.
 - Normalize uploaded capture photos and avatars by baking EXIF orientation into pixel data and stripping all EXIF metadata before storage.
 - Offer separate camera capture and gallery picker controls in the tile capture dialog on mobile browsers while keeping drag-and-drop file upload on desktop.

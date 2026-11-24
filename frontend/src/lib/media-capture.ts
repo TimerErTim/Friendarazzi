@@ -81,6 +81,7 @@ const BACKEND_NATIVE_IMAGE_TYPES = new Set([
   "image/png",
   "image/webp",
 ]);
+const NON_NATIVE_IMAGE_EXT_RE = /\.(heic|heif|avif)$/i;
 
 export function computeScaledDimensions(
   width: number,
@@ -108,6 +109,14 @@ function replaceExtension(filename: string, ext: string): string {
   return `${base}${ext}`;
 }
 
+function isBackendNativeImage(file: File): boolean {
+  const mime = file.type.toLowerCase();
+  if (mime !== "") {
+    return BACKEND_NATIVE_IMAGE_TYPES.has(mime);
+  }
+  return !NON_NATIVE_IMAGE_EXT_RE.test(file.name);
+}
+
 function canvasToBlob(
   canvas: HTMLCanvasElement,
   mimeType: string,
@@ -119,15 +128,18 @@ function canvasToBlob(
 }
 
 /**
- * Bake browser-applied orientation into pixel data when the browser rotates a
- * sensor-landscape photo (`capture="environment"` portrait shots) or when the
- * source format (e.g. HEIC) needs transcoding before upload. Falls back to the
- * original file untouched so backend EXIF/XMP handling stays intact.
+ * Pass backend-native files (JPEG/PNG/WebP) through untouched so the server
+ * receives genuine raw camera bytes and EXIF/XMP metadata, while transcoding
+ * browser-only formats like HEIC/AVIF into an upright JPEG capped at 1600px.
  */
 export async function normalizeImageForUpload(
   file: File,
   deps?: NormalizeImageDeps,
 ): Promise<File> {
+  if (isBackendNativeImage(file)) {
+    return file;
+  }
+
   const createBitmap =
     deps?.createBitmap ??
     (typeof createImageBitmap === "function" ? createImageBitmap : undefined);
@@ -141,27 +153,10 @@ export async function normalizeImageForUpload(
     return file;
   }
 
-  let fromImage: ImageBitmap | null = null;
-  let raw: ImageBitmap | null = null;
+  let bitmap: ImageBitmap | null = null;
   try {
-    fromImage = await createBitmap(file, { imageOrientation: "from-image" });
-    try {
-      raw = await createBitmap(file, { imageOrientation: "none" });
-    } catch {
-      raw = null;
-    }
-
-    const mime = file.type.toLowerCase();
-    const browserRotated =
-      raw !== null &&
-      (fromImage.width !== raw.width || fromImage.height !== raw.height);
-    const needsTranscode = mime !== "" && !BACKEND_NATIVE_IMAGE_TYPES.has(mime);
-
-    if (!browserRotated && !needsTranscode) {
-      return file;
-    }
-
-    const target = computeScaledDimensions(fromImage.width, fromImage.height);
+    bitmap = await createBitmap(file, { imageOrientation: "from-image" });
+    const target = computeScaledDimensions(bitmap.width, bitmap.height);
     const canvas = createCanvas();
     canvas.width = target.width;
     canvas.height = target.height;
@@ -170,22 +165,22 @@ export async function normalizeImageForUpload(
       return file;
     }
 
-    ctx.drawImage(fromImage, 0, 0, target.width, target.height);
-    const outputMime = mime === "image/png" ? "image/png" : "image/jpeg";
-    const blob = await canvasToBlob(canvas, outputMime, 0.92);
+    ctx.drawImage(bitmap, 0, 0, target.width, target.height);
+    bitmap.close();
+    bitmap = null;
+
+    const blob = await canvasToBlob(canvas, "image/jpeg", 0.92);
     if (!blob) {
       return file;
     }
 
-    const ext = outputMime === "image/png" ? ".png" : ".jpg";
-    return new File([blob], replaceExtension(file.name, ext), {
-      type: outputMime,
+    return new File([blob], replaceExtension(file.name, ".jpg"), {
+      type: "image/jpeg",
       lastModified: file.lastModified,
     });
   } catch {
     return file;
   } finally {
-    fromImage?.close();
-    raw?.close();
+    bitmap?.close();
   }
 }

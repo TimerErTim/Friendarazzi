@@ -40,6 +40,7 @@ futures = { workspace = true }
 pollster = { version = "0.4.0", features = ["macro"] }
 bon = { workspace = true }
 friendarazzi-fakes = { path = "../friendarazzi-fakes" }
+friendarazzi-scheduler = { path = "../../backend/scheduler", default-features = false }
 test-log = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
 tracing-subscriber = { workspace = true }

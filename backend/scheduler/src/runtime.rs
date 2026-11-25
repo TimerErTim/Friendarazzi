@@ -1,6 +1,5 @@
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
 
 use ::scheduler::{
     InMemoryStateStore, Scheduler, SchedulerConfig, SchedulerError, SchedulerHandle,
@@ -8,7 +7,6 @@ use ::scheduler::{
 };
 use chrono_tz::Tz;
 use friendarazzi_core::App;
-use friendarazzi_core::domain::READY_GRACE_PERIOD_SECONDS;
 use tracing::info;
 
 use crate::jobs::run;
@@ -17,14 +15,12 @@ use crate::observer::TracingObserver;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FriendarazziSchedulerConfig {
     pub timezone: Tz,
-    pub grace_period: Duration,
 }
 
 impl Default for FriendarazziSchedulerConfig {
     fn default() -> Self {
         Self {
             timezone: chrono_tz::Europe::Vienna,
-            grace_period: Duration::from_secs(READY_GRACE_PERIOD_SECONDS as u64),
         }
     }
 }
@@ -66,12 +62,8 @@ impl<S: StateStore + Send + Sync + 'static> FriendarazziScheduler<S> {
         };
         let scheduler = Scheduler::with_observer(scheduler_config, self.store, TracingObserver);
         let handle = scheduler.handle();
-        info!(
-            timezone = %config.timezone,
-            grace_period = ?config.grace_period,
-            "starting friendarazzi scheduler"
-        );
-        (handle, run(scheduler, self.app, config.grace_period))
+        info!(timezone = %config.timezone, "starting friendarazzi scheduler");
+        (handle, run(scheduler, self.app))
     }
 
     pub fn start(self, config: FriendarazziSchedulerConfig) -> SchedulerFuture {

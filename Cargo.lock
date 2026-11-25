@@ -1193,6 +1193,7 @@ dependencies = [
  "error-stack",
  "friendarazzi-core",
  "friendarazzi-fakes",
+ "friendarazzi-scheduler",
  "futures",
  "libsql",
  "molting",

@@ -101,20 +101,32 @@ async fn main() -> Result<(), Report<SchedulerMainError>> {
         ))
         .build();
 
-    let join = tokio::spawn(FriendarazziScheduler::new(app).state_store(store).start(
-        FriendarazziSchedulerConfig {
+    let (handle, fut) = FriendarazziScheduler::new(app)
+        .state_store(store)
+        .start_with_handle(FriendarazziSchedulerConfig {
             timezone: cli.timezone,
-            ..FriendarazziSchedulerConfig::default()
-        },
-    ));
+        });
+    let mut join = tokio::spawn(fut);
 
     info!("friendarazzi-scheduler running");
     tokio::signal::ctrl_c()
         .await
         .change_context(SchedulerMainError)
         .attach_opaque("ctrl+c signal handling")?;
-    join.abort();
-    let _ = join.await;
+    handle.shutdown();
+
+    tokio::select! {
+        res = &mut join => {
+            if let Ok(Err(err)) = res {
+                tracing::error!(?err, "friendarazzi-scheduler exited with error");
+            }
+        }
+        () = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
+            join.abort();
+            let _ = join.await;
+            info!("friendarazzi-scheduler aborted after shutdown grace timeout");
+        }
+    }
     info!("friendarazzi-scheduler stopped");
     Ok(())
 }

@@ -41,7 +41,7 @@ impl EventQueue for BlockingEventQueue {
                 return Err(error_stack::Report::new(EventQueueError::Unavailable));
             };
             if let Err(err) = handle_event(&app, event).await {
-                error!(err, "queued event execution failed");
+                error!(?err, "queued event execution failed");
             } else {
                 debug!("queued event completed");
             }
@@ -144,7 +144,7 @@ fn worker_loop(app: WeakApp, mut rx: UnboundedReceiver<Event>, worker_index: usi
                         };
                         in_flight.push(Box::pin(async move {
                             if let Err(err) = handle_event(&app_ref, event).await {
-                                error!(err, "failed to dispatch event");
+                                error!(?err, "failed to dispatch event");
                             }
                         }));
                     }

@@ -323,7 +323,9 @@ async fn process_claimed_row(
 
     let outcome = async {
         debug!("processing claimed sqlite event");
-        handle_event(app, event).await
+        handle_event(app, event)
+            .await
+            .map_err(|err| format!("{err:?}"))
     }
     .instrument(span)
     .await;

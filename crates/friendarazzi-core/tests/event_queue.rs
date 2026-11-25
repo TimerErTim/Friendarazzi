@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use error_stack::Report;
 use friendarazzi_core::{
@@ -6,10 +6,10 @@ use friendarazzi_core::{
     adapters::BlockingEventQueue,
     application::{AuthContext, IdentityProviderConfiguration},
     domain::{BenutzerId, CaptureId, GameId},
-    ports::{EventQueue, EventQueueError, RepositoryError},
+    ports::RepositoryError,
     service::{CaptureUploaded, Event, handle_event},
 };
-use friendarazzi_fakes::FakeUnitOfWorkProvider;
+use friendarazzi_fakes::{FakeUnitOfWorkProvider, RecordingEventQueue};
 use uuid::Uuid;
 
 fn sample_event() -> CaptureUploaded {
@@ -17,30 +17,6 @@ fn sample_event() -> CaptureUploaded {
         game_id: GameId(Uuid::new_v4()),
         capture_id: CaptureId(Uuid::new_v4()),
         uploader_id: BenutzerId(Uuid::new_v4()),
-    }
-}
-
-struct RecordingEventQueue {
-    batches: Mutex<Vec<Vec<Event>>>,
-}
-
-impl RecordingEventQueue {
-    fn new() -> Self {
-        Self {
-            batches: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn total_events(&self) -> usize {
-        self.batches.lock().unwrap().iter().map(Vec::len).sum()
-    }
-}
-
-#[async_trait::async_trait]
-impl EventQueue for RecordingEventQueue {
-    async fn enqueue(&self, events: Vec<Event>) -> Result<(), Report<EventQueueError>> {
-        self.batches.lock().unwrap().push(events);
-        Ok(())
     }
 }
 

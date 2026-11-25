@@ -1,4 +1,5 @@
 use chrono::Duration;
+use friendarazzi_core::{application::AuthContext, service::StartReadyGames};
 use poem::http::StatusCode;
 use serde_json::json;
 
@@ -267,7 +268,7 @@ async fn e2e_reversible_ready_grace_period_and_summary_progress() {
             )
             .await;
         assert_eq!(st, StatusCode::OK);
-        assert!(locked["autoStartAt"].is_null());
+        assert!(locked["draftClosesAt"].is_null());
     }
 
     // Carol still needs action on /api/games summary before locking.
@@ -289,7 +290,7 @@ async fn e2e_reversible_ready_grace_period_and_summary_progress() {
         .await;
     assert_eq!(st, StatusCode::OK);
     assert_eq!(countdown["status"], "Drafting");
-    assert!(countdown["autoStartAt"].is_string());
+    assert!(countdown["draftClosesAt"].is_string());
 
     // After 59s, still Drafting.
     harness.vorspulen(Duration::seconds(59));
@@ -311,7 +312,7 @@ async fn e2e_reversible_ready_grace_period_and_summary_progress() {
         .await;
     assert_eq!(st, StatusCode::OK, "{unlocked}");
     assert_eq!(unlocked["status"], "Drafting");
-    assert!(unlocked["autoStartAt"].is_null());
+    assert!(unlocked["draftClosesAt"].is_null());
     assert_eq!(unlocked["myDrafts"].as_array().unwrap().len(), 9);
 
     // Carol re-locks -> starts fresh 60s countdown.
@@ -324,7 +325,7 @@ async fn e2e_reversible_ready_grace_period_and_summary_progress() {
         )
         .await;
     assert_eq!(st, StatusCode::OK);
-    assert!(relocked["autoStartAt"].is_string());
+    assert!(relocked["draftClosesAt"].is_string());
 
     harness.vorspulen(Duration::seconds(59));
     let (st, still_drafting) = harness
@@ -334,8 +335,22 @@ async fn e2e_reversible_ready_grace_period_and_summary_progress() {
     assert_eq!(st, StatusCode::OK);
     assert_eq!(still_drafting["status"], "Drafting");
 
-    // Full minute expires -> transitions to Active and unlock is now Conflict.
+    // Full minute expires: GET stays read-only until StartReadyGames (scheduler) runs.
     harness.vorspulen(Duration::seconds(1));
+    let (st, unstarted) = harness
+        .client
+        .get_json_auth(&format!("/api/games/{game_id}"), &t_bob)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(unstarted["status"], "Drafting");
+
+    harness
+        .client
+        .app()
+        .execute(AuthContext::Anonymous, StartReadyGames)
+        .await
+        .unwrap();
+
     let (st, active) = harness
         .client
         .get_json_auth(&format!("/api/games/{game_id}"), &t_bob)

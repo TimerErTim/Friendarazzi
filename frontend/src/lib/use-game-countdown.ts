@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { remainingCountdownSeconds } from "@/lib/game-overview";
 
 export function useGameCountdown(
-  autoStartAt: string | null | undefined,
+  draftClosesAt: string | null | undefined,
   serverNow: string | null | undefined,
   dataUpdatedAt: number,
   onExpire?: () => void,
@@ -16,7 +16,7 @@ export function useGameCountdown(
   onExpireRef.current = onExpire;
 
   useEffect(() => {
-    if (!autoStartAt) {
+    if (!draftClosesAt) {
       firedForRef.current = null;
       return;
     }
@@ -25,20 +25,24 @@ export function useGameCountdown(
       setNowMs(Date.now());
     }, 250);
     return () => clearInterval(timer);
-  }, [autoStartAt]);
+  }, [draftClosesAt]);
 
   const remaining = remainingCountdownSeconds(
-    autoStartAt,
+    draftClosesAt,
     serverNow,
     dataUpdatedAt > 0 ? nowMs - dataUpdatedAt : 0,
   );
 
   useEffect(() => {
-    if (autoStartAt && remaining === 0 && firedForRef.current !== autoStartAt) {
-      firedForRef.current = autoStartAt;
+    if (
+      draftClosesAt &&
+      remaining === 0 &&
+      firedForRef.current !== draftClosesAt
+    ) {
+      firedForRef.current = draftClosesAt;
       onExpireRef.current?.();
     }
-  }, [autoStartAt, remaining]);
+  }, [draftClosesAt, remaining]);
 
   return remaining;
 }

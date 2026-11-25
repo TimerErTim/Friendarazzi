@@ -8,7 +8,8 @@ repository.workspace = true
 
 [dependencies]
 friendarazzi-core = { path = "../../crates/friendarazzi-core" }
-friendarazzi-sqlite = { path = "../../crates/friendarazzi-sqlite", features = ["event-queue", "scheduler"] }
+friendarazzi-sqlite = { path = "../../crates/friendarazzi-sqlite", features = ["event-queue", "job_store"] }
+friendarazzi-scheduler = { path = "../scheduler", default-features = false }
 friendarazzi-api = { path = "../../crates/friendarazzi-api" }
 friendarazzi-filesystemstore = { path = "../../crates/friendarazzi-filesystemstore" }
 friendarazzi-smtp = { path = "../../crates/friendarazzi-smtp" }

@@ -153,7 +153,7 @@ pub struct GameSummary {
     /// Whether the caller currently has a pending action (e.g. start drafting or lock prompts).
     pub needs_action: bool,
     /// Shared countdown deadline once all players are ready during Drafting.
-    pub auto_start_at: Option<DateTime<Utc>>,
+    pub draft_closes_at: Option<DateTime<Utc>>,
     /// Server clock timestamp when this summary was generated.
     pub server_now: DateTime<Utc>,
     /// Winner badge if completed.
@@ -190,7 +190,7 @@ pub struct GameDetail {
     /// Playable tile count per player.
     pub playable_tile_count: u32,
     /// Shared countdown deadline once all players are ready during Drafting.
-    pub auto_start_at: Option<DateTime<Utc>>,
+    pub draft_closes_at: Option<DateTime<Utc>>,
     /// Server clock timestamp when this detail was generated.
     pub server_now: DateTime<Utc>,
     /// Timestamp when active play started.

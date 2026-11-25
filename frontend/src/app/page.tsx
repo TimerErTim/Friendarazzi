@@ -847,7 +847,7 @@ function ActiveGameCard({
   dataUpdatedAt: number;
 }) {
   const countdownSeconds = useGameCountdown(
-    game.autoStartAt,
+    game.draftClosesAt,
     game.serverNow,
     dataUpdatedAt,
   );

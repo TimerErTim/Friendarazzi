@@ -197,7 +197,7 @@ pub mod state {
     pub struct Drafting {
         pub prompts: Vec<PromptSubmission>,
         pub draft_locked: HashSet<BenutzerId>,
-        pub auto_start_at: Option<DateTime<Utc>>,
+        pub draft_closes_at: Option<DateTime<Utc>>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -483,7 +483,7 @@ impl LobbyGame {
             state: state::Drafting {
                 prompts: Vec::new(),
                 draft_locked: HashSet::new(),
-                auto_start_at: None,
+                draft_closes_at: None,
             },
         })
     }
@@ -510,8 +510,8 @@ impl DraftingGame {
         self.state.draft_locked.contains(&user_id)
     }
 
-    pub fn auto_start_at(&self) -> Option<DateTime<Utc>> {
-        self.state.auto_start_at
+    pub fn draft_closes_at(&self) -> Option<DateTime<Utc>> {
+        self.state.draft_closes_at
     }
 
     pub fn all_players_locked(&self) -> bool {
@@ -521,7 +521,7 @@ impl DraftingGame {
     }
 
     pub fn is_ready_to_start(&self, now: DateTime<Utc>) -> bool {
-        self.all_players_locked() && self.state.auto_start_at.is_some_and(|t| now >= t)
+        self.all_players_locked() && self.state.draft_closes_at.is_some_and(|t| now >= t)
     }
 
     /// Replace all prompts authored by `author`, unlock their draft, and cancel any pending countdown.
@@ -549,7 +549,7 @@ impl DraftingGame {
         self.state.prompts.retain(|p| p.author_user_id != author);
         self.state.prompts.extend(submissions);
         self.state.draft_locked.remove(&author);
-        self.state.auto_start_at = None;
+        self.state.draft_closes_at = None;
         Ok(())
     }
 
@@ -583,8 +583,8 @@ impl DraftingGame {
         )?;
 
         self.state.draft_locked.insert(author);
-        if self.all_players_locked() && self.state.auto_start_at.is_none() {
-            self.state.auto_start_at =
+        if self.all_players_locked() && self.state.draft_closes_at.is_none() {
+            self.state.draft_closes_at =
                 Some(now + chrono::Duration::seconds(READY_GRACE_PERIOD_SECONDS));
         }
         Ok(())
@@ -603,7 +603,7 @@ impl DraftingGame {
             return Err(Report::new(GameError::InvalidStateTransition));
         }
         self.state.draft_locked.remove(&author);
-        self.state.auto_start_at = None;
+        self.state.draft_closes_at = None;
         Ok(())
     }
 
@@ -1126,14 +1126,14 @@ mod tests {
         }
 
         drafting.lock_author_prompts(players[0], now).unwrap();
-        assert!(drafting.auto_start_at().is_none());
+        assert!(drafting.draft_closes_at().is_none());
         drafting.lock_author_prompts(players[1], now).unwrap();
-        assert!(drafting.auto_start_at().is_none());
+        assert!(drafting.draft_closes_at().is_none());
 
         // Last player locks: enters 60s grace period rather than starting immediately.
         drafting.lock_author_prompts(players[2], now).unwrap();
         assert_eq!(
-            drafting.auto_start_at(),
+            drafting.draft_closes_at(),
             Some(now + chrono::Duration::seconds(READY_GRACE_PERIOD_SECONDS))
         );
         assert!(!drafting.is_ready_to_start(now + chrono::Duration::seconds(59)));
@@ -1143,7 +1143,7 @@ mod tests {
         drafting
             .unlock_author_prompts(players[2], now + chrono::Duration::seconds(30))
             .unwrap();
-        assert!(drafting.auto_start_at().is_none());
+        assert!(drafting.draft_closes_at().is_none());
         assert!(!drafting.is_draft_locked(players[2]));
         assert_eq!(drafting.prompts_by_author(players[2]).len(), 9);
 
@@ -1151,7 +1151,7 @@ mod tests {
         let relock_at = now + chrono::Duration::seconds(40);
         drafting.lock_author_prompts(players[2], relock_at).unwrap();
         assert_eq!(
-            drafting.auto_start_at(),
+            drafting.draft_closes_at(),
             Some(relock_at + chrono::Duration::seconds(READY_GRACE_PERIOD_SECONDS))
         );
         let DraftStartOutcome::StillDrafting(drafting) = drafting

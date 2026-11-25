@@ -13,10 +13,9 @@ use friendarazzi_core::{
     },
     ports::{EventQueue, EventQueueError, RepositoryError},
     service::{
-        CaptureUseCaseError, CreateGame, DelayedGameStart, DraftPromptInput, FinalizeReadyGame,
-        GameUseCaseError, JoinGame, LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts,
-        StartDrafting, StartReadyGames, SubmitCapture, UnlockDraftPrompts, UpdateGameSettings,
-        UpdateProfile, UploadAvatar,
+        CaptureUseCaseError, CreateGame, DraftPromptInput, GameUseCaseError, JoinGame,
+        LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts, StartDrafting, StartReadyGames,
+        SubmitCapture, UnlockDraftPrompts, UpdateGameSettings, UpdateProfile, UploadAvatar,
     },
 };
 use friendarazzi_fakes::png_bytes_for_test;
@@ -604,16 +603,16 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
     let Game::Drafting(d) = countdown_game else {
         panic!("expected drafting with countdown after all players lock");
     };
-    assert!(d.auto_start_at().is_some());
+    assert!(d.draft_closes_at().is_some());
 
-    // Before 60s pass, finalizing leaves the game in Drafting
+    // Before 60s pass, StartReadyGames leaves the game in Drafting
     harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
     let still_waiting = harness
         .app()
-        .execute(alice, FinalizeReadyGame { game_id: game.id() })
+        .execute(AuthContext::Anonymous, StartReadyGames)
         .await
         .unwrap();
-    assert!(matches!(still_waiting, Game::Drafting(_)));
+    assert!(still_waiting.started_games.is_empty());
 
     // Last player withdraws readiness during countdown -> cancels pending start and keeps prompts
     let unlocked = harness
@@ -624,7 +623,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
     let Game::Drafting(d_unlocked) = unlocked else {
         panic!("expected drafting after unlock");
     };
-    assert!(d_unlocked.auto_start_at().is_none());
+    assert!(d_unlocked.draft_closes_at().is_none());
     assert!(!d_unlocked.is_draft_locked(alice_id));
     assert_eq!(d_unlocked.prompts_by_author(alice_id).len(), tiles_needed);
 
@@ -639,18 +638,18 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
     harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 1));
     let still_counting = harness
         .app()
-        .execute(bob, FinalizeReadyGame { game_id: game.id() })
+        .execute(AuthContext::Anonymous, StartReadyGames)
         .await
         .unwrap();
-    assert!(matches!(still_counting, Game::Drafting(_)));
+    assert!(still_counting.started_games.is_empty());
 
     harness.vorspulen(Duration::seconds(1));
-    let active = harness
+    let started = harness
         .app()
-        .execute(bob, FinalizeReadyGame { game_id: game.id() })
+        .execute(AuthContext::Anonymous, StartReadyGames)
         .await
         .unwrap();
-    assert!(matches!(active, Game::Active(_)));
+    assert_eq!(started.started_games, vec![game.id()]);
 
     // Once Active, readiness cannot be withdrawn
     let err = harness
@@ -763,7 +762,7 @@ impl EventQueue for NoopEventQueue {
 }
 
 #[test_log::test(pollster::test)]
-async fn delayed_game_start_event_ignores_stale_countdown_and_activates_current_one() {
+async fn start_ready_games_ignores_superseded_countdown_until_current_expires() {
     let harness = build_with_event_queue(
         super::super::base_app_builder().await,
         Arc::new(NoopEventQueue).into(),
@@ -836,7 +835,7 @@ async fn delayed_game_start_event_ignores_stale_countdown_and_activates_current_
                 panic!("expected drafting");
             };
             uow.finish(
-                Ok::<_, error_stack::Report<RepositoryError>>(d.auto_start_at().unwrap()),
+                Ok::<_, error_stack::Report<RepositoryError>>(d.draft_closes_at().unwrap()),
                 RepositoryError::Unknown,
             )
             .await
@@ -859,50 +858,27 @@ async fn delayed_game_start_event_ignores_stale_countdown_and_activates_current_
     else {
         panic!("expected drafting");
     };
-    let second_start_at = relocked.auto_start_at().unwrap();
+    let second_start_at = relocked.draft_closes_at().unwrap();
     assert!(second_start_at > first_start_at);
 
-    // Advance past both timestamps; stale event must be a no-op because scheduled_for differs.
-    harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
-    harness
+    // Advancing to the superseded deadline is not enough yet.
+    harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 5));
+    let mid = harness
         .app()
-        .execute(
-            AuthContext::Anonymous,
-            DelayedGameStart {
-                game_id,
-                scheduled_for: first_start_at,
-            },
-        )
+        .execute(AuthContext::Anonymous, StartReadyGames)
         .await
         .unwrap();
+    assert!(mid.started_games.is_empty());
+    assert_eq!(mid.next_draft_closes_at, Some(second_start_at));
 
-    let still_drafting = harness
+    // Remaining seconds elapse -> StartReadyGames activates the game and deals boards.
+    harness.vorspulen(Duration::seconds(5));
+    let done = harness
         .app()
-        .execute_fn(alice, async move |ctx| {
-            let uow = ctx.enter().await.unwrap();
-            let loaded = uow.games().find_by_id(game_id).await.unwrap();
-            uow.finish(
-                Ok::<_, error_stack::Report<RepositoryError>>(loaded.into_data()),
-                RepositoryError::Unknown,
-            )
-            .await
-        })
+        .execute(AuthContext::Anonymous, StartReadyGames)
         .await
         .unwrap();
-    assert!(matches!(still_drafting, Game::Drafting(_)));
-
-    // Current event activates the game and deals boards.
-    harness
-        .app()
-        .execute(
-            AuthContext::Anonymous,
-            DelayedGameStart {
-                game_id,
-                scheduled_for: second_start_at,
-            },
-        )
-        .await
-        .unwrap();
+    assert_eq!(done.started_games, vec![game_id]);
 
     let active = harness
         .app()
@@ -1011,7 +987,7 @@ async fn start_ready_games_starts_expired_drafts_and_reports_next_deadline() {
             else {
                 panic!("expected drafting game");
             };
-            (gid, d.auto_start_at().unwrap())
+            (gid, d.draft_closes_at().unwrap())
         }
     };
 
@@ -1027,7 +1003,7 @@ async fn start_ready_games_starts_expired_drafts_and_reports_next_deadline() {
         .await
         .unwrap();
     assert!(before.started_games.is_empty());
-    assert_eq!(before.next_auto_start_at, Some(deadline_a));
+    assert_eq!(before.next_draft_closes_at, Some(deadline_a));
 
     // At T+60s game A expires and starts; game B remains the next pending deadline.
     harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS - 30));
@@ -1037,7 +1013,7 @@ async fn start_ready_games_starts_expired_drafts_and_reports_next_deadline() {
         .await
         .unwrap();
     assert_eq!(mid.started_games, vec![game_a]);
-    assert_eq!(mid.next_auto_start_at, Some(deadline_b));
+    assert_eq!(mid.next_draft_closes_at, Some(deadline_b));
 
     // At T+90s game B expires and starts; no countdowns remain.
     harness.vorspulen(Duration::seconds(30));
@@ -1047,5 +1023,5 @@ async fn start_ready_games_starts_expired_drafts_and_reports_next_deadline() {
         .await
         .unwrap();
     assert_eq!(end.started_games, vec![game_b]);
-    assert_eq!(end.next_auto_start_at, None);
+    assert_eq!(end.next_draft_closes_at, None);
 }

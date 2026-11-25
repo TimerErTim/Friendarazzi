@@ -1,5 +1,3 @@
-#![cfg(feature = "scheduler")]
-
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -21,12 +19,9 @@ use friendarazzi_core::{
     },
 };
 use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
+use friendarazzi_scheduler::{FriendarazziScheduler, FriendarazziSchedulerConfig};
 use friendarazzi_sqlite::SQLiteInstance;
-use friendarazzi_sqlite::scheduler::{
-    FriendarazziScheduler, FriendarazziSchedulerConfig, JobState, SQLiteStateStore, StateStore,
-    next_check_delay,
-};
-use tokio::sync::watch;
+use friendarazzi_sqlite::job_store::SQLiteStateStore;
 use uuid::Uuid;
 
 fn test_time() -> DateTime<Utc> {
@@ -79,59 +74,6 @@ async fn load_game(app: &App, game_id: GameId) -> Game {
     })
     .await
     .unwrap()
-}
-
-#[test]
-fn next_check_delay_uses_remaining_time_or_grace_period() {
-    let now = test_time();
-    let grace = StdDuration::from_secs(60);
-
-    assert_eq!(next_check_delay(now, None, grace), grace);
-    assert_eq!(
-        next_check_delay(now, Some(now - Duration::seconds(5)), grace),
-        StdDuration::ZERO
-    );
-    assert_eq!(next_check_delay(now, Some(now), grace), StdDuration::ZERO);
-    assert_eq!(
-        next_check_delay(now, Some(now + Duration::seconds(12)), grace),
-        StdDuration::from_secs(12)
-    );
-    assert_eq!(
-        next_check_delay(now, Some(now + Duration::seconds(120)), grace),
-        grace
-    );
-}
-
-#[test_log::test(tokio::test)]
-async fn sqlite_state_store_migrates_and_roundtrips_without_domain_tables() {
-    let sqlite = Arc::new(SQLiteInstance::in_temp_dir().await.unwrap());
-    let mut store = SQLiteStateStore::new(Arc::clone(&sqlite));
-
-    store.migrate_to_latest().await.unwrap();
-    store.migrate_to_latest().await.unwrap();
-
-    assert!(store.load("start_ready_games").await.unwrap().is_none());
-
-    let state = JobState {
-        job_id: "start_ready_games".to_owned(),
-        trigger_count: 3,
-        last_run_at: Some(test_time()),
-        last_success_at: Some(test_time()),
-        next_run_at: Some(test_time() + Duration::seconds(30)),
-        last_error: Some("transient".to_owned()),
-    };
-    store.save(&state).await.unwrap();
-
-    let loaded = store.load("start_ready_games").await.unwrap().unwrap();
-    assert_eq!(loaded.job_id, state.job_id);
-    assert_eq!(loaded.trigger_count, state.trigger_count);
-    assert_eq!(loaded.last_run_at, state.last_run_at);
-    assert_eq!(loaded.last_success_at, state.last_success_at);
-    assert_eq!(loaded.next_run_at, state.next_run_at);
-    assert_eq!(loaded.last_error, state.last_error);
-
-    store.delete("start_ready_games").await.unwrap();
-    assert!(store.load("start_ready_games").await.unwrap().is_none());
 }
 
 #[test_log::test(tokio::test)]
@@ -234,20 +176,13 @@ async fn friendarazzi_scheduler_activates_ready_game_and_shuts_down_gracefully()
     ));
     clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
 
-    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-    let worker = tokio::spawn(
-        FriendarazziScheduler::new(app.clone())
-            .state_store(store)
-            .run_until(
-                FriendarazziSchedulerConfig {
-                    grace_period: StdDuration::from_millis(50),
-                    ..FriendarazziSchedulerConfig::default()
-                },
-                async move {
-                    let _ = shutdown_rx.wait_for(|&stopped| stopped).await;
-                },
-            ),
-    );
+    let (handle, fut) = FriendarazziScheduler::new(app.clone())
+        .state_store(store)
+        .start_with_handle(FriendarazziSchedulerConfig {
+            grace_period: StdDuration::from_millis(25),
+            ..FriendarazziSchedulerConfig::default()
+        });
+    let worker = tokio::spawn(fut);
 
     for _ in 0..100 {
         if matches!(load_game(&app, game.id()).await, Game::Active(_)) {
@@ -257,11 +192,136 @@ async fn friendarazzi_scheduler_activates_ready_game_and_shuts_down_gracefully()
     }
     assert!(matches!(load_game(&app, game.id()).await, Game::Active(_)));
 
-    let _ = shutdown_tx.send(true);
-    let report = tokio::time::timeout(StdDuration::from_secs(2), worker)
+    handle.shutdown();
+    tokio::time::timeout(StdDuration::from_secs(2), worker)
         .await
         .expect("scheduler stopped promptly on shutdown")
         .unwrap()
         .unwrap();
-    let _ = report;
+}
+
+#[test_log::test(tokio::test)]
+async fn friendarazzi_scheduler_sleeps_inside_tick_when_deadline_is_within_grace_period() {
+    let sqlite = Arc::new(SQLiteInstance::in_temp_dir().await.unwrap());
+    sqlite.migrate_repos_to_latest().await.unwrap();
+    let mut store = SQLiteStateStore::new(Arc::clone(&sqlite));
+    store.migrate_to_latest().await.unwrap();
+
+    let clock = Arc::new(FixedClock::new(test_time()));
+    let mail = Arc::new(FakeMailSender::new());
+
+    let app = App::builder()
+        .uow_provider(Box::new(Arc::clone(&sqlite)))
+        .signing(Arc::new(InMemorySigning::from_secret_bytes(&[7u8; 32])))
+        .throttle(Arc::new(InMemoryThrottle::new()))
+        .mail_sender(Arc::clone(&mail) as Arc<dyn friendarazzi_core::ports::MailSender>)
+        .konto(IdentityProviderConfiguration::neu(
+            "friendarazzi.app",
+            "friendarazzi-api",
+        ))
+        .clock(Arc::clone(&clock) as Arc<dyn Clock>)
+        .rng(Arc::new(FixedRng::default()))
+        .build();
+
+    let alice = register(&app, &mail, "sched-sleep-a@example.com").await;
+    let bob = register(&app, &mail, "sched-sleep-b@example.com").await;
+    let carol = register(&app, &mail, "sched-sleep-c@example.com").await;
+
+    let game = app
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Sleep Window Game").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+            },
+        )
+        .await
+        .unwrap();
+    for guest in [bob, carol] {
+        clock.advance_by(Duration::seconds(1));
+        app.execute(
+            guest,
+            JoinGame {
+                invite_code: game.invite_code().clone(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let drafted = app
+        .execute(alice, StartDrafting { game_id: game.id() })
+        .await
+        .unwrap();
+    let player_ids: Vec<_> = [alice, bob, carol]
+        .into_iter()
+        .map(|auth| match auth {
+            AuthContext::Authenticated { benutzer_id, .. } => benutzer_id,
+            AuthContext::Anonymous => unreachable!(),
+        })
+        .collect();
+    let tiles_needed = drafted.playable_tile_count();
+    let mut next_num = 1;
+    for auth in [alice, bob, carol] {
+        let self_id = match auth {
+            AuthContext::Authenticated { benutzer_id, .. } => benutzer_id,
+            AuthContext::Anonymous => unreachable!(),
+        };
+        let mut prompts = Vec::new();
+        for (target_user_id, count) in
+            target_quotas_for_author(&player_ids, self_id, tiles_needed).unwrap()
+        {
+            for _ in 0..count {
+                prompts.push(DraftPromptInput {
+                    target_user_id,
+                    text: NonEmptyString::neu(format!("Sleep prompt {next_num}")).unwrap(),
+                    source: PromptSource::Custom,
+                });
+                next_num += 1;
+            }
+        }
+        app.execute(
+            auth,
+            SaveDraftPrompts {
+                game_id: game.id(),
+                prompts,
+            },
+        )
+        .await
+        .unwrap();
+        app.execute(auth, LockDraftPrompts { game_id: game.id() })
+            .await
+            .unwrap();
+    }
+
+    // Leave 60ms before expiry inside a 200ms interval tick so the task sleeps in-place.
+    clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS) - Duration::milliseconds(60));
+    let advancer_clock = Arc::clone(&clock);
+    tokio::spawn(async move {
+        tokio::time::sleep(StdDuration::from_millis(220)).await;
+        advancer_clock.advance_by(Duration::milliseconds(60));
+    });
+
+    let (handle, fut) = FriendarazziScheduler::new(app.clone())
+        .state_store(store)
+        .start_with_handle(FriendarazziSchedulerConfig {
+            grace_period: StdDuration::from_millis(200),
+            ..FriendarazziSchedulerConfig::default()
+        });
+    let worker = tokio::spawn(fut);
+
+    for _ in 0..100 {
+        if matches!(load_game(&app, game.id()).await, Game::Active(_)) {
+            break;
+        }
+        tokio::time::sleep(StdDuration::from_millis(20)).await;
+    }
+    assert!(matches!(load_game(&app, game.id()).await, Game::Active(_)));
+
+    handle.shutdown();
+    tokio::time::timeout(StdDuration::from_secs(2), worker)
+        .await
+        .expect("scheduler stopped promptly on shutdown")
+        .unwrap()
+        .unwrap();
 }

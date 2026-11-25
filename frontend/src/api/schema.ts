@@ -1971,7 +1971,7 @@ export interface components {
              * Format: date-time
              * @description Shared countdown deadline once all players are ready during Drafting.
              */
-            autoStartAt?: string | null;
+            draftClosesAt?: string | null;
             /**
              * Format: date-time
              * @description Server clock timestamp when this detail was generated.
@@ -2070,7 +2070,7 @@ export interface components {
              * Format: date-time
              * @description Shared countdown deadline once all players are ready during Drafting.
              */
-            autoStartAt?: string | null;
+            draftClosesAt?: string | null;
             /**
              * Format: date-time
              * @description Server clock timestamp when this summary was generated.

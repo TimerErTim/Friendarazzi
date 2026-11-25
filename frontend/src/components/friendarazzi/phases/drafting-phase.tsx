@@ -96,7 +96,7 @@ export function DraftingPhase({
   isLockedRef.current = isLocked;
 
   const countdownSeconds = useGameCountdown(
-    game.autoStartAt,
+    game.draftClosesAt,
     game.serverNow,
     detailUpdatedAt,
     () => {

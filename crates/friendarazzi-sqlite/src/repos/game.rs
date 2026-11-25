@@ -21,7 +21,7 @@ use crate::{
     repos::common::{format_datetime, parse_datetime, parse_uuid, parse_version, update_versioned},
 };
 
-const SELECT_GAME: &str = r#"SELECT id, invite_code, host_user_id, title, grid_size, visibility_mode, status, auto_start_at, started_at, ended_at, winner_user_id, created_at, _version FROM "game""#;
+const SELECT_GAME: &str = r#"SELECT id, invite_code, host_user_id, title, grid_size, visibility_mode, status, draft_closes_at, started_at, ended_at, winner_user_id, created_at, _version FROM "game""#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DbGameStatus {
@@ -65,7 +65,7 @@ fn state_columns(
         Game::Lobby(_) => (DbGameStatus::Lobby.as_str(), None, None, None, None),
         Game::Drafting(d) => (
             DbGameStatus::Drafting.as_str(),
-            d.auto_start_at().map(format_datetime),
+            d.draft_closes_at().map(format_datetime),
             None,
             None,
             None,
@@ -169,7 +169,7 @@ struct GameRow {
     grid_size: u8,
     visibility_mode: String,
     status: DbGameStatus,
-    auto_start_at: Option<DateTime<Utc>>,
+    draft_closes_at: Option<DateTime<Utc>>,
     started_at: Option<DateTime<Utc>>,
     ended_at: Option<DateTime<Utc>>,
     winner_user_id: Option<BenutzerId>,
@@ -185,7 +185,7 @@ fn read_game_row(row: &Row) -> RepositoryResult<GameRow> {
     let grid_size_raw: i64 = row.get(4).contextualize(RepositoryError::Data)?;
     let visibility_mode: String = row.get(5).contextualize(RepositoryError::Data)?;
     let status_raw: String = row.get(6).contextualize(RepositoryError::Data)?;
-    let auto_start_at_raw: Option<String> = row.get(7).contextualize(RepositoryError::Data)?;
+    let draft_closes_at_raw: Option<String> = row.get(7).contextualize(RepositoryError::Data)?;
     let started_at_raw: Option<String> = row.get(8).contextualize(RepositoryError::Data)?;
     let ended_at_raw: Option<String> = row.get(9).contextualize(RepositoryError::Data)?;
     let winner_raw: Option<String> = row.get(10).contextualize(RepositoryError::Data)?;
@@ -200,7 +200,9 @@ fn read_game_row(row: &Row) -> RepositoryResult<GameRow> {
         grid_size: u8::try_from(grid_size_raw).contextualize(RepositoryError::Data)?,
         visibility_mode,
         status: DbGameStatus::parse(&status_raw)?,
-        auto_start_at: auto_start_at_raw.map(|s| parse_datetime(&s)).transpose()?,
+        draft_closes_at: draft_closes_at_raw
+            .map(|s| parse_datetime(&s))
+            .transpose()?,
         started_at: started_at_raw.map(|s| parse_datetime(&s)).transpose()?,
         ended_at: ended_at_raw.map(|s| parse_datetime(&s)).transpose()?,
         winner_user_id: winner_raw
@@ -248,7 +250,7 @@ async fn hydrate_game(tx: &Transaction, row: GameRow) -> RepositoryResult<Versio
                 GameState::Drafting {
                     prompts,
                     draft_locked,
-                    auto_start_at: row.auto_start_at,
+                    draft_closes_at: row.draft_closes_at,
                 },
             )
             .change_context(RepositoryError::Data)?,
@@ -311,12 +313,13 @@ impl GameRepository for SQLiteGameRepository {
     async fn create(&self, game: NewGame) -> RepositoryResult<Versioned<Game>> {
         let id = GameId(Uuid::new_v4());
         let domain = Game::new(id, game);
-        let (status, auto_start_at, started_at, ended_at, winner_user_id) = state_columns(&domain);
+        let (status, draft_closes_at, started_at, ended_at, winner_user_id) =
+            state_columns(&domain);
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"INSERT INTO "game" (id, invite_code, host_user_id, title, grid_size, visibility_mode, status, auto_start_at, started_at, ended_at, winner_user_id, created_at, _version)
+            r#"INSERT INTO "game" (id, invite_code, host_user_id, title, grid_size, visibility_mode, status, draft_closes_at, started_at, ended_at, winner_user_id, created_at, _version)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, 0)"#,
             (
                 id.0.to_string(),
@@ -326,7 +329,7 @@ impl GameRepository for SQLiteGameRepository {
                 i64::from(domain.grid_size() as u8),
                 domain.visibility_mode().as_str(),
                 status,
-                auto_start_at,
+                draft_closes_at,
                 started_at,
                 ended_at,
                 winner_user_id,
@@ -409,7 +412,7 @@ impl GameRepository for SQLiteGameRepository {
 
         let rows = tx
             .query(
-                r#"SELECT g.id, g.invite_code, g.host_user_id, g.title, g.grid_size, g.visibility_mode, g.status, g.auto_start_at, g.started_at, g.ended_at, g.winner_user_id, g.created_at, g._version
+                r#"SELECT g.id, g.invite_code, g.host_user_id, g.title, g.grid_size, g.visibility_mode, g.status, g.draft_closes_at, g.started_at, g.ended_at, g.winner_user_id, g.created_at, g._version
                    FROM "game" g
                    INNER JOIN "game_player" gp ON gp.game_id = g.id
                    WHERE gp.user_id = ?1
@@ -429,7 +432,7 @@ impl GameRepository for SQLiteGameRepository {
         let rows = tx
             .query(
                 &format!(
-                    r#"{SELECT_GAME} WHERE status = ?1 AND auto_start_at IS NOT NULL ORDER BY auto_start_at ASC"#
+                    r#"{SELECT_GAME} WHERE status = ?1 AND draft_closes_at IS NOT NULL ORDER BY draft_closes_at ASC"#
                 ),
                 [DbGameStatus::Drafting.as_str()],
             )
@@ -440,7 +443,7 @@ impl GameRepository for SQLiteGameRepository {
     }
 
     async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()> {
-        let (status, auto_start_at, started_at, ended_at, winner_user_id) = state_columns(game);
+        let (status, draft_closes_at, started_at, ended_at, winner_user_id) = state_columns(game);
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
@@ -448,7 +451,7 @@ impl GameRepository for SQLiteGameRepository {
             tx,
             r#"UPDATE "game"
                SET title = ?2, grid_size = ?3, visibility_mode = ?4, status = ?5,
-                   auto_start_at = ?6, started_at = ?7, ended_at = ?8, winner_user_id = ?9, _version = ?10 + 1
+                   draft_closes_at = ?6, started_at = ?7, ended_at = ?8, winner_user_id = ?9, _version = ?10 + 1
                WHERE id = ?1 AND _version = ?10"#,
             (
                 game.id().0.to_string(),
@@ -456,7 +459,7 @@ impl GameRepository for SQLiteGameRepository {
                 i64::from(game.grid_size() as u8),
                 game.visibility_mode().as_str(),
                 status,
-                auto_start_at,
+                draft_closes_at,
                 started_at,
                 ended_at,
                 winner_user_id,

@@ -234,11 +234,11 @@ impl GameRepository for FakeGameRepository {
             .datastore
             .games()
             .values()
-            .filter(|g| matches!(***g, Game::Drafting(ref d) if d.auto_start_at().is_some()))
+            .filter(|g| matches!(***g, Game::Drafting(ref d) if d.draft_closes_at().is_some()))
             .cloned()
             .collect();
         out.sort_by_key(|g| match &**g {
-            Game::Drafting(d) => d.auto_start_at(),
+            Game::Drafting(d) => d.draft_closes_at(),
             _ => None,
         });
         Ok(out)

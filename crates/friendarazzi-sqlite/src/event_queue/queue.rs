@@ -6,9 +6,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, SecondsFormat, Utc};
 use error_stack::ResultExt;
 use friendarazzi_core::adapters::SystemClock;
-use friendarazzi_core::domain::GameId;
+use friendarazzi_core::domain::{BenutzerId, CaptureId, GameId};
 use friendarazzi_core::ports::{Clock, EventQueue, EventQueueError};
-use friendarazzi_core::service::{DelayedGameStart, Event};
+use friendarazzi_core::service::{CaptureUploaded, Event};
 use friendarazzi_core::{ErrorReportExt, ResultReport};
 use molting::{AppliableMigration, MigrationTarget};
 use serde::{Deserialize, Serialize};
@@ -32,18 +32,20 @@ pub enum SqliteEventQueueError {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 enum PersistedEvent {
-    DelayedGameStart {
+    CaptureUploaded {
         game_id: Uuid,
-        scheduled_for: DateTime<Utc>,
+        capture_id: Uuid,
+        uploader_id: Uuid,
     },
 }
 
 impl From<&Event> for PersistedEvent {
     fn from(event: &Event) -> Self {
         match event {
-            Event::DelayedGameStart(ev) => Self::DelayedGameStart {
+            Event::CaptureUploaded(ev) => Self::CaptureUploaded {
                 game_id: ev.game_id.0,
-                scheduled_for: ev.scheduled_for,
+                capture_id: ev.capture_id.0,
+                uploader_id: ev.uploader_id.0,
             },
         }
     }
@@ -52,12 +54,14 @@ impl From<&Event> for PersistedEvent {
 impl From<PersistedEvent> for Event {
     fn from(persisted: PersistedEvent) -> Self {
         match persisted {
-            PersistedEvent::DelayedGameStart {
+            PersistedEvent::CaptureUploaded {
                 game_id,
-                scheduled_for,
-            } => Event::DelayedGameStart(Box::new(DelayedGameStart {
+                capture_id,
+                uploader_id,
+            } => Event::CaptureUploaded(Box::new(CaptureUploaded {
                 game_id: GameId(game_id),
-                scheduled_for,
+                capture_id: CaptureId(capture_id),
+                uploader_id: BenutzerId(uploader_id),
             })),
         }
     }

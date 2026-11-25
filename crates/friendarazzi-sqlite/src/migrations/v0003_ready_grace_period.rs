@@ -11,12 +11,12 @@ impl UpMigration<libsql::Transaction, libsql::Error> for Migration {
     }
 
     fn description(&self) -> Option<&'static str> {
-        Some("Add auto_start_at countdown deadline column to game")
+        Some("Add draft_closes_at countdown deadline column to game")
     }
 
     async fn up(&self, transaction: &mut libsql::Transaction) -> Result<(), libsql::Error> {
         transaction
-            .execute_batch(r#"ALTER TABLE "game" ADD COLUMN auto_start_at TEXT;"#)
+            .execute_batch(r#"ALTER TABLE "game" ADD COLUMN draft_closes_at TEXT;"#)
             .await?;
         Ok(())
     }

@@ -1,8 +1,6 @@
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
 
-use futures::channel::oneshot;
 use tracing::{error, instrument};
 
 use crate::adapters::{
@@ -14,7 +12,7 @@ use crate::application::instrumented::InstrumentedEventQueue;
 use crate::ports::{
     Clock, EventQueue, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle,
 };
-use crate::service::{Event, UseCase};
+use crate::service::UseCase;
 use crate::uow::UnitOfWorkProvider;
 
 pub mod uow;
@@ -38,82 +36,17 @@ pub use errors::ErrorReportExt;
 pub use errors::ResultReport;
 pub use errors::ThreadSafeError;
 
-#[derive(Clone, Default)]
-pub(crate) struct ShutdownSignal {
-    inner: Arc<ShutdownInner>,
-}
-
-#[derive(Default)]
-struct ShutdownInner {
-    cancelled: AtomicBool,
-    waiters: Mutex<Vec<oneshot::Sender<()>>>,
-}
-
-impl ShutdownSignal {
-    pub(crate) fn cancel(&self) {
-        if !self.inner.cancelled.swap(true, Ordering::SeqCst) {
-            let waiters = std::mem::take(
-                &mut *self
-                    .inner
-                    .waiters
-                    .lock()
-                    .expect("shutdown waiters mutex poisoned"),
-            );
-            for tx in waiters {
-                let _ = tx.send(());
-            }
-        }
-    }
-
-    pub(crate) fn is_cancelled(&self) -> bool {
-        self.inner.cancelled.load(Ordering::SeqCst)
-    }
-
-    pub(crate) async fn notified(&self) {
-        let rx = {
-            let mut waiters = self
-                .inner
-                .waiters
-                .lock()
-                .expect("shutdown waiters mutex poisoned");
-            if self.inner.cancelled.load(Ordering::SeqCst) {
-                return;
-            }
-            let (tx, rx) = oneshot::channel();
-            waiters.push(tx);
-            rx
-        };
-        let _ = rx.await;
-    }
-}
-
-struct AppDropGuard(ShutdownSignal);
-
-impl Drop for AppDropGuard {
-    fn drop(&mut self) {
-        self.0.cancel();
-    }
-}
-
 /// Weak handle to an [`App`] used by in-process adapters (such as the core event queues)
 /// that live inside `App` and execute queued work back onto it without creating an `Arc`
 /// reference cycle.
 #[derive(Clone, Default)]
 pub struct WeakApp {
     inner: Weak<AppInner>,
-    shutdown: ShutdownSignal,
 }
 
 impl WeakApp {
-    pub(crate) fn upgrade_inner(&self) -> Option<Arc<AppInner>> {
-        if self.shutdown.is_cancelled() {
-            return None;
-        }
-        self.inner.upgrade()
-    }
-
-    pub(crate) fn shutdown_signal(&self) -> &ShutdownSignal {
-        &self.shutdown
+    pub fn upgrade(&self) -> Option<App> {
+        self.inner.upgrade().map(|inner| App { inner })
     }
 }
 
@@ -209,15 +142,6 @@ impl AppInner {
         result
     }
 
-    pub(crate) async fn dispatch_event(&self, event: Event) -> Result<(), String> {
-        match event {
-            Event::DelayedGameStart(event) => self
-                .execute(AuthContext::Anonymous, *event)
-                .await
-                .map_err(|err| format!("{err:?}")),
-        }
-    }
-
     fn new_execution_context(&self, auth: AuthContext) -> ExecutionContext<'_> {
         ExecutionContext::root(
             self.uow_provider.as_ref(),
@@ -250,7 +174,6 @@ impl AppInner {
 #[derive(Clone)]
 pub struct App {
     inner: Arc<AppInner>,
-    _drop_guard: Arc<AppDropGuard>,
 }
 
 impl Deref for App {
@@ -278,11 +201,9 @@ impl App {
         #[builder(default = Arc::new(BlankPdfRenderer))] pdf_renderer: Arc<dyn PdfRenderer>,
         #[builder(into)] event_queue: Option<EventQueueInit>,
     ) -> Self {
-        let shutdown = ShutdownSignal::default();
         let inner = Arc::new_cyclic(|weak| {
             let weak_app = WeakApp {
                 inner: weak.clone(),
-                shutdown: shutdown.clone(),
             };
             let raw_queue = match event_queue {
                 Some(init) => init.build(weak_app),
@@ -301,10 +222,7 @@ impl App {
                 event_queue: InstrumentedEventQueue::new(raw_queue),
             }
         });
-        Self {
-            inner,
-            _drop_guard: Arc::new(AppDropGuard(shutdown)),
-        }
+        Self { inner }
     }
 }
 
@@ -328,11 +246,5 @@ impl App {
         for<'a> F: AsyncFnOnce(ExecutionContext<'a>) -> ResultReport<O, E> + Send,
     {
         self.inner.execute_fn(auth, f).await
-    }
-
-    /// Execute a deserialized [`Event`] directly against [`App`] (used by external
-    /// event queue workers such as `SqliteEventQueue`).
-    pub async fn handle_event(&self, event: Event) -> Result<(), String> {
-        self.inner.dispatch_event(event).await
     }
 }

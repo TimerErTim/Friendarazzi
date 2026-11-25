@@ -15,9 +15,8 @@ use friendarazzi_core::{
     },
     ports::{ClientKey, Clock, RepositoryError, Signing},
     service::{
-        CreateGame, DraftPromptInput, FinalizeReadyGame, JoinGame, LockDraftPrompts,
-        RegistrierungAbschließen, RegistrierungStarten, SaveDraftPrompts, SessionPrüfen,
-        StartDrafting,
+        CreateGame, DraftPromptInput, JoinGame, LockDraftPrompts, RegistrierungAbschließen,
+        RegistrierungStarten, SaveDraftPrompts, SessionPrüfen, StartDrafting, StartReadyGames,
     },
 };
 use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
@@ -258,9 +257,24 @@ pub async fn setup_active_game(
     }
     assert!(matches!(last_state, Game::Drafting(_)));
     harness.vorspulen(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
+    let outcome = harness
+        .app()
+        .execute(AuthContext::Anonymous, StartReadyGames)
+        .await
+        .unwrap();
+    assert_eq!(outcome.started_games, vec![game.id()]);
+    let game_id = game.id();
     let active_state = harness
         .app()
-        .execute(host, FinalizeReadyGame { game_id: game.id() })
+        .execute_fn(host, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let loaded = uow.games().find_by_id(game_id).await.unwrap();
+            uow.finish(
+                Ok::<_, error_stack::Report<RepositoryError>>(loaded.into_data()),
+                RepositoryError::Unknown,
+            )
+            .await
+        })
         .await
         .unwrap();
     assert!(matches!(active_state, Game::Active(_)));

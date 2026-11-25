@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use error_stack::ResultExt;
-use friendarazzi_core::{App, ErrorReportExt, ResultReport};
+use friendarazzi_core::{App, ErrorReportExt, ResultReport, service::handle_event};
 use futures::FutureExt;
 use tokio::task::JoinSet;
 use tracing::{Instrument, debug, error, info, info_span, trace, warn};
@@ -53,10 +53,9 @@ enum TaskOutcome {
 
 /// Run the SQLite event queue worker in the background until `shutdown` resolves.
 ///
-/// Claimed events execute concurrently so handlers that wait until a deadline (such as
-/// `DelayedGameStart`) do not block other events. On shutdown, active handlers are given
-/// a short grace period to finish; any still-sleeping handlers are cancelled and reset to
-/// `'pending'` so they resume cleanly on the next startup.
+/// Claimed events execute concurrently. On shutdown, active handlers are given a short
+/// grace period to finish; any incomplete handlers are cancelled and reset to `'pending'`
+/// so they resume cleanly on the next startup.
 pub async fn run(
     queue: Arc<SqliteEventQueue>,
     app: App,
@@ -324,7 +323,7 @@ async fn process_claimed_row(
 
     let outcome = async {
         debug!("processing claimed sqlite event");
-        app.handle_event(event).await
+        handle_event(app, event).await
     }
     .instrument(span)
     .await;

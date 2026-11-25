@@ -1114,6 +1114,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "friendarazzi-scheduler"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "cloudiful-scheduler",
+ "error-stack",
+ "friendarazzi-core",
+ "friendarazzi-fakes",
+ "friendarazzi-filesystemstore",
+ "friendarazzi-sqlite",
+ "test-log",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "friendarazzi-server"
 version = "0.1.0"
 dependencies = [
@@ -1124,6 +1145,7 @@ dependencies = [
  "friendarazzi-api",
  "friendarazzi-core",
  "friendarazzi-filesystemstore",
+ "friendarazzi-scheduler",
  "friendarazzi-smtp",
  "friendarazzi-sqlite",
  "opentelemetry",
@@ -1168,7 +1190,6 @@ dependencies = [
  "async-trait",
  "bon",
  "chrono",
- "chrono-tz",
  "cloudiful-scheduler",
  "error-stack",
  "friendarazzi-core",

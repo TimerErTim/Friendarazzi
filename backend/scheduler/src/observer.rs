@@ -147,8 +147,6 @@ impl SchedulerObserver for TracingObserver {
                 trigger_count,
                 renewal_count,
                 failed_renewal_count,
-                catch_up,
-                trigger_count,
                 error,
                 "scheduler execution guard renew failed"
             ),

@@ -526,67 +526,6 @@ impl UseCase<Game> for UnlockDraftPrompts {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct FinalizeReadyGame {
-    pub game_id: GameId,
-}
-
-#[async_trait]
-impl UseCase<Game> for FinalizeReadyGame {
-    type Error = Report<GameUseCaseError>;
-
-    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
-        let user_id = ctx
-            .auth()
-            .require_benutzer_id()
-            .change_context(GameUseCaseError::Unauthorized)?;
-        let now = ctx.clock().now();
-        let uow = ctx
-            .enter()
-            .await
-            .change_context(GameUseCaseError::Persistence)?;
-
-        let result = async {
-            let game = match uow.games().find_by_id(self.game_id).await {
-                Ok(g) => g,
-                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
-                    return Err(Report::new(GameUseCaseError::NotFound));
-                }
-                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
-            };
-
-            if !game.has_player(user_id) {
-                return Err(Report::new(GameUseCaseError::Forbidden));
-            }
-
-            let version = game.v();
-            let game_data = game.into_data();
-            let Game::Drafting(drafting) = game_data else {
-                return Ok(game_data);
-            };
-
-            let outcome = {
-                let mut rng = ctx.rng();
-                drafting.finalize_ready_start(now, &mut *rng).map_err(|e| {
-                    let mapped = map_game_error(e.current_context());
-                    e.change_context(mapped)
-                })?
-            };
-
-            match outcome {
-                DraftStartOutcome::StillDrafting(d) => Ok(Game::Drafting(d)),
-                DraftStartOutcome::Started {
-                    game: active,
-                    boards,
-                } => persist_started_game(&uow, version, active, boards).await,
-            }
-        }
-        .await;
-
-        uow.finish(result, GameUseCaseError::Persistence).await
-    }
-}
-
 pub(crate) async fn persist_started_game(
     uow: &UnitOfWork<'_>,
     version: u64,
@@ -627,10 +566,10 @@ pub(crate) async fn persist_started_game(
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StartReadyGamesOutcome {
     pub started_games: Vec<GameId>,
-    pub next_auto_start_at: Option<DateTime<Utc>>,
+    pub next_draft_closes_at: Option<DateTime<Utc>>,
 }
 
-/// Finalize all `Drafting` games whose countdown (`auto_start_at <= now`) has expired,
+/// Finalize all `Drafting` games whose countdown (`draft_closes_at <= now`) has expired,
 /// returning the started game IDs and the earliest remaining pending countdown deadline.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StartReadyGames;
@@ -658,7 +597,7 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
                 .change_context(GameUseCaseError::Persistence)?;
 
             let mut started_games = Vec::new();
-            let mut next_auto_start_at: Option<DateTime<Utc>> = None;
+            let mut next_draft_closes_at: Option<DateTime<Utc>> = None;
 
             for versioned in candidates {
                 let version = versioned.v();
@@ -666,8 +605,8 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
                     continue;
                 };
                 if !drafting.is_ready_to_start(now) {
-                    if let Some(at) = drafting.auto_start_at() {
-                        next_auto_start_at = Some(match next_auto_start_at {
+                    if let Some(at) = drafting.draft_closes_at() {
+                        next_draft_closes_at = Some(match next_draft_closes_at {
                             Some(existing) if existing <= at => existing,
                             _ => at,
                         });
@@ -707,7 +646,7 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
 
             Ok::<_, Report<GameUseCaseError>>(StartReadyGamesOutcome {
                 started_games,
-                next_auto_start_at,
+                next_draft_closes_at,
             })
         }
         .await;

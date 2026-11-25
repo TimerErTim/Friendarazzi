@@ -1,0 +1,50 @@
+[package]
+name = "friendarazzi-scheduler"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license-file.workspace = true
+repository.workspace = true
+
+[lib]
+name = "friendarazzi_scheduler"
+
+[[bin]]
+name = "friendarazzi-scheduler"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = [
+    "dep:clap",
+    "dep:error-stack",
+    "dep:thiserror",
+    "dep:tracing-subscriber",
+    "dep:friendarazzi-sqlite",
+    "dep:friendarazzi-filesystemstore",
+]
+
+[dependencies]
+friendarazzi-core = { path = "../../crates/friendarazzi-core" }
+cloudiful-scheduler = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+tokio = { version = "1", features = ["time", "signal", "rt-multi-thread", "macros"] }
+tracing = { workspace = true }
+
+clap = { workspace = true, optional = true }
+error-stack = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+friendarazzi-sqlite = { path = "../../crates/friendarazzi-sqlite", features = ["job_store"], optional = true }
+friendarazzi-filesystemstore = { path = "../../crates/friendarazzi-filesystemstore", optional = true }
+
+[dev-dependencies]
+friendarazzi-fakes = { path = "../../crates/friendarazzi-fakes" }
+friendarazzi-sqlite = { path = "../../crates/friendarazzi-sqlite", features = ["job_store"] }
+test-log = { workspace = true }
+uuid = { workspace = true, features = ["v4"] }
+
+[lints]
+workspace = true

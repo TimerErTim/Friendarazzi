@@ -16,12 +16,11 @@ use friendarazzi_core::{
     ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
     service::{
         Abmeldung, AbmeldungFehler, Anmeldung, AnmeldungFehler, BenutzerLöschen,
-        BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler,
-        FinalizeReadyGame, GameUseCaseError, LockDraftPrompts, PasswortVergessen,
-        PasswortVergessenFehler, PasswortWiederherstellen, PasswortWiederherstellenFehler,
-        ProfileUseCaseError, RegistrierungAbschliessenFehler, RegistrierungAbschließen,
-        RegistrierungStarten, RegistrierungStartenFehler, SessionAusgestellt, StartDrafting,
-        SubmitCapture, UnlockDraftPrompts, UploadAvatar,
+        BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
+        LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
+        PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
+        RegistrierungAbschließen, RegistrierungStarten, RegistrierungStartenFehler,
+        SessionAusgestellt, StartDrafting, SubmitCapture, UnlockDraftPrompts, UploadAvatar,
     },
 };
 use tracing::warn;
@@ -109,62 +108,10 @@ impl FriendarazziAppApi {
 
     // ---------------------------------------------------------------- Games
 
-    async fn finalize_ready_games(
-        &self,
-        auth: AuthContext,
-        game_ids: Vec<GameId>,
-    ) -> ResultReport<(), GameReadError> {
-        for game_id in game_ids {
-            match self.app.execute(auth, FinalizeReadyGame { game_id }).await {
-                Ok(_) => {}
-                Err(err) if matches!(err.current_context(), GameUseCaseError::Conflict) => {}
-                Err(err) => return Err(err.change_context(GameReadError::Persistence)),
-            }
-        }
-        Ok(())
-    }
-
     pub async fn games_list(
         &self,
         auth: AuthContext,
     ) -> ResultReport<Vec<GameSummary>, GameReadError> {
-        let ready_ids = self
-            .app
-            .execute_fn(auth, async |ctx| {
-                let user_id = ctx
-                    .auth()
-                    .require_benutzer_id()
-                    .change_context(GameReadError::Unauthorized)?;
-                let now = ctx.clock().now();
-                let uow = ctx
-                    .enter()
-                    .await
-                    .change_context(GameReadError::Persistence)?;
-                let res = async {
-                    let games = uow
-                        .games()
-                        .find_by_participating_user(user_id)
-                        .await
-                        .map_err(IntoReport::into_report)
-                        .change_context(GameReadError::Persistence)?;
-                    let ids: Vec<GameId> = games
-                        .into_iter()
-                        .filter_map(|g| match g.into_data() {
-                            Game::Drafting(d) if d.is_ready_to_start(now) => Some(d.id()),
-                            _ => None,
-                        })
-                        .collect();
-                    Ok::<_, Report<GameReadError>>(ids)
-                }
-                .await;
-                uow.finish(res, GameReadError::Persistence).await
-            })
-            .await?;
-
-        if !ready_ids.is_empty() {
-            self.finalize_ready_games(auth, ready_ids).await?;
-        }
-
         self.app
             .execute_fn(auth, async |ctx| {
                 let user_id = ctx
@@ -372,43 +319,6 @@ impl FriendarazziAppApi {
         auth: AuthContext,
         game_id: GameId,
     ) -> ResultReport<GameDetail, GameReadError> {
-        let needs_finalize = self
-            .app
-            .execute_fn(auth, async |ctx| {
-                let viewer_id = ctx
-                    .auth()
-                    .require_benutzer_id()
-                    .change_context(GameReadError::Unauthorized)?;
-                let now = ctx.clock().now();
-                let uow = ctx
-                    .enter()
-                    .await
-                    .change_context(GameReadError::Persistence)?;
-                let res = async {
-                    let game = match uow.games().find_by_id(game_id).await {
-                        Ok(g) => g.into_data(),
-                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
-                            return Err(Report::new(GameReadError::NotFound));
-                        }
-                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
-                    };
-                    if !game.has_player(viewer_id) {
-                        return Err(Report::new(GameReadError::Forbidden));
-                    }
-                    Ok::<_, Report<GameReadError>>(matches!(
-                        &game,
-                        Game::Drafting(d) if d.is_ready_to_start(now)
-                    ))
-                }
-                .await;
-                uow.finish(res, GameReadError::Persistence).await
-            })
-            .await?;
-
-        if needs_finalize {
-            self.finalize_ready_games(auth, vec![game_id]).await?;
-        }
-
         self.app
             .execute_fn(auth, async |ctx| {
                 let viewer_id = ctx
@@ -447,9 +357,9 @@ impl FriendarazziAppApi {
                         .filter_map(|pid| badges.get(pid).cloned())
                         .collect();
 
-                    let (auto_start_at, started_at, ended_at, winner) = match &game {
+                    let (draft_closes_at, started_at, ended_at, winner) = match &game {
                         Game::Lobby(_) => (None, None, None, None),
-                        Game::Drafting(d) => (d.auto_start_at(), None, None, None),
+                        Game::Drafting(d) => (d.draft_closes_at(), None, None, None),
                         Game::Active(a) => (None, Some(a.started_at()), None, None),
                         Game::Completed(c) => (
                             None,
@@ -598,7 +508,7 @@ impl FriendarazziAppApi {
                         visibility_mode: game.visibility_mode().into(),
                         status: (&game).into(),
                         playable_tile_count: game.playable_tile_count() as u32,
-                        auto_start_at,
+                        draft_closes_at,
                         server_now: now,
                         started_at,
                         ended_at,
@@ -1118,12 +1028,12 @@ fn game_to_summary(
         Game::Active(a) => (Some(a.started_at()), None),
         Game::Completed(c) => (Some(c.started_at()), Some(c.ended_at())),
     };
-    let (my_draft_filled, my_draft_locked, ready_player_count, auto_start_at) = match game {
+    let (my_draft_filled, my_draft_locked, ready_player_count, draft_closes_at) = match game {
         Game::Drafting(d) => (
             viewer_id.map(|uid| d.prompts_by_author(uid).len() as u32),
             viewer_id.map(|uid| d.is_draft_locked(uid)),
             Some(d.draft_locked().len() as u32),
-            d.auto_start_at(),
+            d.draft_closes_at(),
         ),
         _ => (None, None, None, None),
     };
@@ -1147,7 +1057,7 @@ fn game_to_summary(
         my_draft_locked,
         ready_player_count,
         needs_action,
-        auto_start_at,
+        draft_closes_at,
         server_now,
         winner,
         started_at,

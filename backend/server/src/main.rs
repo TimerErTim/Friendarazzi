@@ -13,11 +13,12 @@ use friendarazzi_core::{
     ports::MailSender,
 };
 use friendarazzi_filesystemstore::FileSystemObjectStore;
+use friendarazzi_scheduler::{FriendarazziScheduler, FriendarazziSchedulerConfig};
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
 use friendarazzi_sqlite::{
     SQLiteInstance,
     event_queue::{self, SqliteEventQueue},
-    scheduler::{FriendarazziScheduler, FriendarazziSchedulerConfig, SQLiteStateStore},
+    job_store::SQLiteStateStore,
 };
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
@@ -317,14 +318,10 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         },
     ));
 
-    let (sched_shutdown_tx, mut sched_shutdown_rx) = tokio::sync::watch::channel(false);
-    let sched_worker = tokio::spawn(
-        FriendarazziScheduler::new(app.clone())
-            .state_store(scheduler_store)
-            .run_until(FriendarazziSchedulerConfig::default(), async move {
-                let _ = sched_shutdown_rx.wait_for(|&stopped| stopped).await;
-            }),
-    );
+    let (sched_handle, sched_fut) = FriendarazziScheduler::new(app.clone())
+        .state_store(scheduler_store)
+        .start_with_handle(FriendarazziSchedulerConfig::default());
+    let sched_worker = tokio::spawn(sched_fut);
 
     let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
     let api_url = config
@@ -366,18 +363,26 @@ async fn main() -> Result<(), Report<BackendServerError>> {
     .change_context(BackendServerError);
 
     tracing::info!("stopping sqlite scheduler and event queue workers");
-    let _ = sched_shutdown_tx.send(true);
+    sched_handle.shutdown();
     let _ = eq_shutdown_tx.send(true);
 
-    match sched_worker.await {
-        Ok(Ok(report)) => {
-            tracing::info!(?report, "sqlite scheduler stopped");
-        }
-        Ok(Err(err)) => {
-            tracing::error!(?err, "sqlite scheduler exited with error");
-        }
-        Err(err) => {
-            tracing::error!(?err, "sqlite scheduler task failed");
+    let mut sched_worker = sched_worker;
+    tokio::select! {
+        res = &mut sched_worker => match res {
+            Ok(Ok(report)) => {
+                tracing::info!(?report, "scheduler stopped");
+            }
+            Ok(Err(err)) => {
+                tracing::error!(?err, "scheduler exited with error");
+            }
+            Err(err) => {
+                tracing::error!(?err, "scheduler task failed");
+            }
+        },
+        () = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
+            sched_worker.abort();
+            let _ = sched_worker.await;
+            tracing::info!("scheduler aborted after shutdown timeout");
         }
     }
 

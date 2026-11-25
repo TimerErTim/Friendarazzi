@@ -109,7 +109,7 @@ describe("game-overview", () => {
       id: "d2",
       status: "Drafting",
       myDraftLocked: true,
-      autoStartAt: "2026-11-20T00:01:00.000Z",
+      draftClosesAt: "2026-11-20T00:01:00.000Z",
     });
     expect(formatGameProgress(countdown, 42)).toBe("Start in 42s");
     expect(gameNextActionLabel(countdown)).toBe("Status ansehen");

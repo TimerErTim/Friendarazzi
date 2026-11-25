@@ -8,7 +8,7 @@ export type OverviewGameShape = {
   myDraftFilled?: number | null;
   myDraftLocked?: boolean | null;
   readyPlayerCount?: number | null;
-  autoStartAt?: string | null;
+  draftClosesAt?: string | null;
   serverNow: string;
   startedAt?: string | null;
   createdAt: string;
@@ -16,12 +16,12 @@ export type OverviewGameShape = {
 
 /** Compute remaining countdown seconds using server clock anchor to resist client clock skew. */
 export function remainingCountdownSeconds(
-  autoStartAt: string | null | undefined,
+  draftClosesAt: string | null | undefined,
   serverNow: string | null | undefined,
   elapsedSinceFetchMs: number,
 ): number | null {
-  if (!autoStartAt || !serverNow) return null;
-  const deadlineMs = Date.parse(autoStartAt);
+  if (!draftClosesAt || !serverNow) return null;
+  const deadlineMs = Date.parse(draftClosesAt);
   const serverMs = Date.parse(serverNow);
   if (Number.isNaN(deadlineMs) || Number.isNaN(serverMs)) return null;
   const remainingMs =

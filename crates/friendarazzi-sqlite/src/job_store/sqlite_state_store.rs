@@ -9,7 +9,7 @@ use molting::{AppliableMigration, MigrationError, MigrationTarget};
 use thiserror::Error;
 
 use crate::SQLiteInstance;
-use crate::scheduler::migrations::MIGRATIONS;
+use crate::job_store::migrations::MIGRATIONS;
 
 #[derive(Debug, Error)]
 pub enum SQLiteStateStoreError {

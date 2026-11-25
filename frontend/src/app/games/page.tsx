@@ -343,7 +343,7 @@ function GameOverviewCard({
   isLastVisited: boolean;
 }) {
   const countdown = useGameCountdown(
-    game.autoStartAt,
+    game.draftClosesAt,
     game.serverNow,
     dataUpdatedAt,
   );

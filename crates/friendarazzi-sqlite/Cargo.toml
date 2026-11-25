@@ -29,12 +29,11 @@ tracing = { workspace = true }
 futures = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["sync", "time", "rt"], optional = true }
 cloudiful-scheduler = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
 
 [features]
 default = []
 event-queue = ["dep:tokio", "dep:futures"]
-scheduler = ["dep:cloudiful-scheduler", "dep:chrono-tz", "dep:tokio"]
+job_store = ["dep:cloudiful-scheduler"]
 
 [dev-dependencies]
 futures = { workspace = true }

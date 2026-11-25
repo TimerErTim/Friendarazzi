@@ -11,7 +11,7 @@ use tracing::{debug, error};
 use crate::ResultReport;
 use crate::application::WeakApp;
 use crate::ports::{EventQueue, EventQueueError};
-use crate::service::Event;
+use crate::service::{Event, handle_event};
 
 const DEFAULT_WORKER_COUNT: usize = 2;
 
@@ -37,10 +37,10 @@ impl BlockingEventQueue {
 impl EventQueue for BlockingEventQueue {
     async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
         for event in events {
-            let Some(inner) = self.app.upgrade_inner() else {
+            let Some(app) = self.app.upgrade() else {
                 return Err(error_stack::Report::new(EventQueueError::Unavailable));
             };
-            if let Err(err) = inner.dispatch_event(event).await {
+            if let Err(err) = handle_event(&app, event).await {
                 error!(err, "queued event execution failed");
             } else {
                 debug!("queued event completed");
@@ -53,7 +53,8 @@ impl EventQueue for BlockingEventQueue {
 /// Default in-memory non-blocking [`EventQueue`] adapter backed by dedicated worker threads.
 ///
 /// Submitted events are held in memory (not persisted across process restarts) and executed
-/// concurrently against [`App`](crate::App) on background worker threads.
+/// concurrently against [`App`](crate::App) on background worker threads until the [`App`](crate::App)
+/// is dropped.
 pub struct MultithreadedEventQueue {
     app: WeakApp,
     worker_count: usize,
@@ -84,13 +85,10 @@ impl MultithreadedEventQueue {
         Arc::new(Self::new(app))
     }
 
-    fn ensure_started(&self) -> Result<Vec<UnboundedSender<Event>>, EventQueueError> {
+    fn ensure_started(&self) -> Vec<UnboundedSender<Event>> {
         let mut guard = self.pool.lock().expect("event queue pool mutex poisoned");
         if let Some(pool) = guard.as_ref() {
-            return Ok(pool.senders.clone());
-        }
-        if self.app.shutdown_signal().is_cancelled() {
-            return Err(EventQueueError::Unavailable);
+            return pool.senders.clone();
         }
 
         let mut senders = Vec::with_capacity(self.worker_count);
@@ -108,11 +106,12 @@ impl MultithreadedEventQueue {
 
         let cloned = senders.clone();
         *guard = Some(WorkerPool { senders, handles });
-        Ok(cloned)
+        cloned
     }
+}
 
-    pub fn shutdown(&self) {
-        self.app.shutdown_signal().cancel();
+impl Drop for MultithreadedEventQueue {
+    fn drop(&mut self) {
         let pool = self
             .pool
             .lock()
@@ -130,33 +129,21 @@ impl MultithreadedEventQueue {
     }
 }
 
-impl Drop for MultithreadedEventQueue {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
-
 fn worker_loop(app: WeakApp, mut rx: UnboundedReceiver<Event>, worker_index: usize) {
     debug!(worker_index, "multithreaded event queue worker started");
-    let shutdown = app.shutdown_signal().clone();
     futures::executor::block_on(async move {
         let mut in_flight = FuturesUnordered::new();
-        let mut shutdown_fut = Box::pin(futures::FutureExt::fuse(shutdown.notified()));
 
         loop {
-            futures::select_biased! {
-                _ = shutdown_fut => {
-                    debug!(worker_index, "multithreaded event queue worker shutting down");
-                    break;
-                }
+            futures::select! {
                 maybe_event = rx.next() => match maybe_event {
                     Some(event) => {
-                        let Some(inner) = app.upgrade_inner() else {
-                            error!("event queue worker app unavailable");
+                        let Some(app_ref) = app.upgrade() else {
+                            debug!(worker_index, "event queue worker stopping: app dropped");
                             break;
                         };
                         in_flight.push(Box::pin(async move {
-                            if let Err(err) = inner.dispatch_event(event).await {
+                            if let Err(err) = handle_event(&app_ref, event).await {
                                 error!(err, "failed to dispatch event");
                             }
                         }));
@@ -166,6 +153,8 @@ fn worker_loop(app: WeakApp, mut rx: UnboundedReceiver<Event>, worker_index: usi
                 _ = in_flight.next() => {}
             }
         }
+
+        while in_flight.next().await.is_some() {}
     });
     debug!(worker_index, "multithreaded event queue worker stopped");
 }
@@ -176,7 +165,7 @@ impl EventQueue for MultithreadedEventQueue {
         if events.is_empty() {
             return Ok(());
         }
-        let senders = self.ensure_started().map_err(error_stack::Report::new)?;
+        let senders = self.ensure_started();
         for event in events {
             let idx = self.next_worker.fetch_add(1, Ordering::Relaxed) % senders.len();
             if senders[idx].unbounded_send(event).is_err() {

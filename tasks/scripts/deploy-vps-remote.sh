@@ -259,6 +259,8 @@ backend_internal_mail_check() {
     sleep 5
   done
   echo "deploy:vps: SMTP relay health not confirmed: ${body:-no response}; maintenance mode remains active." >&2
+  echo "deploy:vps: if the failure is DNS resolution, restart the backend to refresh its resolver:" >&2
+  echo "  FRIENDARAZZI_HOST_ROOT='$host_root' bash '$repo_top/deploy/compose.sh' restart backend" >&2
   return 1
 }
 

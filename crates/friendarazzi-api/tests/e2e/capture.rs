@@ -2,7 +2,8 @@ use chrono::Duration;
 use friendarazzi_fakes::{
     QuadrantColor::{Blue as B, Green as G, Red as R, Yellow as Y},
     assert_webp_without_exif_for_test, inspect_normalized_webp_for_test, png_bytes_for_test,
-    quadrant_jpeg_with_exif_for_test,
+    quadrant_jpeg_with_exif_for_test, quadrant_jpeg_with_shadowed_exif_for_test,
+    quadrant_jpeg_with_xmp_orientation_for_test,
 };
 use poem::http::StatusCode;
 use serde_json::json;
@@ -488,4 +489,71 @@ async fn e2e_capture_normalizes_exif_orientation_and_strips_exif() {
     assert_eq!(thumb_st, StatusCode::OK);
     assert_eq!(thumb_ct, "image/webp");
     assert_webp_without_exif_for_test(&thumb_bytes, 64, 64);
+
+    // Secondary APP1 Exif or XMP-only orientation must still yield upright 60x120 portrait WebPs.
+    let tile_01 = active["myBoard"]["tiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["row"] == 0 && t["col"] == 1)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let shadowed_jpeg = quadrant_jpeg_with_shadowed_exif_for_test(120, 60, 6);
+    let (st2, cap2) = harness
+        .client
+        .post_multipart_file_auth(
+            &format!("/api/games/{game_id}/tiles/{tile_01}/capture"),
+            "file",
+            "shadowed.jpg",
+            "image/jpeg",
+            shadowed_jpeg,
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st2, StatusCode::OK, "{cap2}");
+    let full_key_2 = cap2["capture"]["imageStorageKey"].as_str().unwrap();
+    let (st_get_2, bytes_2, _) = harness
+        .client
+        .get_bytes_auth(&format!("/api/media/{full_key_2}"), &t_bob)
+        .await;
+    assert_eq!(st_get_2, StatusCode::OK);
+    assert_eq!(
+        inspect_normalized_webp_for_test(&bytes_2),
+        (60, 120, [B, R, Y, G])
+    );
+
+    let tile_02 = active["myBoard"]["tiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["row"] == 0 && t["col"] == 2)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let xmp_jpeg = quadrant_jpeg_with_xmp_orientation_for_test(120, 60, 8);
+    let (st3, cap3) = harness
+        .client
+        .post_multipart_file_auth(
+            &format!("/api/games/{game_id}/tiles/{tile_02}/capture"),
+            "file",
+            "xmp-portrait.jpg",
+            "image/jpeg",
+            xmp_jpeg,
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st3, StatusCode::OK, "{cap3}");
+    let full_key_3 = cap3["capture"]["imageStorageKey"].as_str().unwrap();
+    let (st_get_3, bytes_3, _) = harness
+        .client
+        .get_bytes_auth(&format!("/api/media/{full_key_3}"), &t_bob)
+        .await;
+    assert_eq!(st_get_3, StatusCode::OK);
+    assert_eq!(
+        inspect_normalized_webp_for_test(&bytes_3),
+        (60, 120, [G, Y, R, B])
+    );
 }

@@ -1,8 +1,9 @@
+use std::hash::Hash;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use error_stack::{Report, ResultExt};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use uuid::Uuid;
 
 use friendarazzi_core::{
@@ -127,6 +128,152 @@ impl FakeDatastore {
         *self.sessions() = other.sessions().clone();
         *self.bestätigungen() = other.bestätigungen().clone();
         *self.wiederherstellungen() = other.wiederherstellungen().clone();
+    }
+
+    /// 3-way merge of `tx` against `reference` into `target`.
+    ///
+    /// Computes all merged aggregate maps before mutating any `target` map so a conflict in
+    /// one aggregate never leaves earlier aggregates partially committed.
+    pub fn merge(
+        target: &FakeDatastore,
+        reference: &FakeDatastore,
+        tx: &FakeDatastore,
+    ) -> Result<FakeDatastore, RepositoryError> {
+        fn lock_map<K, T>(
+            map: &Mutex<FxHashMap<K, Versioned<T>>>,
+        ) -> Result<MutexGuard<'_, FxHashMap<K, Versioned<T>>>, RepositoryError> {
+            map.lock().map_err(|_| RepositoryError::OperationFailed)
+        }
+
+        let mut target_games = lock_map(&target.games)?;
+        let mut target_boards = lock_map(&target.boards)?;
+        let mut target_captures = lock_map(&target.captures)?;
+        let target_decks = target
+            .decks
+            .lock()
+            .map_err(|_| RepositoryError::OperationFailed)?;
+        let mut target_benutzer = lock_map(&target.benutzer)?;
+        let mut target_konten = lock_map(&target.konten)?;
+        let mut target_sessions = lock_map(&target.sessions)?;
+        let mut target_bestätigungen = lock_map(&target.bestätigungen)?;
+        let mut target_wiederherstellungen = lock_map(&target.wiederherstellungen)?;
+
+        let merged_games = Self::merge_single_aggregate(
+            &target_games,
+            &*lock_map(&reference.games)?,
+            &*lock_map(&tx.games)?,
+        )?;
+        let merged_boards = Self::merge_single_aggregate(
+            &target_boards,
+            &*lock_map(&reference.boards)?,
+            &*lock_map(&tx.boards)?,
+        )?;
+        let merged_captures = Self::merge_single_aggregate(
+            &target_captures,
+            &*lock_map(&reference.captures)?,
+            &*lock_map(&tx.captures)?,
+        )?;
+        let merged_benutzer = Self::merge_single_aggregate(
+            &target_benutzer,
+            &*lock_map(&reference.benutzer)?,
+            &*lock_map(&tx.benutzer)?,
+        )?;
+        let merged_konten = Self::merge_single_aggregate(
+            &target_konten,
+            &*lock_map(&reference.konten)?,
+            &*lock_map(&tx.konten)?,
+        )?;
+        let merged_sessions = Self::merge_single_aggregate(
+            &target_sessions,
+            &*lock_map(&reference.sessions)?,
+            &*lock_map(&tx.sessions)?,
+        )?;
+        let merged_bestätigungen = Self::merge_single_aggregate(
+            &target_bestätigungen,
+            &*lock_map(&reference.bestätigungen)?,
+            &*lock_map(&tx.bestätigungen)?,
+        )?;
+        let merged_wiederherstellungen = Self::merge_single_aggregate(
+            &target_wiederherstellungen,
+            &*lock_map(&reference.wiederherstellungen)?,
+            &*lock_map(&tx.wiederherstellungen)?,
+        )?;
+
+        *target_games = merged_games.clone();
+        *target_boards = merged_boards.clone();
+        *target_captures = merged_captures.clone();
+        *target_benutzer = merged_benutzer.clone();
+        *target_konten = merged_konten.clone();
+        *target_sessions = merged_sessions.clone();
+        *target_bestätigungen = merged_bestätigungen.clone();
+        *target_wiederherstellungen = merged_wiederherstellungen.clone();
+
+        Ok(FakeDatastore {
+            games: Mutex::new(merged_games),
+            boards: Mutex::new(merged_boards),
+            captures: Mutex::new(merged_captures),
+            decks: Mutex::new(target_decks.clone()),
+            benutzer: Mutex::new(merged_benutzer),
+            konten: Mutex::new(merged_konten),
+            sessions: Mutex::new(merged_sessions),
+            bestätigungen: Mutex::new(merged_bestätigungen),
+            wiederherstellungen: Mutex::new(merged_wiederherstellungen),
+        })
+    }
+
+    fn merge_single_aggregate<K, T>(
+        target: &FxHashMap<K, Versioned<T>>,
+        reference: &FxHashMap<K, Versioned<T>>,
+        tx: &FxHashMap<K, Versioned<T>>,
+    ) -> Result<FxHashMap<K, Versioned<T>>, RepositoryError>
+    where
+        K: Hash + Eq + Copy,
+        T: Clone,
+    {
+        let mut merged = target.clone();
+        let all_ids: FxHashSet<K> = reference.keys().chain(tx.keys()).copied().collect();
+
+        for id in all_ids {
+            let target_versioned = target.get(&id).cloned();
+            let reference_versioned = reference.get(&id).cloned();
+            let tx_versioned = tx.get(&id).cloned();
+
+            match (reference_versioned, tx_versioned) {
+                (Some(reference_versioned), Some(tx_versioned)) => {
+                    if reference_versioned.v() != tx_versioned.v() {
+                        let Some(target_versioned) = target_versioned else {
+                            return Err(RepositoryError::Conflict);
+                        };
+                        if target_versioned.v() > reference_versioned.v() {
+                            return Err(RepositoryError::VersionMismatch {
+                                expected: reference_versioned.v(),
+                                actual: Some(target_versioned.v()),
+                            });
+                        }
+                        merged.insert(id, tx_versioned);
+                    }
+                }
+                (Some(reference_versioned), None) => {
+                    if let Some(target_v) = target_versioned
+                        && target_v.v() > reference_versioned.v()
+                    {
+                        return Err(RepositoryError::VersionMismatch {
+                            expected: reference_versioned.v(),
+                            actual: Some(target_v.v()),
+                        });
+                    }
+                    merged.remove(&id);
+                }
+                (None, Some(tx_versioned)) => {
+                    if target_versioned.is_some() {
+                        return Err(RepositoryError::Conflict);
+                    }
+                    merged.insert(id, tx_versioned);
+                }
+                (None, None) => {}
+            }
+        }
+        Ok(merged)
     }
 }
 
@@ -805,5 +952,108 @@ impl MailSender for FakeMailSender {
 
     async fn prüfe_verbindung(&self) -> ResultReport<(), MailError> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::DateTime;
+    use friendarazzi_core::{
+        domain::{GridSize, InviteCode, NonEmptyString, VisibilityMode},
+        ports::RepositoryError,
+    };
+
+    use super::*;
+
+    fn sample_time() -> chrono::DateTime<chrono::Utc> {
+        DateTime::from_timestamp(1_700_000_000, 0).expect("valid timestamp")
+    }
+
+    fn sample_benutzer(id: BenutzerId, email: &str) -> Versioned<Benutzer> {
+        Versioned::init(Benutzer::neu(
+            id,
+            NeuerBenutzer::neu(
+                EmailAdresse::normalisiert(email).unwrap(),
+                NonEmptyString::neu("Tester").unwrap(),
+                sample_time(),
+            ),
+        ))
+    }
+
+    fn sample_game(id: GameId, host: BenutzerId, code: &str, title: &str) -> Versioned<Game> {
+        Versioned::init(Game::new(
+            id,
+            NewGame {
+                host_user_id: host,
+                invite_code: InviteCode::new(code).unwrap(),
+                title: NonEmptyString::neu(title).unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                created_at: sample_time(),
+            },
+        ))
+    }
+
+    #[test]
+    fn merge_applies_disjoint_concurrent_changes() {
+        let backing = FakeDatastore::new();
+        let ref_a = backing.clone();
+        let ref_b = backing.clone();
+        let tx_a = ref_a.clone();
+        let tx_b = ref_b.clone();
+
+        let id_a = BenutzerId(Uuid::new_v4());
+        let id_b = BenutzerId(Uuid::new_v4());
+        tx_a.benutzer()
+            .insert(id_a, sample_benutzer(id_a, "a@example.com"));
+        tx_b.benutzer()
+            .insert(id_b, sample_benutzer(id_b, "b@example.com"));
+
+        FakeDatastore::merge(&backing, &ref_a, &tx_a).unwrap();
+        FakeDatastore::merge(&backing, &ref_b, &tx_b).unwrap();
+
+        let stored = backing.benutzer();
+        assert!(stored.contains_key(&id_a));
+        assert!(stored.contains_key(&id_b));
+    }
+
+    #[test]
+    fn merge_conflict_is_atomic_across_aggregates() {
+        let user_id = BenutzerId(Uuid::new_v4());
+        let initial_user = sample_benutzer(user_id, "race@example.com");
+
+        let backing = FakeDatastore::new();
+        backing.benutzer().insert(user_id, initial_user);
+
+        // Concurrent tx1 advances `user_id` from v0 -> v1 in backing.
+        let reference = backing.clone();
+        let mut bumped_user = backing.benutzer().get(&user_id).unwrap().clone();
+        bumped_user.increment();
+        backing.benutzer().insert(user_id, bumped_user);
+
+        // tx2 creates a new game AND updates `user_id` from stale v0 -> v1.
+        let tx = reference.clone();
+        let game_id = GameId(Uuid::new_v4());
+        tx.games().insert(
+            game_id,
+            sample_game(game_id, user_id, "ABCD23", "Race Game"),
+        );
+        let mut stale_update = tx.benutzer().get(&user_id).unwrap().clone();
+        stale_update.increment();
+        tx.benutzer().insert(user_id, stale_update);
+
+        let Err(err) = FakeDatastore::merge(&backing, &reference, &tx) else {
+            panic!("expected version mismatch");
+        };
+        assert!(matches!(
+            err,
+            RepositoryError::VersionMismatch {
+                expected: 0,
+                actual: Some(1),
+            }
+        ));
+        // Game creation in an earlier aggregate must NOT be persisted when benutzer conflicts.
+        assert!(!backing.games().contains_key(&game_id));
+        assert_eq!(backing.benutzer().get(&user_id).unwrap().v(), 1);
     }
 }

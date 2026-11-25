@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use async_lock::{Mutex as AsyncMutex, MutexGuardArc};
 use async_trait::async_trait;
+use error_stack::Report;
 use friendarazzi_core::{
     ports::{
         BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
@@ -20,7 +20,6 @@ use crate::repository::{
 pub struct FakeUnitOfWorkProvider {
     pub log: Arc<Mutex<Vec<UoWEvent>>>,
     pub datastore: Arc<FakeDatastore>,
-    tx_lock: Arc<AsyncMutex<()>>,
 }
 
 impl FakeUnitOfWorkProvider {
@@ -28,7 +27,6 @@ impl FakeUnitOfWorkProvider {
         Self {
             log: Arc::new(Mutex::new(Vec::new())),
             datastore,
-            tx_lock: Arc::new(AsyncMutex::new(())),
         }
     }
 
@@ -46,12 +44,10 @@ impl Default for FakeUnitOfWorkProvider {
 #[async_trait]
 impl UnitOfWorkProvider for FakeUnitOfWorkProvider {
     async fn begin(&self) -> RepositoryResult<Box<dyn UnitOfWorkImpl>> {
-        let tx_guard = self.tx_lock.lock_arc().await;
         self.log.lock().unwrap().push(UoWEvent::Begin);
         Ok(Box::new(FakeUnitOfWork::new(
             Arc::clone(&self.log),
             Arc::clone(&self.datastore),
-            tx_guard,
         )))
     }
 }
@@ -59,37 +55,33 @@ impl UnitOfWorkProvider for FakeUnitOfWorkProvider {
 pub struct FakeUnitOfWork {
     log: Arc<Mutex<Vec<UoWEvent>>>,
     backing_datastore: Arc<FakeDatastore>,
+    snapshotted_datastore: FakeDatastore,
     transaction_datastore: Arc<FakeDatastore>,
-    #[allow(dead_code)]
-    tx_guard: MutexGuardArc<()>,
     games: FakeGameRepository,
     boards: FakeBoardRepository,
     captures: FakeCaptureRepository,
     decks: FakeDeckRepository,
     benutzer: FakeBenutzerRepository,
-    konten: FakeKontoRepository,
+    konto: FakeKontoRepository,
     sessions: FakeSessionRepository,
     bestätigungen: FakeEmailBestätigungRepository,
     wiederherstellungen: FakePasswortWiederherstellungRepository,
 }
 
 impl FakeUnitOfWork {
-    pub fn new(
-        log: Arc<Mutex<Vec<UoWEvent>>>,
-        datastore: Arc<FakeDatastore>,
-        tx_guard: MutexGuardArc<()>,
-    ) -> Self {
-        let transaction_datastore = Arc::new(FakeDatastore::clone(datastore.as_ref()));
+    pub fn new(log: Arc<Mutex<Vec<UoWEvent>>>, datastore: Arc<FakeDatastore>) -> Self {
+        let backing_datastore = datastore;
+        let snapshotted_datastore = FakeDatastore::clone(&backing_datastore);
+        let transaction_datastore = Arc::new(snapshotted_datastore.clone());
         Self {
             log,
-            backing_datastore: datastore,
-            tx_guard,
+            backing_datastore,
             games: FakeGameRepository::new(Arc::clone(&transaction_datastore)),
             boards: FakeBoardRepository::new(Arc::clone(&transaction_datastore)),
             captures: FakeCaptureRepository::new(Arc::clone(&transaction_datastore)),
             decks: FakeDeckRepository::new(Arc::clone(&transaction_datastore)),
             benutzer: FakeBenutzerRepository::new(Arc::clone(&transaction_datastore)),
-            konten: FakeKontoRepository::new(Arc::clone(&transaction_datastore)),
+            konto: FakeKontoRepository::new(Arc::clone(&transaction_datastore)),
             sessions: FakeSessionRepository::new(Arc::clone(&transaction_datastore)),
             bestätigungen: FakeEmailBestätigungRepository::new(
                 Arc::clone(&transaction_datastore),
@@ -97,6 +89,7 @@ impl FakeUnitOfWork {
             wiederherstellungen: FakePasswortWiederherstellungRepository::new(
                 transaction_datastore.clone(),
             ),
+            snapshotted_datastore,
             transaction_datastore,
         }
     }
@@ -104,10 +97,25 @@ impl FakeUnitOfWork {
 
 #[async_trait]
 impl UnitOfWorkImpl for FakeUnitOfWork {
-    async fn commit(self: Box<Self>) -> RepositoryResult<()> {
+    async fn commit(mut self: Box<Self>) -> RepositoryResult<()> {
         self.log.lock().unwrap().push(UoWEvent::Commit);
-        self.backing_datastore
-            .replace_with(self.transaction_datastore.as_ref());
+
+        let new_snapshot = FakeDatastore::merge(
+            &self.backing_datastore,
+            &self.snapshotted_datastore,
+            &self.transaction_datastore,
+        )
+        .map_err(Report::new)
+        .inspect_err(|e| {
+            self.log
+                .lock()
+                .unwrap()
+                .push(UoWEvent::Error(format!("{e:?}")));
+        })?;
+
+        self.transaction_datastore.replace_with(&new_snapshot);
+        self.snapshotted_datastore = new_snapshot;
+
         Ok(())
     }
 
@@ -137,7 +145,7 @@ impl UnitOfWorkImpl for FakeUnitOfWork {
     }
 
     fn konten(&self) -> &dyn KontoRepository {
-        &self.konten
+        &self.konto
     }
 
     fn sessions(&self) -> &dyn SessionRepository {

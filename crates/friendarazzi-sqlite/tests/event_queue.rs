@@ -108,10 +108,10 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
 
     let sqlite = Arc::new(SQLiteInstance::local(&db_path).await.unwrap());
     sqlite.migrate_repos_to_latest().await.unwrap();
-    let queue = Arc::new(
-        SqliteEventQueue::new(Arc::clone(&sqlite)).with_clock(Arc::clone(&clock) as Arc<dyn Clock>),
-    );
+    let mut queue =
+        SqliteEventQueue::new(Arc::clone(&sqlite)).with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
     queue.migrate_to_latest().await.unwrap();
+    let queue = Arc::new(queue);
 
     let app = build_app_on_db(
         Arc::clone(&sqlite),
@@ -213,11 +213,11 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
     let game_id = game.id();
     app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
         let uow = ctx.enter().await?;
-        ctx.event_queue().submit(DelayedGameStart {
+        ctx.events().submit(DelayedGameStart {
             game_id,
             scheduled_for: stale_deadline,
         });
-        ctx.event_queue().submit(DelayedGameStart {
+        ctx.events().submit(DelayedGameStart {
             game_id,
             scheduled_for: current_deadline,
         });
@@ -234,11 +234,10 @@ async fn sqlite_event_queue_persists_across_restart_and_activates_delayed_game()
 
     let sqlite2 = Arc::new(SQLiteInstance::local(&db_path).await.unwrap());
     sqlite2.migrate_repos_to_latest().await.unwrap();
-    let queue2 = Arc::new(
-        SqliteEventQueue::new(Arc::clone(&sqlite2))
-            .with_clock(Arc::clone(&clock) as Arc<dyn Clock>),
-    );
+    let mut queue2 = SqliteEventQueue::new(Arc::clone(&sqlite2))
+        .with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
     queue2.migrate_to_latest().await.unwrap();
+    let queue2 = Arc::new(queue2);
     assert_eq!(queue2.pending_count().await.unwrap(), 2);
 
     let app2 = build_app_on_db(
@@ -291,10 +290,10 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
     let sqlite = Arc::new(SQLiteInstance::in_temp_dir().await.unwrap());
     sqlite.migrate_repos_to_latest().await.unwrap();
     let clock = Arc::new(FixedClock::new(test_time()));
-    let queue = Arc::new(
-        SqliteEventQueue::new(Arc::clone(&sqlite)).with_clock(Arc::clone(&clock) as Arc<dyn Clock>),
-    );
+    let mut queue =
+        SqliteEventQueue::new(Arc::clone(&sqlite)).with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
     queue.migrate_to_latest().await.unwrap();
+    let queue = Arc::new(queue);
 
     let app = build_app_on_db(
         Arc::clone(&sqlite),
@@ -308,7 +307,7 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
     let game_id = GameId(Uuid::new_v4());
     let due_at = clock.now();
     queue
-        .enqueue_submitted(vec![Event::from(DelayedGameStart {
+        .enqueue(vec![Event::from(DelayedGameStart {
             game_id,
             scheduled_for: due_at,
         })])
@@ -325,7 +324,7 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
     // Also enqueue a future event that stays unclaimed until its scheduled_for deadline.
     let future_at = clock.now() + Duration::seconds(600);
     queue
-        .enqueue_submitted(vec![Event::from(DelayedGameStart {
+        .enqueue(vec![Event::from(DelayedGameStart {
             game_id,
             scheduled_for: future_at,
         })])

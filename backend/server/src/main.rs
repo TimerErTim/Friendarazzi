@@ -275,13 +275,14 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .await
         .change_context(BackendServerError)?;
 
-    let event_queue = Arc::new(SqliteEventQueue::new(Arc::clone(&sqlite)));
+    let mut event_queue = SqliteEventQueue::new(Arc::clone(&sqlite));
     event_queue
         .migrate_to_latest()
         .await
         .change_context(BackendServerError)?;
+    let event_queue = Arc::new(event_queue);
 
-    let scheduler_store = SQLiteStateStore::new(Arc::clone(&sqlite));
+    let mut scheduler_store = SQLiteStateStore::new(Arc::clone(&sqlite));
     scheduler_store
         .migrate_to_latest()
         .await

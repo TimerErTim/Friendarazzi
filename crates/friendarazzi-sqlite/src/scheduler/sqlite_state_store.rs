@@ -5,8 +5,7 @@ use std::sync::Arc;
 use ::scheduler::{JobState, StateStore, StoreErrorKind};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use friendarazzi_core::{ErrorReportExt, ResultReport};
-use molting::{AppliableMigration, MigrationTarget};
+use molting::{AppliableMigration, MigrationError, MigrationTarget};
 use thiserror::Error;
 
 use crate::SQLiteInstance;
@@ -37,24 +36,18 @@ impl SQLiteStateStore {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn migrate_to_latest(&self) -> ResultReport<(), SQLiteStateStoreError> {
-        let mut target = SchedulerMigrationTarget(self.instance.as_ref());
-        MIGRATIONS
-            .apply(&mut target, None)
-            .await
-            .contextualize(SQLiteStateStoreError::Migration)
+    pub async fn migrate_to_latest(&mut self) -> Result<(), MigrationError<libsql::Error>> {
+        MIGRATIONS.apply(self, None).await
     }
 }
 
-struct SchedulerMigrationTarget<'a>(&'a SQLiteInstance);
-
 #[async_trait]
-impl MigrationTarget<libsql::Transaction, libsql::Error> for SchedulerMigrationTarget<'_> {
+impl MigrationTarget<libsql::Transaction, libsql::Error> for SQLiteStateStore {
     fn get_current_version(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<usize>, libsql::Error>> + '_>> {
         Box::pin(async move {
-            let connection = self.0.create_connection().await.map_err(|_| {
+            let connection = self.instance.create_connection().await.map_err(|_| {
                 libsql::Error::Misuse("scheduler migration connection failed".into())
             })?;
             let tx = connection
@@ -92,7 +85,7 @@ impl MigrationTarget<libsql::Transaction, libsql::Error> for SchedulerMigrationT
         implementation: impl AppliableMigration<libsql::Transaction, libsql::Error> + Send,
     ) -> Result<(), libsql::Error> {
         let connection =
-            self.0.create_connection().await.map_err(|_| {
+            self.instance.create_connection().await.map_err(|_| {
                 libsql::Error::Misuse("scheduler migration connection failed".into())
             })?;
         let mut tx = connection

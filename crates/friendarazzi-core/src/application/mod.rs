@@ -3,13 +3,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use futures::channel::oneshot;
-use tracing::{instrument, warn};
+use tracing::{error, instrument};
 
 use crate::adapters::{
     BlankPdfRenderer, InMemoryObjectStore, InMemorySigning, InMemoryThrottle,
     MultithreadedEventQueue, NullMailSender, SystemClock, SystemRng,
 };
-use crate::application::context::{ContextPorts, StagedEventQueue};
+use crate::application::context::{ContextPorts, EventCollector};
 use crate::application::instrumented::InstrumentedEventQueue;
 use crate::ports::{
     Clock, EventQueue, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle,
@@ -25,7 +25,7 @@ pub mod auth;
 pub use auth::{AccessError, AuthContext};
 
 mod context;
-pub use context::{ExecutionContext, StagedEventQueue as EventStage};
+pub use context::{EventCollector as EventStage, ExecutionContext};
 
 mod konfiguration;
 pub use konfiguration::IdentityProviderConfiguration;
@@ -172,38 +172,6 @@ pub struct AppInner {
 }
 
 impl AppInner {
-    fn new_execution_context(
-        &self,
-        auth: AuthContext,
-        stage: StagedEventQueue,
-    ) -> ExecutionContext<'_> {
-        ExecutionContext::root(
-            self.uow_provider.as_ref(),
-            ContextPorts {
-                auth,
-                signing: Arc::clone(&self.signing),
-                clock: Arc::clone(&self.clock),
-                rng: Arc::clone(&self.rng),
-                object_store: Arc::clone(&self.object_store),
-                pdf_renderer: Arc::clone(&self.pdf_renderer),
-                throttle: Arc::clone(&self.throttle),
-                mail_sender: Arc::clone(&self.mail_sender),
-                event_queue: stage,
-                identity_provider_conf: self.konto.clone(),
-            },
-        )
-    }
-
-    async fn flush_stage(&self, stage: StagedEventQueue) {
-        let events = stage.take();
-        if events.is_empty() {
-            return;
-        }
-        if let Err(err) = self.event_queue.enqueue_submitted(events).await {
-            warn!(?err, "failed to enqueue submitted events");
-        }
-    }
-
     #[instrument(
         skip(self, use_case),
         fields(use_case = std::any::type_name::<U>(), auth = ?auth),
@@ -214,12 +182,11 @@ impl AppInner {
         auth: AuthContext,
         use_case: U,
     ) -> ResultReport<O, <U::Error as error_stack::IntoReport>::Context> {
-        let stage = StagedEventQueue::new();
-        let result = use_case
-            .perform(self.new_execution_context(auth, stage.clone()))
-            .await;
+        let ctx = self.new_execution_context(auth);
+        let events = ctx.events().clone();
+        let result = use_case.perform(ctx).await;
         if result.is_ok() {
-            self.flush_stage(stage).await;
+            self.enqueue_events(events).await;
         }
         result
     }
@@ -233,10 +200,11 @@ impl AppInner {
     where
         for<'a> F: AsyncFnOnce(ExecutionContext<'a>) -> ResultReport<O, E> + Send,
     {
-        let stage = StagedEventQueue::new();
-        let result = f(self.new_execution_context(auth, stage.clone())).await;
+        let ctx = self.new_execution_context(auth);
+        let events = ctx.events().clone();
+        let result = f(ctx).await;
         if result.is_ok() {
-            self.flush_stage(stage).await;
+            self.enqueue_events(events).await;
         }
         result
     }
@@ -247,6 +215,34 @@ impl AppInner {
                 .execute(AuthContext::Anonymous, *event)
                 .await
                 .map_err(|err| format!("{err:?}")),
+        }
+    }
+
+    fn new_execution_context(&self, auth: AuthContext) -> ExecutionContext<'_> {
+        ExecutionContext::root(
+            self.uow_provider.as_ref(),
+            ContextPorts {
+                auth,
+                signing: Arc::clone(&self.signing),
+                clock: Arc::clone(&self.clock),
+                rng: Arc::clone(&self.rng),
+                object_store: Arc::clone(&self.object_store),
+                pdf_renderer: Arc::clone(&self.pdf_renderer),
+                throttle: Arc::clone(&self.throttle),
+                mail_sender: Arc::clone(&self.mail_sender),
+                events: EventCollector::new(),
+                identity_provider_conf: self.konto.clone(),
+            },
+        )
+    }
+
+    async fn enqueue_events(&self, events: EventCollector) {
+        let events = events.take();
+        if events.is_empty() {
+            return;
+        }
+        if let Err(err) = self.event_queue.enqueue(events).await {
+            error!(?err, "failed to enqueue collected events");
         }
     }
 }

@@ -15,18 +15,6 @@ use crate::service::Event;
 
 const DEFAULT_WORKER_COUNT: usize = 2;
 
-async fn execute_event(app: WeakApp, event: Event) {
-    let Some(inner) = app.upgrade_inner() else {
-        return;
-    };
-    debug!("executing queued event");
-    if let Err(err) = inner.dispatch_event(event).await {
-        error!(err, "queued event execution failed");
-    } else {
-        debug!("queued event completed");
-    }
-}
-
 /// In-memory blocking [`EventQueue`] adapter that executes submitted events inline on [`App`](crate::App).
 ///
 /// Events are dispatched sequentially after the submitting use case finishes and closes its
@@ -47,12 +35,16 @@ impl BlockingEventQueue {
 
 #[async_trait]
 impl EventQueue for BlockingEventQueue {
-    async fn enqueue_submitted(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
+    async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
         for event in events {
-            if self.app.upgrade_inner().is_none() {
+            let Some(inner) = self.app.upgrade_inner() else {
                 return Err(error_stack::Report::new(EventQueueError::Unavailable));
+            };
+            if let Err(err) = inner.dispatch_event(event).await {
+                error!(err, "queued event execution failed");
+            } else {
+                debug!("queued event completed");
             }
-            execute_event(self.app.clone(), event).await;
         }
         Ok(())
     }
@@ -158,7 +150,17 @@ fn worker_loop(app: WeakApp, mut rx: UnboundedReceiver<Event>, worker_index: usi
                     break;
                 }
                 maybe_event = rx.next() => match maybe_event {
-                    Some(event) => in_flight.push(execute_event(app.clone(), event)),
+                    Some(event) => {
+                        let Some(inner) = app.upgrade_inner() else {
+                            error!("event queue worker app unavailable");
+                            break;
+                        };
+                        in_flight.push(Box::pin(async move {
+                            if let Err(err) = inner.dispatch_event(event).await {
+                                error!(err, "failed to dispatch event");
+                            }
+                        }));
+                    }
                     None => break,
                 },
                 _ = in_flight.next() => {}
@@ -170,7 +172,7 @@ fn worker_loop(app: WeakApp, mut rx: UnboundedReceiver<Event>, worker_index: usi
 
 #[async_trait]
 impl EventQueue for MultithreadedEventQueue {
-    async fn enqueue_submitted(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
+    async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
         if events.is_empty() {
             return Ok(());
         }

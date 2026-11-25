@@ -754,7 +754,7 @@ struct NoopEventQueue;
 
 #[async_trait::async_trait]
 impl EventQueue for NoopEventQueue {
-    async fn enqueue_submitted(
+    async fn enqueue(
         &self,
         _events: Vec<friendarazzi_core::service::Event>,
     ) -> ResultReport<(), EventQueueError> {

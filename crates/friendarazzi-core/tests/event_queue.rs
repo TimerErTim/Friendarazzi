@@ -166,7 +166,7 @@ impl RecordingEventQueue {
 
 #[async_trait::async_trait]
 impl EventQueue for RecordingEventQueue {
-    async fn enqueue_submitted(&self, events: Vec<Event>) -> Result<(), Report<EventQueueError>> {
+    async fn enqueue(&self, events: Vec<Event>) -> Result<(), Report<EventQueueError>> {
         self.batches.lock().unwrap().push(events);
         Ok(())
     }
@@ -197,7 +197,7 @@ async fn staged_events_are_only_dispatched_after_execution_succeeds() {
             let ev = dummy.clone();
             async move |ctx| {
                 let uow = ctx.enter().await?;
-                ctx.event_queue().submit(ev);
+                ctx.events().submit(ev);
                 uow.rollback().await?;
                 Err(Report::new(RepositoryError::Conflict))
             }
@@ -211,7 +211,7 @@ async fn staged_events_are_only_dispatched_after_execution_succeeds() {
         let ev = dummy.clone();
         async move |ctx| {
             let uow = ctx.enter().await?;
-            ctx.event_queue().submit(ev);
+            ctx.events().submit(ev);
             uow.commit().await
         }
     })
@@ -254,7 +254,7 @@ async fn blocking_event_queue_runs_after_uow_commit_without_deadlock() {
     let scheduled_for = clock.now();
     app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
         let uow = ctx.enter().await?;
-        ctx.event_queue().submit(DelayedGameStart {
+        ctx.events().submit(DelayedGameStart {
             game_id,
             scheduled_for,
         });
@@ -312,11 +312,11 @@ async fn default_multithreaded_event_queue_handles_stale_and_due_events() {
     clock.advance_by(Duration::seconds(READY_GRACE_PERIOD_SECONDS));
     app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
         let uow = ctx.enter().await?;
-        ctx.event_queue().submit(DelayedGameStart {
+        ctx.events().submit(DelayedGameStart {
             game_id,
             scheduled_for: stale_deadline,
         });
-        ctx.event_queue().submit(DelayedGameStart {
+        ctx.events().submit(DelayedGameStart {
             game_id,
             scheduled_for: current_deadline,
         });

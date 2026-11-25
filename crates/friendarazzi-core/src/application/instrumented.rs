@@ -238,7 +238,7 @@ impl InstrumentedEventQueue {
 #[async_trait]
 impl EventQueue for InstrumentedEventQueue {
     #[instrument(skip(self, events), fields(count = events.len()), level = "debug", err(Debug))]
-    async fn enqueue_submitted(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
-        self.inner.enqueue_submitted(events).await
+    async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
+        self.inner.enqueue(events).await
     }
 }

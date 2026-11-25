@@ -105,7 +105,7 @@ fn next_check_delay_uses_remaining_time_or_grace_period() {
 #[test_log::test(tokio::test)]
 async fn sqlite_state_store_migrates_and_roundtrips_without_domain_tables() {
     let sqlite = Arc::new(SQLiteInstance::in_temp_dir().await.unwrap());
-    let store = SQLiteStateStore::new(Arc::clone(&sqlite));
+    let mut store = SQLiteStateStore::new(Arc::clone(&sqlite));
 
     store.migrate_to_latest().await.unwrap();
     store.migrate_to_latest().await.unwrap();
@@ -138,7 +138,7 @@ async fn sqlite_state_store_migrates_and_roundtrips_without_domain_tables() {
 async fn friendarazzi_scheduler_activates_ready_game_and_shuts_down_gracefully() {
     let sqlite = Arc::new(SQLiteInstance::in_temp_dir().await.unwrap());
     sqlite.migrate_repos_to_latest().await.unwrap();
-    let store = SQLiteStateStore::new(Arc::clone(&sqlite));
+    let mut store = SQLiteStateStore::new(Arc::clone(&sqlite));
     store.migrate_to_latest().await.unwrap();
 
     let clock = Arc::new(FixedClock::new(test_time()));

@@ -108,10 +108,9 @@ impl SqliteEventQueue {
     }
 
     #[tracing::instrument(skip(self), err(Debug))]
-    pub async fn migrate_to_latest(&self) -> ResultReport<(), SqliteEventQueueError> {
-        let mut target = EventQueueMigrationTarget(self.instance.as_ref());
+    pub async fn migrate_to_latest(&mut self) -> ResultReport<(), SqliteEventQueueError> {
         MIGRATIONS
-            .apply(&mut target, None)
+            .apply(self, None)
             .await
             .contextualize(SqliteEventQueueError::Migration)
     }
@@ -153,7 +152,7 @@ impl SqliteEventQueue {
 
 #[async_trait]
 impl EventQueue for SqliteEventQueue {
-    async fn enqueue_submitted(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
+    async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
         if events.is_empty() {
             return Ok(());
         }
@@ -200,15 +199,13 @@ impl EventQueue for SqliteEventQueue {
     }
 }
 
-struct EventQueueMigrationTarget<'a>(&'a SQLiteInstance);
-
 #[async_trait]
-impl MigrationTarget<libsql::Transaction, libsql::Error> for EventQueueMigrationTarget<'_> {
+impl MigrationTarget<libsql::Transaction, libsql::Error> for SqliteEventQueue {
     fn get_current_version(
         &self,
     ) -> Pin<Box<dyn Future<Output = Result<Option<usize>, libsql::Error>> + '_>> {
         Box::pin(async move {
-            let conn = self.0.create_connection().await.map_err(|_| {
+            let conn = self.instance.create_connection().await.map_err(|_| {
                 libsql::Error::Misuse("event queue migration connection failed".into())
             })?;
             let tx = conn
@@ -246,7 +243,7 @@ impl MigrationTarget<libsql::Transaction, libsql::Error> for EventQueueMigration
         implementation: impl AppliableMigration<libsql::Transaction, libsql::Error> + Send,
     ) -> Result<(), libsql::Error> {
         let conn =
-            self.0.create_connection().await.map_err(|_| {
+            self.instance.create_connection().await.map_err(|_| {
                 libsql::Error::Misuse("event queue migration connection failed".into())
             })?;
         let mut tx = conn

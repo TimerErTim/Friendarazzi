@@ -11,12 +11,12 @@ pub enum EventQueueError {
 
 /// Application port for dispatching staged background [`Event`]s.
 ///
-/// Use cases gather events during execution via [`ExecutionContext::event_queue`], and
-/// [`App`](crate::App) invokes [`EventQueue::enqueue_submitted`] only after the execution
+/// Use cases gather events during execution via [`ExecutionContext::events`], and
+/// [`App`](crate::App) invokes [`EventQueue::enqueue`] only after the execution
 /// (and any open `UnitOfWork`) succeeds.
 ///
-/// [`ExecutionContext::event_queue`]: crate::application::ExecutionContext::event_queue
+/// [`ExecutionContext::events`]: crate::application::ExecutionContext::events
 #[async_trait::async_trait]
 pub trait EventQueue: Send + Sync {
-    async fn enqueue_submitted(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError>;
+    async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError>;
 }

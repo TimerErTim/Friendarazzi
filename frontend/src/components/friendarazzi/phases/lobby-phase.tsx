@@ -9,7 +9,6 @@ import { useBenutzerQuery, useFriendarazziMutations } from "@/api/hooks";
 import { InviteShareCard } from "@/components/friendarazzi/invite-share-card";
 import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +16,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
-import { type FlushPendingSaveFn, visibilityLabel } from "./shared";
+import type { FlushPendingSaveFn } from "./shared";
 
 const LOBBY_GRIDS = [
   { size: "3", title: "3 × 3", sub: "Schnell" },
@@ -234,50 +233,35 @@ export function LobbyPhase({
         <InviteShareCard inviteCode={game.inviteCode} />
 
         <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2">
-                <Users className="size-5" aria-hidden="true" />
-                Crew ({game.players.length})
-              </CardTitle>
-              {!canStart ? (
-                <Badge variant="warning">Noch {openSlots} nötig</Badge>
-              ) : null}
-            </div>
+          <CardHeader className="bg-pink-subtle py-4">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="size-5" aria-hidden="true" />
+              Mitspieler ({game.players.length})
+            </CardTitle>
           </CardHeader>
-          <CardContent className="pt-5">
-            <ul className="grid gap-3 sm:grid-cols-2">
+          <CardContent className="space-y-3 pt-4">
+            <ul className="divide-y divide-subtle">
               {game.players.map((player) => (
-                <li
-                  key={player.id}
-                  className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface-muted p-2"
-                >
-                  <PlayerBadgeLink user={player} />
+                <li key={player.id} className="py-2 first:pt-0 last:pb-0">
+                  <PlayerBadgeLink user={player} compact />
                 </li>
               ))}
-              {["slot-1", "slot-2", "slot-3"]
-                .slice(0, openSlots)
-                .map((slotId) => (
-                  <li
-                    key={slotId}
-                    className="flex min-h-14 items-center justify-center rounded-md border-2 border-dashed border-strong bg-canvas px-3 py-2 font-mono text-xs font-bold text-secondary"
-                  >
-                    Warte auf Mitspieler …
-                  </li>
-                ))}
             </ul>
+            {!canStart ? (
+              <p className="border-t-2 border-subtle pt-3 font-mono text-xs font-bold text-secondary">
+                Noch {openSlots} weitere(r) Mitspieler nötig (min. 3).
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
 
-      {/* Right Column: Host Console or Guest Rules Card */}
-      <Card>
-        <CardHeader className="bg-cyan-subtle">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>
-              {isHost ? "Host-Regiepult" : "Regeln dieser Runde"}
-            </CardTitle>
-            {isHost ? (
+      {/* Right Column: Host Console or Guest Waiting Note */}
+      {isHost ? (
+        <Card>
+          <CardHeader className="bg-cyan-subtle">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle>Einstellungen</CardTitle>
               <output
                 aria-live="polite"
                 className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-secondary"
@@ -302,11 +286,9 @@ export function LobbyPhase({
                   </>
                 ) : null}
               </output>
-            ) : null}
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5 pt-5">
-          {isHost ? (
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-5 pt-5">
             <div className="space-y-5">
               <Field label="Spieltitel">
                 <Input
@@ -428,24 +410,14 @@ export function LobbyPhase({
                 </Button>
               </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="rounded-sm border-2 border-strong bg-surface-muted p-3">
-                <p className="font-mono text-xs font-bold text-secondary uppercase">
-                  Sichtbarkeitsmodus
-                </p>
-                <p className="mt-0.5 font-bold text-ink">
-                  {visibilityLabel(game.visibilityMode)}
-                </p>
-              </div>
-              <CalloutNote label="Warten auf Host" tone="yellow">
-                Der Host startet die Entwurfsphase, sobald mindestens 3 Freunde
-                beigetreten sind.
-              </CalloutNote>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : (
+        <CalloutNote label="Warten auf Host" tone="yellow">
+          Der Host startet die Entwurfsphase, sobald mindestens 3 Mitspieler
+          dabei sind.
+        </CalloutNote>
+      )}
     </div>
   );
 }

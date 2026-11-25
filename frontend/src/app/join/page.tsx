@@ -7,10 +7,10 @@ import { useEffect, useState } from "react";
 
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
+import { GameStatus } from "@/api/friendarazzi-api";
 import { useFriendarazziMutations, useGameByCodeQuery } from "@/api/hooks";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,19 @@ import {
   paths,
 } from "@/lib/navigation";
 import { useQueryParam } from "@/lib/use-query-param";
+
+function joinStatusLabel(status: GameStatus): string {
+  switch (status) {
+    case GameStatus.Lobby:
+      return "Lobby";
+    case GameStatus.Drafting:
+      return "Entwurf";
+    case GameStatus.Active:
+      return "Läuft";
+    case GameStatus.Completed:
+      return "Beendet";
+  }
+}
 
 export default function JoinPage() {
   const phase = useAuth();
@@ -51,18 +64,11 @@ export default function JoinPage() {
       <div className="brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-surface">
         {/* Ticket Header Stub */}
         <div className="border-b-[2.5px] border-strong bg-primary p-6 text-primary-foreground">
-          <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-sm border-2 border-strong bg-surface px-2.5 py-0.5 font-mono text-xs font-bold text-ink uppercase">
-              <Ticket className="size-3.5" aria-hidden="true" />
-              Eintrittskarte
-            </span>
-            <CodeTag tone="surface">Lobby-Join</CodeTag>
-          </div>
-          <h1 className="mt-3 font-display text-2xl tracking-tight sm:text-3xl">
+          <h1 className="font-display text-2xl tracking-tight sm:text-3xl">
             Spiel beitreten
           </h1>
           <p className="mt-1 text-sm font-bold">
-            Gib deinen Einladungscode ein und spring direkt in die Lobby.
+            Einladungscode eingeben und direkt in die Lobby springen.
           </p>
         </div>
 
@@ -146,7 +152,9 @@ export default function JoinPage() {
                           </span>
                         </div>
                       </div>
-                      <Badge variant="primary">{preview.data.status}</Badge>
+                      <Badge variant="info">
+                        {joinStatusLabel(preview.data.status)}
+                      </Badge>
                     </div>
                   </div>
 

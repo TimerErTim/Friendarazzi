@@ -1,6 +1,6 @@
 "use client";
 
-import { Crown, Flame, Ghost, Target, Timer, Zap } from "lucide-react";
+import { Crown, Flame, Ghost, Target, Zap } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -58,30 +58,22 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
     <div className="space-y-8">
       {/* Winner Podium Banner */}
       {game.winner ? (
-        <div className="brutal-shadow-lg rounded-md border-[2.5px] border-strong bg-primary p-6 text-primary-foreground">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <PlayerAvatar user={game.winner} size="lg" />
-              <div className="space-y-1">
-                <Badge variant="outline" className="gap-1">
-                  <Crown className="size-3.5" aria-hidden="true" />
-                  BINGO-SIEGER
-                </Badge>
-                <h2 className="font-display text-2xl tracking-tight sm:text-3xl">
-                  {game.winner.displayName} gewinnt „{game.title}“!
-                </h2>
-                <p className="font-mono text-xs font-bold">
-                  {game.winner.effectiveTitle} · {game.winner.goldMedalCount}{" "}
-                  Goldmedaillen (+1)
-                </p>
-              </div>
+        <div className="brutal-shadow-lg rounded-md border-[2.5px] border-strong bg-primary p-5 text-primary-foreground sm:p-6">
+          <div className="flex items-center gap-4">
+            <PlayerAvatar user={game.winner} size="lg" />
+            <div className="space-y-1">
+              <Badge variant="outline" className="gap-1">
+                <Crown className="size-3.5" aria-hidden="true" />
+                BINGO-SIEGER
+              </Badge>
+              <h2 className="font-display text-2xl tracking-tight sm:text-3xl">
+                {game.winner.displayName} hat gewonnen!
+              </h2>
+              <p className="font-mono text-xs font-bold">
+                {game.winner.effectiveTitle} · {game.winner.goldMedalCount}{" "}
+                Goldmedaillen (+1)
+              </p>
             </div>
-            {game.startedAt && game.endedAt ? (
-              <div className="inline-flex items-center gap-1.5 rounded-sm border-2 border-strong bg-surface px-3 py-1 font-mono text-xs font-bold text-ink tabular-nums">
-                <Timer className="size-4" aria-hidden="true" />
-                {new Date(game.endedAt).toLocaleString("de-AT")}
-              </div>
-            ) : null}
           </div>
         </div>
       ) : null}
@@ -97,10 +89,12 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
               const meta = superlativeMeta(sup.kind, sup.metricValue);
               const Icon = meta.icon;
               return (
-                <Card key={sup.kind}>
+                <Card key={sup.kind} className="overflow-hidden">
                   <CardContent className="space-y-2 pt-4">
                     <div className="flex items-center gap-2 font-mono text-xs font-bold tracking-wide text-secondary uppercase">
-                      <Icon className="size-4 text-ink" aria-hidden="true" />
+                      <span className="inline-flex size-6 items-center justify-center rounded-sm border border-strong bg-primary-subtle text-ink">
+                        <Icon className="size-3.5" aria-hidden="true" />
+                      </span>
                       <span>{meta.label}</span>
                     </div>
                     <PlayerBadgeLink
@@ -158,9 +152,7 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
               <div key={board.id} className="space-y-3">
                 <div className="brutal-shadow-sm flex items-center justify-between gap-2 rounded-md border-2 border-strong bg-surface px-4 py-2.5">
                   <PlayerBadgeLink user={board.owner} compact />
-                  {board.hasBingo ? (
-                    <Badge variant="primary">Bingo!</Badge>
-                  ) : null}
+                  {board.hasBingo ? <Badge variant="info">Bingo!</Badge> : null}
                 </div>
                 <BingoBoard
                   board={board}

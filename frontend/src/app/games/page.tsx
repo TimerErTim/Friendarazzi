@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, ChevronDown, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -20,9 +20,17 @@ import {
 import { SetBreadcrumbLabel } from "@/components/layout/page-chrome";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { CalloutNote, CodeTag } from "@/components/ui/brutal-elements";
+import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import {
@@ -214,75 +222,93 @@ export default function GamePage() {
   const runningGames = sortActiveGames(
     (gamesList.data ?? []).filter((g) => g.status !== GameStatus.Completed),
   );
+  const hasOtherActionNeeded = runningGames.some(
+    (g) => g.id !== game.id && g.needsAction,
+  );
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 sm:space-y-5 sm:p-6">
       <SetBreadcrumbLabel label={game.title} />
 
-      {/* Parallel Games Quick-Switch Bar */}
-      {runningGames.length > 1 ? (
-        <nav
-          aria-label="Parallele Spiele wechseln"
-          className="flex flex-wrap items-center gap-2"
-        >
-          {runningGames.map((item) => {
-            const isCurrent = item.id === game.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={isSwitching}
-                aria-current={isCurrent ? "page" : undefined}
-                onClick={() => void handleSwitchGame(item.id)}
-                className={cn(
-                  "inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border-2 border-strong px-3 py-1.5 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-60",
-                  isCurrent
-                    ? "brutal-shadow-sm bg-primary text-primary-foreground"
-                    : "bg-surface text-ink hover:bg-surface-muted",
-                )}
-              >
-                <span className="max-w-36 truncate">{item.title}</span>
-                {item.needsAction && !isCurrent ? (
-                  <CodeTag tone="yellow">Aktion</CodeTag>
-                ) : (
-                  <CodeTag tone={isCurrent ? "surface" : "cyan"}>
-                    {shortStatusLabel(item.status)}
-                  </CodeTag>
-                )}
-              </button>
-            );
-          })}
-          <Link
-            href={paths.home}
-            className="inline-flex min-h-11 items-center gap-1 rounded-sm border-2 border-dashed border-strong bg-canvas px-3 py-1.5 text-xs font-bold text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            Lobbys
-          </Link>
-        </nav>
-      ) : null}
-
-      {/* Match Header & 4-Phase Stepper */}
-      <section className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-4 sm:p-5">
-        <div className="min-w-0 space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="truncate font-display text-xl tracking-tight text-ink sm:text-2xl">
-              {game.title}
-            </h1>
-            <CodeTag tone="cyan">
-              {game.gridSize}×{game.gridSize}
-            </CodeTag>
+      {/* Compact single-row match header + thin phase progress track */}
+      <header className="space-y-2.5 border-b-2 border-strong pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate font-display text-xl tracking-tight text-ink sm:text-2xl">
+                {game.title}
+              </h1>
+              <Badge variant="primary" className="shrink-0">
+                {shortStatusLabel(game.status)}
+              </Badge>
+            </div>
+            <p className="truncate font-mono text-xs font-bold text-secondary">
+              {game.gridSize}×{game.gridSize} ·{" "}
+              {visibilityLabel(game.visibilityMode)} · {game.players.length}{" "}
+              Spieler
+            </p>
           </div>
-          <p className="font-mono text-xs font-bold text-secondary">
-            {visibilityLabel(game.visibilityMode)} · {game.players.length}{" "}
-            Spieler
-          </p>
+
+          {runningGames.length > 1 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isSwitching}
+                  className="shrink-0 gap-1.5"
+                >
+                  <span>Runden ({runningGames.length})</span>
+                  {hasOtherActionNeeded ? (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="size-2 rounded-full border border-strong bg-primary"
+                      />
+                      <span className="sr-only">
+                        (Aktion in anderem Spiel nötig)
+                      </span>
+                    </>
+                  ) : null}
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>Parallele Spiele</DropdownMenuLabel>
+                {runningGames.map((item) => {
+                  const isCurrent = item.id === game.id;
+                  return (
+                    <DropdownMenuItem
+                      key={item.id}
+                      disabled={isCurrent || isSwitching}
+                      onSelect={() => void handleSwitchGame(item.id)}
+                      className="justify-between gap-2"
+                    >
+                      <span className="truncate font-bold">{item.title}</span>
+                      <span className="shrink-0 font-mono text-[11px] text-secondary">
+                        {isCurrent
+                          ? "Aktiv"
+                          : item.needsAction
+                            ? "Aktion"
+                            : shortStatusLabel(item.status)}
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href={paths.home}>
+                    <Plus className="size-4" aria-hidden="true" />
+                    Alle Lobbys
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
 
-        <ol
-          aria-label="Spielphasen"
-          className="mt-4 grid grid-cols-4 gap-1.5 border-t-2 border-strong pt-4"
-        >
+        <ol aria-label="Spielphasen" className="grid grid-cols-4 gap-1.5">
           {PHASES.map((step, idx) => {
             const isCurrent = idx === activeIdx;
             const isDone = idx < activeIdx;
@@ -290,22 +316,35 @@ export default function GamePage() {
               <li
                 key={step.status}
                 aria-current={isCurrent ? "step" : undefined}
-                className={cn(
-                  "flex items-center justify-center gap-1.5 rounded-sm border-2 border-strong px-2 py-1.5 text-center text-xs font-bold",
-                  isCurrent
-                    ? "brutal-shadow-sm bg-primary text-primary-foreground"
-                    : isDone
-                      ? "bg-cyan-subtle text-ink"
-                      : "bg-surface-muted text-secondary",
-                )}
+                className="space-y-1"
               >
-                <span className="font-mono">{step.num}.</span>
-                <span className="truncate">{step.label}</span>
+                <div
+                  className={cn(
+                    "h-2.5 w-full rounded-sm border border-strong",
+                    isCurrent
+                      ? "bg-primary"
+                      : isDone
+                        ? "bg-cyan"
+                        : "bg-surface-muted",
+                  )}
+                />
+                <span
+                  className={cn(
+                    "hidden font-mono text-[10px] leading-none font-bold sm:block",
+                    isCurrent ? "text-ink" : "text-secondary",
+                  )}
+                >
+                  {step.num}. {step.label}
+                </span>
+                <span className="sr-only sm:hidden">
+                  {step.num}. {step.label}
+                  {isCurrent ? " (aktuell)" : isDone ? " (erledigt)" : ""}
+                </span>
               </li>
             );
           })}
         </ol>
-      </section>
+      </header>
 
       {game.status === GameStatus.Lobby ? (
         <LobbyPhase
@@ -350,27 +389,42 @@ function GameOverviewCard({
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex items-start justify-between gap-2 border-b-2 border-strong bg-surface-muted px-5 py-3.5">
+      <div
+        className={cn(
+          "flex items-start justify-between gap-2 border-b-2 border-strong px-5 py-3.5",
+          game.status === GameStatus.Completed
+            ? "bg-surface-muted"
+            : game.needsAction || game.status === GameStatus.Active
+              ? "bg-primary-subtle"
+              : game.status === GameStatus.Drafting
+                ? "bg-cyan-subtle"
+                : "bg-pink-subtle",
+        )}
+      >
         <div className="min-w-0 space-y-1">
           <h3 className="truncate font-display text-lg text-ink">
             {game.title}
           </h3>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {game.needsAction ? (
-              <Badge variant="warning">Aktion nötig</Badge>
-            ) : null}
-            {isLastVisited ? (
-              <CodeTag tone="cyan">Zuletzt geöffnet</CodeTag>
-            ) : null}
-          </div>
+          {game.needsAction || isLastVisited ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {game.needsAction ? (
+                <Badge variant="warning">Aktion nötig</Badge>
+              ) : null}
+              {isLastVisited ? (
+                <span className="font-mono text-[11px] font-bold text-secondary">
+                  Zuletzt geöffnet
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        <Badge variant="primary">{shortStatusLabel(game.status)}</Badge>
+        <Badge variant="info">{shortStatusLabel(game.status)}</Badge>
       </div>
       <CardContent className="flex items-center justify-between gap-3 pt-4 pb-4">
         <p className="font-mono text-xs font-bold text-secondary">
           {formatGameProgress(game, countdown)}
         </p>
-        <Button size="sm" asChild>
+        <Button variant="secondary" size="sm" asChild>
           <Link href={gameHref(game.id)}>
             {gameNextActionLabel(game)}
             <ArrowRight aria-hidden="true" />

@@ -8,8 +8,8 @@ import {
   Loader2,
   Lock,
   LockOpen,
-  Sparkles,
   Timer,
+  Users,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -31,12 +31,16 @@ import {
   PlayerBadgeLink,
 } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
-import { CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { autofillEmptySlots, rerollSingleSlot } from "@/lib/draft-prompts";
 import { useGameCountdown } from "@/lib/use-game-countdown";
@@ -321,29 +325,30 @@ export function DraftingPhase({
     countdownSeconds !== null
       ? Math.max(0, Math.min(100, Math.round((countdownSeconds / 60) * 100)))
       : 0;
+  const readyCount = game.players.filter((p) => p.draftLocked).length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {countdownSeconds !== null ? (
         <section
           aria-live="polite"
-          className="brutal-shadow-lg space-y-3 rounded-md border-[2.5px] border-strong bg-primary-subtle p-5"
+          className="brutal-shadow space-y-2.5 rounded-md border-[2.5px] border-strong bg-primary-subtle p-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex size-10 items-center justify-center rounded-sm border-2 border-strong bg-primary text-primary-foreground">
-                <Timer className="size-5" aria-hidden="true" />
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-9 items-center justify-center rounded-sm border-2 border-strong bg-primary text-primary-foreground">
+                <Timer className="size-4" aria-hidden="true" />
               </span>
               <div>
-                <h2 className="font-display text-lg text-ink">
-                  Alle bereit – Spielstart in{" "}
+                <h2 className="font-display text-base text-ink sm:text-lg">
+                  Alle bereit – Start in{" "}
                   <span className="font-mono tabular-nums">
                     {countdownSeconds}s
                   </span>
                 </h2>
                 <p className="text-xs font-medium text-secondary">
-                  Die Bingo-Bretter werden ausgeteilt, sobald eine volle Minute
-                  ohne Änderung abläuft.
+                  Bretter werden verteilt, sobald 60 Sek. nichts mehr geändert
+                  wird.
                 </p>
               </div>
             </div>
@@ -351,13 +356,14 @@ export function DraftingPhase({
               <Button
                 type="button"
                 variant="secondary"
+                size="sm"
                 disabled={mutations.unlockPrompts.isPending}
                 onClick={() => void handleUnlock()}
               >
                 <LockOpen className="size-4" aria-hidden="true" />
                 {mutations.unlockPrompts.isPending
                   ? "Wird freigegeben …"
-                  : "Bereitschaft zurückziehen"}
+                  : "Zurückziehen"}
               </Button>
             ) : null}
           </div>
@@ -365,113 +371,88 @@ export function DraftingPhase({
         </section>
       ) : null}
 
-      {/* Crew Status + Quick-Start Deck Picker */}
-      <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <CardTitle>Crew-Status</CardTitle>
-              <CodeTag tone="yellow">
-                {game.players.filter((p) => p.draftLocked).length} /{" "}
-                {game.players.length} bereit
-              </CodeTag>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <ul className="flex flex-wrap gap-2">
+      {/* Single compact toolbar above prompt fields: Deck Quick-Fill + Crew Status Popover */}
+      <div className="brutal-shadow-sm flex flex-wrap items-center justify-between gap-2 rounded-md border-2 border-strong bg-cyan-subtle p-2.5">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <div className="min-w-44 flex-1 sm:max-w-56">
+            <Select
+              aria-label="Quick-Start Deck wählen"
+              disabled={isLocked || (decks.data ?? []).length === 0}
+              value={selectedDeckSlug}
+              onChange={(e) => {
+                setSelectedDeckSlug(e.target.value);
+                setDeckNotice(null);
+              }}
+            >
+              {(decks.data ?? []).map((deck) => (
+                <option key={deck.id} value={deck.slug}>
+                  Deck: {deck.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={isLocked || !activeDeck}
+            onClick={autofillEmpty}
+          >
+            <Dices className="size-4" aria-hidden="true" />
+            Leere füllen
+          </Button>
+        </div>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="secondary" size="sm">
+              <Users className="size-4" aria-hidden="true" />
+              <span className="font-mono tabular-nums">
+                {readyCount}/{game.players.length} bereit
+              </span>
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-3">
+            <p className="mb-2 font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
+              Crew-Bereitschaft ({readyCount}/{game.players.length})
+            </p>
+            <ul className="divide-y divide-subtle">
               {game.players.map((p) => (
                 <li
                   key={p.id}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-sm border-2 border-strong px-2.5 py-1 text-xs font-bold",
-                    p.draftLocked
-                      ? "bg-success/15 text-ink"
-                      : "bg-surface-muted text-secondary",
-                  )}
+                  className="flex items-center justify-between gap-2 py-1.5 text-xs font-bold first:pt-0 last:pb-0"
                 >
-                  <PlayerAvatar user={p} size="sm" showMedalBadge={false} />
-                  <span>{p.displayName}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <PlayerAvatar
+                      user={p}
+                      size="sm"
+                      linkToProfile={false}
+                      showMedalBadge={false}
+                    />
+                    <span className="truncate text-ink">{p.displayName}</span>
+                  </span>
                   {p.draftLocked ? (
                     <CheckCircle2
-                      className="size-4 text-success"
-                      aria-hidden="true"
+                      className="size-4 shrink-0 text-success"
+                      aria-label="Bereit"
                     />
-                  ) : null}
+                  ) : (
+                    <span className="font-mono text-[11px] text-secondary">
+                      offen
+                    </span>
+                  )}
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="bg-cyan-subtle">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="size-5" aria-hidden="true" />
-                Quick-Start Decks
-              </CardTitle>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={isLocked || !activeDeck}
-                onClick={autofillEmpty}
-              >
-                <Dices className="size-4" aria-hidden="true" />
-                Leere Felder füllen
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-4">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {(decks.data ?? []).map((deck) => {
-                const selected = deck.slug === selectedDeckSlug;
-                return (
-                  <button
-                    key={deck.id}
-                    type="button"
-                    disabled={isLocked}
-                    aria-pressed={selected}
-                    onClick={() => {
-                      setSelectedDeckSlug(deck.slug);
-                      setDeckNotice(null);
-                    }}
-                    className={cn(
-                      "brutal-press flex min-h-12 cursor-pointer flex-col justify-center rounded-sm border-2 border-control px-2.5 py-2 text-left disabled:cursor-not-allowed disabled:opacity-50",
-                      "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-                      selected
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-surface text-ink hover:bg-surface-muted",
-                    )}
-                  >
-                    <span className="truncate text-xs font-bold">
-                      {deck.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {activeDeck ? (
-              <p className="text-xs font-medium text-secondary">
-                {activeDeck.description}
-              </p>
-            ) : null}
-            {deckNotice ? <Alert variant="info">{deckNotice}</Alert> : null}
-          </CardContent>
-        </Card>
+          </PopoverContent>
+        </Popover>
       </div>
 
-      {/* Grouped Prompt Workshop */}
+      {deckNotice ? <Alert variant="info">{deckNotice}</Alert> : null}
+
+      {/* Grouped Prompt Workshop — right at the top on mobile */}
       <Card>
-        <CardHeader className="bg-surface-muted">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Aufträge für deine Mitspieler</CardTitle>
-            <span className="font-mono text-xs font-bold text-ink tabular-nums">
-              {filledCount} / {slots.length} ausgefüllt
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent className="divide-y-2 divide-subtle pt-2">
+        <CardContent className="divide-y-2 divide-subtle pt-4 pb-4">
           {game.myQuotas.map((quota) => {
             const targetSlots = slots.filter(
               (s) => s.targetUserId === quota.targetUser.id,
@@ -481,25 +462,29 @@ export function DraftingPhase({
             ).length;
 
             return (
-              <section key={quota.targetUser.id} className="space-y-3 py-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <PlayerBadgeLink user={quota.targetUser} />
-                  <Badge
-                    variant={
+              <section
+                key={quota.targetUser.id}
+                className="space-y-3 py-4 first:pt-0 last:pb-0"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <PlayerBadgeLink user={quota.targetUser} compact />
+                  <span
+                    className={cn(
+                      "rounded-sm border border-strong px-2 py-0.5 font-mono text-xs font-bold tabular-nums",
                       targetFilled === quota.requiredCount
-                        ? "success"
-                        : "default"
-                    }
+                        ? "border-success bg-success/15 text-ink"
+                        : "bg-primary-subtle text-ink",
+                    )}
                   >
-                    {targetFilled} / {quota.requiredCount} Aufträge
-                  </Badge>
+                    {targetFilled}/{quota.requiredCount}
+                  </span>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-2.5 md:grid-cols-2">
                   {targetSlots.map((slot, index) => (
                     <div key={slot.key} className="flex items-center gap-2">
-                      <CodeTag tone="yellow" className="w-8 justify-center">
+                      <span className="w-7 shrink-0 rounded-sm border border-strong bg-primary-subtle py-1 text-center font-mono text-xs font-bold text-ink tabular-nums">
                         {index + 1}
-                      </CodeTag>
+                      </span>
                       <Input
                         value={slot.text}
                         disabled={isLocked}
@@ -577,9 +562,8 @@ export function DraftingPhase({
         <Alert variant="success" icon={<CheckCircle2 className="size-4" />}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span>
-              Deine Aufträge ({filledCount}/{slots.length}) sind eingeloggt.
-              Sobald alle bereit sind, startet ein 60-Sekunden-Countdown vor
-              Spielbeginn.
+              Aufträge eingeloggt ({filledCount}/{slots.length}). Der
+              60-Sekunden-Countdown startet, sobald alle bereit sind.
             </span>
             <Button
               type="button"
@@ -591,18 +575,15 @@ export function DraftingPhase({
               <LockOpen className="size-4" aria-hidden="true" />
               {mutations.unlockPrompts.isPending
                 ? "Wird freigegeben …"
-                : "Bereitschaft zurückziehen"}
+                : "Zurückziehen"}
             </Button>
           </div>
         </Alert>
       ) : !isLocked ? (
-        <div className="brutal-shadow-lg sticky bottom-20 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border-[2.5px] border-strong bg-surface p-4 md:bottom-4">
+        <div className="brutal-shadow-lg sticky bottom-20 z-20 flex flex-wrap items-center justify-between gap-3 rounded-md border-[2.5px] border-strong bg-surface p-3.5 md:bottom-4">
           <div className="flex flex-wrap items-center gap-3">
-            <CodeTag tone="cyan">
-              {filledCount} / {slots.length}
-            </CodeTag>
-            <span className="text-sm font-bold text-ink">
-              Aufträge ausgefüllt
+            <span className="font-mono text-sm font-bold text-ink tabular-nums">
+              {filledCount} / {slots.length} ausgefüllt
             </span>
             <output
               aria-live="polite"

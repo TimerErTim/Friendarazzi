@@ -103,7 +103,7 @@ function GalleryGroups({
               </p>
             </div>
             {group.winner ? (
-              <Badge variant="primary" className="gap-1">
+              <Badge variant="info" className="gap-1">
                 <Trophy className="size-3" aria-hidden="true" />
                 {group.winner.displayName}
                 <Award className="size-3" aria-hidden="true" />

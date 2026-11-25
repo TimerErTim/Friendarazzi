@@ -338,7 +338,7 @@ function GuestLanding() {
         </div>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="brutal-shadow flex flex-col justify-between rounded-md border-[2.5px] border-strong bg-surface p-5">
+          <div className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-5">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <CodeTag tone="yellow">01</CodeTag>
@@ -352,12 +352,9 @@ function GuestLanding() {
                 Einladungscode per Link.
               </p>
             </div>
-            <div className="mt-5 rounded-sm border-2 border-strong bg-primary-subtle px-3 py-2 font-mono text-xs font-bold text-ink">
-              CODE: A7K9P2
-            </div>
           </div>
 
-          <div className="brutal-shadow flex flex-col justify-between rounded-md border-[2.5px] border-strong bg-surface p-5">
+          <div className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-5">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <CodeTag tone="pink">02</CodeTag>
@@ -371,12 +368,9 @@ function GuestLanding() {
                 Out*, *Urlaub*, *WG*, *Büro*) auswürfeln.
               </p>
             </div>
-            <div className="mt-5 rounded-sm border-2 border-strong bg-pink-subtle px-3 py-2 font-mono text-xs font-bold text-ink">
-              Konfliktfrei gemischt
-            </div>
           </div>
 
-          <div className="brutal-shadow flex flex-col justify-between rounded-md border-[2.5px] border-strong bg-surface p-5">
+          <div className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-5">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <CodeTag tone="cyan">03</CodeTag>
@@ -388,12 +382,9 @@ function GuestLanding() {
                 und unauffällig hochladen.
               </p>
             </div>
-            <div className="mt-5 rounded-sm border-2 border-strong bg-cyan-subtle px-3 py-2 font-mono text-xs font-bold text-ink">
-              Kamera im Browser
-            </div>
           </div>
 
-          <div className="brutal-shadow flex flex-col justify-between rounded-md border-[2.5px] border-strong bg-surface p-5">
+          <div className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-5">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <CodeTag tone="yellow">04</CodeTag>
@@ -406,9 +397,6 @@ function GuestLanding() {
                 Reihe voll? Goldmedaille kassieren, Superlatives feiern und über
                 die 1:1 Zeitachse scrollen!
               </p>
-            </div>
-            <div className="mt-5 rounded-sm border-2 border-strong bg-surface-muted px-3 py-2 font-mono text-xs font-bold text-ink">
-              +1 Goldmedaille
             </div>
           </div>
         </div>
@@ -620,69 +608,51 @@ function AuthenticatedHome() {
   const completed = all.filter((g) => g.status === GameStatus.Completed);
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6">
-      {/* Quick Launch Cockpit: Host or Join */}
-      <section className="brutal-shadow-lg rounded-md border-[2.5px] border-strong bg-surface p-5 sm:p-7">
-        <div className="grid items-center gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="space-y-3">
-            <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
-              Nächste Runde starten oder beitreten
-            </h1>
-            <p className="max-w-xl text-sm font-medium text-secondary">
-              Eröffne eine neue Foto-Jagd-Lobby als Host oder gib direkt den
-              Einladungscode deiner Freunde ein.
-            </p>
-            <div className="pt-1">
-              <Button size="lg" onClick={() => setCreateOpen(true)}>
-                <Plus aria-hidden="true" />
-                Neues Spiel hosten
-              </Button>
-            </div>
-          </div>
-
-          <form
-            onSubmit={(e) => void handleJoinSubmit(e)}
-            className="brutal-shadow-sm space-y-3 rounded-md border-2 border-strong bg-cyan-subtle p-4"
-          >
-            <p className="font-mono text-xs font-bold tracking-wider text-ink uppercase">
-              Mit Einladungscode beitreten
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <label htmlFor="cockpit-invite-code" className="sr-only">
-                Einladungscode
-              </label>
-              <Input
-                id="cockpit-invite-code"
-                value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                placeholder="CODE (z.B. A7K9P2)"
-                className="min-w-36 flex-1 font-mono font-bold tracking-wider uppercase"
-                maxLength={16}
-              />
-              <Button
-                type="submit"
-                variant="secondary"
-                size="field"
-                disabled={mutations.joinGame.isPending}
-              >
-                <Ticket aria-hidden="true" />
-                {mutations.joinGame.isPending ? "Tritt bei …" : "Beitreten"}
-              </Button>
-            </div>
-          </form>
+    <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
+      {/* Compact Hub Header: one primary CTA + inline secondary join form */}
+      <section className="brutal-shadow flex flex-col gap-4 rounded-md border-[2.5px] border-strong bg-surface p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
+            Spielzentrale
+          </h1>
+          <Button size="lg" onClick={() => setCreateOpen(true)}>
+            <Plus aria-hidden="true" />
+            Neues Spiel hosten
+          </Button>
         </div>
+
+        <form
+          onSubmit={(e) => void handleJoinSubmit(e)}
+          className="flex flex-wrap items-center gap-2 rounded-sm border-2 border-strong bg-cyan-subtle p-1.5"
+        >
+          <label htmlFor="cockpit-invite-code" className="sr-only">
+            Mit Einladungscode beitreten
+          </label>
+          <Input
+            id="cockpit-invite-code"
+            value={inviteCode}
+            onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+            placeholder="Code (z.B. A7K9P2)"
+            className="min-w-40 flex-1 font-mono font-bold tracking-wider uppercase sm:w-48 sm:flex-none"
+            maxLength={16}
+          />
+          <Button
+            type="submit"
+            variant="secondary"
+            size="field"
+            disabled={mutations.joinGame.isPending}
+          >
+            <Ticket aria-hidden="true" />
+            {mutations.joinGame.isPending ? "Tritt bei …" : "Beitreten"}
+          </Button>
+        </form>
       </section>
 
       {/* Active Games */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <h2 className="font-display text-xl tracking-tight text-ink">
-              Laufende Spiele
-            </h2>
-            <CodeTag tone="yellow">{active.length}</CodeTag>
-          </div>
-        </div>
+      <section className="space-y-3">
+        <h2 className="font-display text-xl tracking-tight text-ink">
+          Laufende Spiele ({active.length})
+        </h2>
 
         {active.length === 0 ? (
           <CalloutNote label="Keine aktive Runde" tone="yellow">
@@ -702,20 +672,16 @@ function AuthenticatedHome() {
         )}
       </section>
 
-      {/* Completed Games as Memory Cards (replaces dry table) */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-3">
-          <h2 className="font-display text-xl tracking-tight text-ink">
-            Vergangene Matches &amp; Erinnerungen
-          </h2>
-          <CodeTag tone="cyan">{completed.length}</CodeTag>
-        </div>
+      {/* Completed Games as Memory Cards */}
+      <section className="space-y-3">
+        <h2 className="font-display text-xl tracking-tight text-ink">
+          Vergangene Matches ({completed.length})
+        </h2>
 
         {completed.length === 0 ? (
-          <CalloutNote label="Noch kein Archiv">
-            Abgeschlossene Runden mit 1:1 Zeitachse, Superlatives und
-            Fotogalerien landen hier.
-          </CalloutNote>
+          <p className="text-sm font-medium text-secondary">
+            Abgeschlossene Runden mit Zeitachse und Fotogalerien landen hier.
+          </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {completed.map((game) => (
@@ -839,6 +805,16 @@ function AuthenticatedHome() {
   );
 }
 
+function activeHeaderTint(game: GameSummary): string {
+  if (game.needsAction || game.status === GameStatus.Active) {
+    return "bg-primary-subtle";
+  }
+  if (game.status === GameStatus.Drafting) {
+    return "bg-cyan-subtle";
+  }
+  return "bg-pink-subtle";
+}
+
 function ActiveGameCard({
   game,
   dataUpdatedAt,
@@ -856,19 +832,23 @@ function ActiveGameCard({
 
   return (
     <Card className="flex flex-col justify-between overflow-hidden">
-      <div className="flex items-start justify-between gap-3 border-b-2 border-strong bg-primary-subtle px-5 py-4">
+      <div
+        className={cn(
+          "flex items-start justify-between gap-3 border-b-2 border-strong px-5 py-3.5",
+          activeHeaderTint(game),
+        )}
+      >
         <div className="min-w-0 space-y-1">
           <h3 className="truncate font-display text-lg text-ink">
             {game.title}
           </h3>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <CodeTag tone="surface">Code: {game.inviteCode}</CodeTag>
-            {game.needsAction ? (
-              <Badge variant="warning">Aktion nötig</Badge>
-            ) : null}
-          </div>
+          <CodeTag tone="surface">{game.inviteCode}</CodeTag>
         </div>
-        <Badge variant="primary">{statusLabel(game.status)}</Badge>
+        {game.needsAction ? (
+          <Badge variant="warning">Aktion nötig</Badge>
+        ) : (
+          <Badge variant="info">{statusLabel(game.status)}</Badge>
+        )}
       </div>
       <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 pb-4">
         <div className="flex flex-wrap items-center gap-3 font-mono text-xs font-bold text-secondary">
@@ -881,7 +861,7 @@ function ActiveGameCard({
             {game.gridSize}×{game.gridSize} · {game.playerCount}P
           </span>
         </div>
-        <Button size="sm" asChild>
+        <Button variant="secondary" size="sm" asChild>
           <Link href={gameHref(game.id)}>
             {ctaLabel}
             <ArrowRight aria-hidden="true" />
@@ -899,14 +879,12 @@ function CompletedGameCard({ game }: { game: GameSummary }) {
 
   return (
     <Card className="flex flex-col justify-between overflow-hidden">
-      <div className="border-b-2 border-strong bg-surface-muted px-5 py-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-xs font-bold text-secondary tabular-nums">
-            {dateStr}
-          </span>
-          <CodeTag tone="surface">
+      <div className="border-b-2 border-strong bg-cyan-subtle px-5 py-3.5">
+        <div className="flex items-center justify-between gap-2 font-mono text-xs font-bold text-secondary tabular-nums">
+          <span>{dateStr}</span>
+          <span>
             {game.gridSize}×{game.gridSize} · {game.playerCount}P
-          </CodeTag>
+          </span>
         </div>
         <h3 className="mt-1 truncate font-display text-base text-ink">
           {game.title}

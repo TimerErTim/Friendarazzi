@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Crosshair, Upload, Users } from "lucide-react";
+import { ChevronDown, ChevronUp, Upload, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { apiErrorMessage } from "@/api/errors";
@@ -32,8 +32,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/cn";
 import { normalizeImageForUpload } from "@/lib/media-capture";
+
+const INITIAL_FEED_ITEMS = 3;
 
 export function ActivePlayPhase({ game }: { game: GameDetail }) {
   const mutations = useFriendarazziMutations();
@@ -43,6 +52,8 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [lightboxCapture, setLightboxCapture] =
     useState<CaptureFeedItem | null>(null);
+  const [mobileFeedOpen, setMobileFeedOpen] = useState(false);
+  const [showAllFeed, setShowAllFeed] = useState(false);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -57,9 +68,10 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   const board = game.myBoard;
   if (!board) {
     return (
-      <CalloutNote label="Brett wird geladen" tone="yellow">
-        Dein Bingo-Brett wird vorbereitet …
-      </CalloutNote>
+      <div aria-busy="true" className="space-y-3">
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-80 w-full" />
+      </div>
     );
   }
 
@@ -69,6 +81,10 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
     totalCount > 0 ? Math.round((capturedCount / totalCount) * 100) : 0;
 
   const isUploading = isPreparingUpload || mutations.submitCapture.isPending;
+  const visibleFeed = showAllFeed
+    ? game.feed
+    : game.feed.slice(0, INITIAL_FEED_ITEMS);
+  const hiddenFeedCount = Math.max(0, game.feed.length - visibleFeed.length);
 
   async function submitTilePhoto() {
     if (!selectedTile || !selectedFile || isUploading) return;
@@ -88,19 +104,46 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
   }
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-      {/* Left: Hero Bingo Board */}
-      <div className="space-y-4">
-        <div className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-4">
-          <div className="mb-2.5 flex items-center justify-between gap-2">
-            <span className="font-mono text-xs font-bold text-secondary uppercase">
-              Dein Brett-Fortschritt
-            </span>
-            <span className="font-mono text-xs font-bold text-ink tabular-nums">
-              {capturedCount} / {totalCount} Felder
+    <div className="grid items-start gap-5 lg:grid-cols-[1.5fr_0.75fr]">
+      {/* Left: Compact progress + Crew popover directly above the hero board */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Progress
+              value={pct}
+              aria-label="Brett-Fortschritt"
+              className="h-3 max-w-52 flex-1"
+            />
+            <span className="shrink-0 font-mono text-xs font-bold text-ink tabular-nums">
+              {capturedCount} / {totalCount}
             </span>
           </div>
-          <Progress value={pct} aria-label="Spielfortschritt" />
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="shrink-0 gap-1.5"
+              >
+                <Users className="size-4" aria-hidden="true" />
+                <span>Crew ({game.players.length})</span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 p-3">
+              <p className="mb-2 font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
+                Mitspieler ({game.players.length})
+              </p>
+              <ul className="divide-y divide-subtle">
+                {game.players.map((p) => (
+                  <li key={p.id} className="py-1.5 first:pt-0 last:pb-0">
+                    <PlayerBadgeLink user={p} compact />
+                  </li>
+                ))}
+              </ul>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <BingoBoard
@@ -116,92 +159,108 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
         />
       </div>
 
-      {/* Right: Activity Stream & Crew */}
-      <div className="space-y-6">
-        <Card>
-          <CardHeader className="bg-pink-subtle">
-            <div className="flex items-center justify-between gap-2">
+      {/* Right: Activity Stream (collapsed on mobile so the board stays first) */}
+      <Card>
+        <CardHeader className="bg-pink-subtle py-3.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
               <CardTitle>Live-Aktivität</CardTitle>
-              <CodeTag tone="cyan">{game.feed.length}</CodeTag>
+              {game.visibilityMode !== VisibilityMode.Undercover ? (
+                <CodeTag tone="cyan">{game.feed.length}</CodeTag>
+              ) : null}
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3 pt-4">
-            {game.visibilityMode === VisibilityMode.Undercover ? (
-              <CalloutNote label="Undercover aktiv" tone="pink">
-                Alle Beweisfotos bleiben bis zum Bingo geheim. Deine eigenen
-                Treffer siehst du direkt auf deinem Brett.
-              </CalloutNote>
-            ) : game.feed.length === 0 ? (
-              <CalloutNote label="Noch ruhig">
-                Noch keine Beweisfotos hochgeladen – schnapp dir dein erstes
-                Motiv!
-              </CalloutNote>
-            ) : (
-              <div className="space-y-3">
-                {game.feed.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setLightboxCapture(item)}
-                    className="brutal-press flex w-full cursor-pointer items-center gap-3 rounded-md border-2 border-strong bg-surface p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                  >
-                    <div className="size-16 shrink-0 overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
-                      <AuthenticatedImage
-                        storageKey={
-                          item.isBlurred
-                            ? item.thumbnailStorageKey
-                            : (item.imageStorageKey ?? item.thumbnailStorageKey)
-                        }
-                        alt={item.promptText ?? "Teaser"}
-                        blurred={item.isBlurred}
-                        className="h-full w-full"
-                      />
+            <button
+              type="button"
+              aria-expanded={mobileFeedOpen}
+              onClick={() => setMobileFeedOpen((prev) => !prev)}
+              className="inline-flex min-h-11 items-center gap-1 rounded-sm px-2 text-xs font-bold text-ink hover:bg-surface/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:hidden"
+            >
+              {mobileFeedOpen ? (
+                <>
+                  <span>Ausblenden</span>
+                  <ChevronUp className="size-4" aria-hidden="true" />
+                </>
+              ) : (
+                <>
+                  <span>Anzeigen</span>
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                </>
+              )}
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent
+          className={cn(
+            "space-y-3 pt-4",
+            mobileFeedOpen ? "block" : "hidden lg:block",
+          )}
+        >
+          {game.visibilityMode === VisibilityMode.Undercover ? (
+            <CalloutNote label="Undercover aktiv" tone="pink">
+              Alle Beweisfotos bleiben bis zum Bingo geheim.
+            </CalloutNote>
+          ) : game.feed.length === 0 ? (
+            <p className="text-sm font-medium text-secondary">
+              Noch keine Beweisfotos hochgeladen.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              {visibleFeed.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setLightboxCapture(item)}
+                  className="brutal-press flex w-full cursor-pointer items-center gap-3 rounded-md border-2 border-strong bg-surface p-2 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                >
+                  <div className="size-14 shrink-0 overflow-hidden rounded-sm border-2 border-strong bg-surface-muted">
+                    <AuthenticatedImage
+                      storageKey={
+                        item.isBlurred
+                          ? item.thumbnailStorageKey
+                          : (item.imageStorageKey ?? item.thumbnailStorageKey)
+                      }
+                      alt={item.promptText ?? "Teaser"}
+                      blurred={item.isBlurred}
+                      className="h-full w-full"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate font-bold text-ink">
+                        {item.catcher.displayName}
+                      </span>
+                      <span className="font-mono text-secondary tabular-nums">
+                        {new Date(item.capturedAt).toLocaleTimeString("de-AT", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
                     </div>
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="truncate font-bold text-ink">
-                          {item.catcher.displayName}
-                        </span>
-                        <span className="font-mono text-secondary tabular-nums">
-                          {new Date(item.capturedAt).toLocaleTimeString(
-                            "de-AT",
-                            { hour: "2-digit", minute: "2-digit" },
-                          )}
-                        </span>
-                      </div>
-                      {item.isBlurred ? (
-                        <Badge variant="warning">Teaser verpixelt</Badge>
-                      ) : (
-                        <p className="line-clamp-2 text-xs font-medium text-ink">
-                          {item.promptText}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="size-5" aria-hidden="true" />
-              Mitspieler
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <ul className="divide-y divide-subtle">
-              {game.players.map((p) => (
-                <li key={p.id} className="py-2 first:pt-0 last:pb-0">
-                  <PlayerBadgeLink user={p} compact />
-                </li>
+                    {item.isBlurred ? (
+                      <Badge variant="warning">Teaser verpixelt</Badge>
+                    ) : (
+                      <p className="line-clamp-2 text-xs font-medium text-ink">
+                        {item.promptText}
+                      </p>
+                    )}
+                  </div>
+                </button>
               ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
+              {hiddenFeedCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setShowAllFeed(true)}
+                >
+                  Alle anzeigen ({game.feed.length})
+                </Button>
+              ) : null}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Camera / Upload Capture Dialog */}
       <Dialog
@@ -214,12 +273,25 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
         }}
       >
         <DialogContent>
-          <DialogHeader className="space-y-3">
-            <span className="inline-flex w-fit items-center gap-1.5 rounded-sm border-2 border-strong bg-surface-muted px-2 py-0.5 font-mono text-[11px] font-bold tracking-wider text-ink uppercase">
-              <Camera className="size-3.5" aria-hidden="true" />
-              Beweisfoto hochladen
-            </span>
-            <DialogTitle className="font-display text-2xl leading-tight tracking-tight text-ink sm:text-3xl">
+          <DialogHeader className="space-y-2.5">
+            {selectedTile?.targetUser ? (
+              <div className="flex items-center gap-3 rounded-md border-2 border-strong bg-cyan-subtle p-2.5">
+                <PlayerAvatar
+                  user={selectedTile.targetUser}
+                  size="sm"
+                  linkToProfile={false}
+                />
+                <div className="min-w-0">
+                  <p className="truncate font-display text-sm leading-tight text-ink">
+                    {selectedTile.targetUser.displayName}
+                  </p>
+                  <p className="truncate font-mono text-[11px] font-bold text-secondary">
+                    {selectedTile.targetUser.effectiveTitle}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            <DialogTitle className="font-display text-2xl leading-tight tracking-tight text-ink">
               {selectedTile?.promptText}
             </DialogTitle>
             <DialogDescription className="sr-only">
@@ -227,49 +299,32 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
             </DialogDescription>
           </DialogHeader>
 
-          {selectedTile?.targetUser ? (
-            <div className="brutal-shadow-sm flex items-center gap-3 rounded-md border-2 border-strong bg-cyan-subtle p-2.5">
-              <div className="relative shrink-0">
-                <PlayerAvatar
-                  user={selectedTile.targetUser}
-                  size="md"
-                  linkToProfile={false}
-                  showMedalBadge={false}
-                />
-                <span
-                  aria-hidden="true"
-                  className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full border-2 border-strong bg-primary text-primary-foreground"
-                >
-                  <Crosshair className="size-3" />
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-display text-base leading-tight text-ink">
-                  {selectedTile.targetUser.displayName}
-                </p>
-                <p className="truncate font-mono text-[11px] font-bold text-secondary">
-                  vor der Linse erwischen ·{" "}
-                  {selectedTile.targetUser.effectiveTitle}
-                </p>
-              </div>
-            </div>
-          ) : null}
-
-          <div className="space-y-4">
-            <CaptureUploadControl
-              onFileSelect={(file) => setSelectedFile(file)}
-            />
-
+          <div className="space-y-3">
             {previewUrl ? (
-              <div className="brutal-shadow-sm overflow-hidden rounded-md border-2 border-strong bg-surface p-1.5">
-                {/* biome-ignore lint/performance/noImgElement: local File preview blob URL */}
-                <img
-                  src={previewUrl}
-                  alt="Vorschau"
-                  className="max-h-64 w-full rounded-sm object-contain"
-                />
+              <div className="space-y-2">
+                <div className="brutal-shadow-sm overflow-hidden rounded-md border-2 border-strong bg-surface p-1.5">
+                  {/* biome-ignore lint/performance/noImgElement: local File preview blob URL */}
+                  <img
+                    src={previewUrl}
+                    alt="Vorschau"
+                    className="max-h-72 w-full rounded-sm object-contain"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={isUploading}
+                  onClick={() => setSelectedFile(null)}
+                >
+                  Anderes Foto wählen
+                </Button>
               </div>
-            ) : null}
+            ) : (
+              <CaptureUploadControl
+                onFileSelect={(file) => setSelectedFile(file)}
+              />
+            )}
 
             {mutations.submitCapture.isError ? (
               <Alert variant="error">

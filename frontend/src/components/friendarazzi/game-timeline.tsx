@@ -1,10 +1,9 @@
 "use client";
 
-import { Camera, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
 import { useState } from "react";
 
 import type { CaptureFeedItem } from "@/api/friendarazzi-api";
-import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
 
@@ -26,11 +25,7 @@ export function GameTimeline({
   const [selected, setSelected] = useState<CaptureFeedItem | null>(null);
 
   if (captures.length === 0) {
-    return (
-      <CalloutNote label="1:1 Zeitachse">
-        In dieser Runde wurden keine Fotos aufgenommen.
-      </CalloutNote>
-    );
+    return null;
   }
 
   const times = captures.map((c) => Date.parse(c.capturedAt));
@@ -59,12 +54,7 @@ export function GameTimeline({
           </span>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4 pt-5">
-        <p className="text-xs font-medium text-secondary">
-          Maßstabsgetreue Darstellung vom Spielstart bis zum Bingo. Tippe auf
-          einen Punkt, um Beweisfoto und Details zu öffnen.
-        </p>
-
+      <CardContent className="pt-5">
         <div className="overflow-x-auto pb-2">
           <div className="relative min-w-[540px] pt-12 pb-8">
             <div className="brutal-grid absolute inset-x-4 top-6 h-12 rounded-sm border-2 border-strong bg-canvas" />
@@ -124,11 +114,6 @@ export function GameTimeline({
               })}
             </div>
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 font-mono text-xs font-semibold text-secondary">
-          <Camera className="size-4 text-ink" aria-hidden="true" />
-          <span>{captures.length} erfasste Momente im 1:1 Zeitverlauf</span>
         </div>
 
         <PhotoLightbox

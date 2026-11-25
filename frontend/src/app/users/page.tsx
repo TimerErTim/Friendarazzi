@@ -1,5 +1,6 @@
 "use client";
 
+import { Award } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -69,22 +70,39 @@ export default function UserProfilePage() {
       <SetBreadcrumbLabel label={profile.displayName} />
 
       <section className="brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-surface">
-        <div className="flex flex-wrap items-center gap-4 border-b-2 border-strong bg-cyan-subtle p-6">
-          <PlayerAvatar user={profile} size="lg" linkToProfile={false} />
+        <div className="flex flex-wrap items-center gap-4 border-b-2 border-strong bg-cyan p-6 text-cyan-foreground">
+          <PlayerAvatar
+            user={profile}
+            size="lg"
+            linkToProfile={false}
+            showMedalBadge={false}
+          />
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
+              <h1 className="font-display text-2xl tracking-tight sm:text-3xl">
                 {profile.displayName}
               </h1>
-              <Badge variant="info">{profile.effectiveTitle}</Badge>
+              <Badge variant="primary">{profile.effectiveTitle}</Badge>
             </div>
-            <p className="font-mono text-xs font-bold text-secondary">
-              Spieler-Steckbrief
+            <p className="font-mono text-xs font-bold">
+              {profile.unlockedTitles.length}{" "}
+              {profile.unlockedTitles.length === 1
+                ? "Rang-Titel freigeschaltet"
+                : "Rang-Titel freigeschaltet"}
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 divide-x-2 divide-strong bg-surface">
+        <div className="grid grid-cols-2 divide-x-2 divide-y-2 divide-strong bg-surface sm:grid-cols-4 sm:divide-y-0">
+          <div className="bg-primary-subtle p-4 text-center">
+            <p className="inline-flex items-center justify-center gap-1.5 font-display text-2xl text-ink tabular-nums">
+              <Award className="size-5 text-warning" aria-hidden="true" />
+              {profile.goldMedalCount}
+            </p>
+            <p className="font-mono text-[11px] font-bold text-ink uppercase">
+              Goldmedaillen
+            </p>
+          </div>
           <div className="p-4 text-center">
             <p className="font-display text-2xl text-ink tabular-nums">
               {profile.gamesPlayed}

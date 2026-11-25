@@ -145,17 +145,29 @@ Single-source brand assets live in `assets/` and are synced/verified into `front
 6. **One primary action per screen.** Everything else `secondary` or `ghost`. Destructive uses
    `destructive`.
 7. **State facts once and group related controls.** Avoid repeating the same phase, status, or metric across adjacent badges and headers, and keep all edits for one concept (such as profile avatar, display name, and title) in one surface rather than splitting them across banners and tabs.
-8. **German UI copy, English code.** Labels German, identifiers and comments English.
-8. **Spacing** uses Tailwind's scale (`4, 8, 12, 16, 24, 32`). Cards and page bodies `p-6`.
-9. **Variants come from `cva`.** Keep public variant names stable (`primary`, `secondary`, `ghost`,
-   `destructive`, `default`, `success`, `warning`, `error`, `info`, `outline`).
-10. **URLs respect `NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH`.** All static metadata/icon/manifest paths
+8. **Per-screen budget & single-purpose surfaces** (enforced mechanically by `check:design` on app routes outside `/dev` and on `components/friendarazzi`):
+   - At most **1** `Badge variant="primary"`, **1** `CalloutNote`, and **1** `Progress` per screen/component file.
+   - `CodeTag` holds machine values only (invite codes, counts, timestamps, step indices), never prose.
+   - Secondary lists during active work (crew rosters, inactive switchers, long activity streams) live inside a compact `Popover`, `DropdownMenu`, or progressive toggle so the primary task (board, prompt field, upload preview) starts above the fold on a 360×640 phone.
+   - Components serve their single immediate purpose: no empty image placeholders inside uncaptured prompt tiles, and no redundant form chrome alongside an active photo preview.
+9. **German UI copy, English code.** Labels German, identifiers and comments English.
+10. **Spacing** uses Tailwind's scale (`4, 8, 12, 16, 24, 32`). Cards and page bodies `p-6`.
+11. **Variants come from `cva`.** Keep public variant names stable (`primary`, `secondary`, `ghost`,
+    `destructive`, `default`, `success`, `warning`, `error`, `info`, `outline`).
+12. **URLs respect `NEXT_PUBLIC_FRIENDARAZZI_BASE_PATH`.** All static metadata/icon/manifest paths
     and shareable `inviteUrl(code)` links respect `basePath` (see `frontend/src/lib/invite-url.ts`).
-11. **Bingo boards & overlays.** `BingoBoard` renders as one unified card with `2px` `bg-strong` grid
-    lines and Polaroid-style cells (`object-contain` foreground photo over a blurred `object-cover`
-    backdrop). Floating toasts and avatar circles always sit on an opaque `bg-surface` backing so
-    transparent images and yellow winner banners remain high-contrast. Invite QR codes render dark
-    modules on an opaque `#ffffff` square with a 4-module quiet zone in both themes.
+13. **Bingo boards & overlays.** `BingoBoard` renders as one unified card with hairline grid
+    lines. Uncaptured tiles focus cleanly on target chip + prompt text (no image placeholder).
+    Captured tiles fill the cell with a subtly tilted full-bleed instant-photo frame
+    (`contain-blurred` over blurred edge backdrop) and a compact opaque `bg-surface` bottom caption
+    strip. Floating toasts, popovers, and avatar circles sit on opaque `bg-surface` / `bg-elevated`
+    backings so transparent images remain high-contrast. Invite QR codes render dark modules on an
+    opaque `#ffffff` square with a 4-module quiet zone in both themes.
+
+Review checklist (beyond mechanical checks in `check:design`):
+- Exactly one rendered `<h1>` and one primary `Button` per screen; secondary card links use `variant="secondary"`.
+- On mobile (360×640), the active board top edge or first prompt `<Input />` appears in the first viewport without scrolling past decorative cards.
+- Every state or count is printed once in its region.
 
 ## The gallery at `/dev`
 

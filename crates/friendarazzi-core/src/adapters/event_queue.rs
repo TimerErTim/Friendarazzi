@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use async_trait::async_trait;
+use error_stack::ResultExt;
 use futures::StreamExt;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use futures::stream::FuturesUnordered;
@@ -168,9 +169,9 @@ impl EventQueue for MultithreadedEventQueue {
         let senders = self.ensure_started();
         for event in events {
             let idx = self.next_worker.fetch_add(1, Ordering::Relaxed) % senders.len();
-            if senders[idx].unbounded_send(event).is_err() {
-                return Err(error_stack::Report::new(EventQueueError::Unavailable));
-            }
+            senders[idx]
+                .unbounded_send(event)
+                .change_context(EventQueueError::Unavailable)?;
         }
         Ok(())
     }

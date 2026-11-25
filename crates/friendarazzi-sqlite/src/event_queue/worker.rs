@@ -2,6 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::Utc;
 use error_stack::ResultExt;
 use friendarazzi_core::{App, ErrorReportExt, ResultReport, service::handle_event};
 use futures::FutureExt;
@@ -56,6 +57,7 @@ enum TaskOutcome {
 /// Claimed events execute concurrently. On shutdown, active handlers are given a short
 /// grace period to finish; any incomplete handlers are cancelled and reset to `'pending'`
 /// so they resume cleanly on the next startup.
+// TODO: Transition `app` parameter semantics to `Arc<App>` (shared ownership) or `&App` (borrowed) instead of taking `App` by value.
 pub async fn run(
     queue: Arc<SqliteEventQueue>,
     app: App,
@@ -216,7 +218,7 @@ async fn recover_stale_processing(
         .create_connection()
         .await
         .change_context(SqliteEventQueueError::Persistence)?;
-    let now_str = format_timestamp(queue.clock().now());
+    let now_str = format_timestamp(Utc::now());
     let recovered = conn
         .execute(
             "UPDATE _event_queue
@@ -280,7 +282,7 @@ async fn claim_event(
         .create_connection()
         .await
         .change_context(SqliteEventQueueError::Persistence)?;
-    let now_str = format_timestamp(queue.clock().now());
+    let now_str = format_timestamp(Utc::now());
     let updated = conn
         .execute(
             "UPDATE _event_queue
@@ -386,7 +388,7 @@ async fn requeue_retry(
         .create_connection()
         .await
         .change_context(SqliteEventQueueError::Persistence)?;
-    let now_str = format_timestamp(queue.clock().now());
+    let now_str = format_timestamp(Utc::now());
     conn.execute(
         "UPDATE _event_queue
          SET status = 'pending', attempts = ?1, last_error = ?2, locked_at = NULL, updated_at = ?3
@@ -410,7 +412,7 @@ async fn mark_failed(
         .create_connection()
         .await
         .change_context(SqliteEventQueueError::Persistence)?;
-    let now_str = format_timestamp(queue.clock().now());
+    let now_str = format_timestamp(Utc::now());
     conn.execute(
         "UPDATE _event_queue
          SET status = 'failed', attempts = ?1, last_error = ?2, locked_at = NULL, updated_at = ?3

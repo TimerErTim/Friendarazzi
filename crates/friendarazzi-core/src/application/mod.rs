@@ -1,3 +1,5 @@
+// TODO: Simplify the WeakApp / EventQueueInit / Arc::new_cyclic wiring once App/queue lifecycle is unified.
+
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 

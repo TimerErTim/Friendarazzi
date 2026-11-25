@@ -10,10 +10,6 @@ use tracing::{debug, info};
 
 pub const START_READY_GAMES_JOB_ID: &str = "start_ready_games";
 
-fn domain_grace_period() -> Duration {
-    Duration::from_secs(READY_GRACE_PERIOD_SECONDS as u64)
-}
-
 /// Execute one scheduled tick of `StartReadyGames`, sleeping in-task when another locked
 /// drafting game will close before the next grace-period tick.
 pub async fn run_start_ready_games(app: &App) -> ResultReport<(), GameUseCaseError> {
@@ -53,7 +49,7 @@ pub async fn run_start_ready_games(app: &App) -> ResultReport<(), GameUseCaseErr
 pub fn build_start_ready_games_job(app: App) -> Job<App> {
     Job::new(
         START_READY_GAMES_JOB_ID,
-        Schedule::Interval(domain_grace_period()),
+        Schedule::Interval(Duration::from_secs(READY_GRACE_PERIOD_SECONDS as u64)),
         app,
         Task::from_async(|context: TaskContext<App>| async move {
             run_start_ready_games(&context.deps)

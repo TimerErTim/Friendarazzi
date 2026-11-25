@@ -54,8 +54,7 @@ async fn sqlite_event_queue_persists_across_restart_and_processes_events() {
     let clock = Arc::new(FixedClock::new(test_time()));
     let sqlite = Arc::new(SQLiteInstance::local(&db_path).await.unwrap());
     sqlite.migrate_repos_to_latest().await.unwrap();
-    let mut queue =
-        SqliteEventQueue::new(Arc::clone(&sqlite)).with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
+    let mut queue = SqliteEventQueue::new(Arc::clone(&sqlite));
     queue.migrate_to_latest().await.unwrap();
     let queue = Arc::new(queue);
 
@@ -80,8 +79,7 @@ async fn sqlite_event_queue_persists_across_restart_and_processes_events() {
 
     let sqlite2 = Arc::new(SQLiteInstance::local(&db_path).await.unwrap());
     sqlite2.migrate_repos_to_latest().await.unwrap();
-    let mut queue2 = SqliteEventQueue::new(Arc::clone(&sqlite2))
-        .with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
+    let mut queue2 = SqliteEventQueue::new(Arc::clone(&sqlite2));
     queue2.migrate_to_latest().await.unwrap();
     let queue2 = Arc::new(queue2);
     assert_eq!(queue2.pending_count().await.unwrap(), 2);
@@ -124,8 +122,7 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
     let sqlite = Arc::new(SQLiteInstance::in_temp_dir().await.unwrap());
     sqlite.migrate_repos_to_latest().await.unwrap();
     let clock = Arc::new(FixedClock::new(test_time()));
-    let mut queue =
-        SqliteEventQueue::new(Arc::clone(&sqlite)).with_clock(Arc::clone(&clock) as Arc<dyn Clock>);
+    let mut queue = SqliteEventQueue::new(Arc::clone(&sqlite));
     queue.migrate_to_latest().await.unwrap();
     let queue = Arc::new(queue);
 

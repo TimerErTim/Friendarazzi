@@ -5,9 +5,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, SecondsFormat, Utc};
 use error_stack::ResultExt;
-use friendarazzi_core::adapters::SystemClock;
 use friendarazzi_core::domain::{BenutzerId, CaptureId, GameId};
-use friendarazzi_core::ports::{Clock, EventQueue, EventQueueError};
+use friendarazzi_core::ports::{EventQueue, EventQueueError};
 use friendarazzi_core::service::{CaptureUploaded, Event};
 use friendarazzi_core::{ErrorReportExt, ResultReport};
 use molting::{AppliableMigration, MigrationTarget};
@@ -81,7 +80,6 @@ pub(crate) fn deserialize_event(raw: &str) -> Result<Event, serde_json::Error> {
 /// worker entrypoint [`run`](crate::event_queue::run) / [`run_with_config`](crate::event_queue::run_with_config).
 pub struct SqliteEventQueue {
     instance: Arc<SQLiteInstance>,
-    clock: Arc<dyn Clock>,
     notify: Arc<Notify>,
 }
 
@@ -89,22 +87,12 @@ impl SqliteEventQueue {
     pub fn new(instance: Arc<SQLiteInstance>) -> Self {
         Self {
             instance,
-            clock: Arc::new(SystemClock),
             notify: Arc::new(Notify::new()),
         }
     }
 
-    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
-        self.clock = clock;
-        self
-    }
-
     pub(crate) fn instance(&self) -> &SQLiteInstance {
         self.instance.as_ref()
-    }
-
-    pub(crate) fn clock(&self) -> &dyn Clock {
-        self.clock.as_ref()
     }
 
     pub(crate) fn notify(&self) -> &Notify {
@@ -161,7 +149,7 @@ impl EventQueue for SqliteEventQueue {
             return Ok(());
         }
 
-        let now_str = format_timestamp(self.clock.now());
+        let now_str = format_timestamp(Utc::now());
         let mut serialized = Vec::with_capacity(events.len());
         for event in &events {
             let id = Uuid::new_v4().to_string();

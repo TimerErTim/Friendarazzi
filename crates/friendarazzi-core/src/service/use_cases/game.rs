@@ -37,6 +37,17 @@ pub enum GameUseCaseError {
     Persistence,
 }
 
+fn map_update_repo_err(err: &Report<RepositoryError>) -> GameUseCaseError {
+    if matches!(
+        err.current_context(),
+        RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
+    ) {
+        GameUseCaseError::Conflict
+    } else {
+        GameUseCaseError::Persistence
+    }
+}
+
 pub(crate) fn map_game_error(err: &GameError) -> GameUseCaseError {
     match err {
         GameError::EmptyTitle
@@ -311,13 +322,16 @@ impl UseCase<Game> for StartDrafting {
                 .update(&mut updated)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
 
             Ok::<_, Report<GameUseCaseError>>(updated.into_data())
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
     }
 }
 
@@ -399,13 +413,16 @@ impl UseCase<()> for SaveDraftPrompts {
                 .update(&mut updated)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
 
             Ok::<_, Report<GameUseCaseError>>(())
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
     }
 }
 
@@ -458,13 +475,16 @@ impl UseCase<Game> for LockDraftPrompts {
                 .update(&mut updated)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
 
             Ok::<_, Report<GameUseCaseError>>(updated.into_data())
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
     }
 }
 
@@ -516,13 +536,16 @@ impl UseCase<Game> for UnlockDraftPrompts {
                 .update(&mut updated)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
 
             Ok::<_, Report<GameUseCaseError>>(updated.into_data())
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
     }
 }
 
@@ -551,14 +574,8 @@ pub(crate) async fn persist_started_game(
         .await
         .map_err(IntoReport::into_report)
         .map_err(|err| {
-            if matches!(
-                err.current_context(),
-                RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
-            ) {
-                err.change_context(GameUseCaseError::Conflict)
-            } else {
-                err.change_context(GameUseCaseError::Persistence)
-            }
+            let mapped = map_update_repo_err(&err);
+            err.change_context(mapped)
         })?;
     Ok(updated.into_data())
 }
@@ -567,6 +584,12 @@ pub(crate) async fn persist_started_game(
 pub struct StartReadyGamesOutcome {
     pub started_games: Vec<GameId>,
     pub next_draft_closes_at: Option<DateTime<Utc>>,
+}
+
+enum StartCandidateOutcome {
+    Started,
+    Rescheduled(DateTime<Utc>),
+    Skipped,
 }
 
 /// Finalize all `Drafting` games whose countdown (`draft_closes_at <= now`) has expired,
@@ -583,38 +606,73 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
         ctx: ExecutionContext<'_>,
     ) -> Result<StartReadyGamesOutcome, Self::Error> {
         let now = ctx.clock().now();
-        let uow = ctx
+        let read_uow = ctx
             .enter()
             .await
             .change_context(GameUseCaseError::Persistence)?;
 
-        let result = async {
-            let candidates = uow
+        let scan_result = async {
+            let candidates = read_uow
                 .games()
                 .find_drafting_with_countdown()
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(GameUseCaseError::Persistence)?;
 
-            let mut started_games = Vec::new();
+            let mut ready_ids = Vec::new();
             let mut next_draft_closes_at: Option<DateTime<Utc>> = None;
 
             for versioned in candidates {
-                let version = versioned.v();
                 let Game::Drafting(drafting) = versioned.into_data() else {
                     continue;
                 };
-                if !drafting.is_ready_to_start(now) {
-                    if let Some(at) = drafting.draft_closes_at() {
-                        next_draft_closes_at = Some(match next_draft_closes_at {
-                            Some(existing) if existing <= at => existing,
-                            _ => at,
-                        });
+                if drafting.is_ready_to_start(now) {
+                    ready_ids.push(drafting.id());
+                } else if let Some(at) = drafting.draft_closes_at() {
+                    next_draft_closes_at = Some(match next_draft_closes_at {
+                        Some(existing) if existing <= at => existing,
+                        _ => at,
+                    });
+                }
+            }
+
+            Ok::<_, Report<GameUseCaseError>>((ready_ids, next_draft_closes_at))
+        }
+        .await;
+
+        let (ready_ids, mut next_draft_closes_at) = read_uow
+            .finish(scan_result, GameUseCaseError::Persistence)
+            .await?;
+
+        let mut started_games = Vec::new();
+
+        for game_id in ready_ids {
+            // Isolate each game's transition in its own UoW so a conflict rolls back only that game.
+            let uow = ctx
+                .enter()
+                .await
+                .change_context(GameUseCaseError::Persistence)?;
+
+            let step_result = async {
+                let versioned = match uow.games().find_by_id(game_id).await {
+                    Ok(g) => g,
+                    Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                        return Ok(StartCandidateOutcome::Skipped);
                     }
-                    continue;
+                    Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+                };
+
+                let version = versioned.v();
+                let Game::Drafting(drafting) = versioned.into_data() else {
+                    return Ok(StartCandidateOutcome::Skipped);
+                };
+                if !drafting.is_ready_to_start(now) {
+                    return Ok(match drafting.draft_closes_at() {
+                        Some(at) => StartCandidateOutcome::Rescheduled(at),
+                        None => StartCandidateOutcome::Skipped,
+                    });
                 }
 
-                let game_id = drafting.id();
                 let outcome = {
                     let mut rng = ctx.rng();
                     drafting.finalize_ready_start(now, &mut *rng).map_err(|e| {
@@ -622,35 +680,45 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
                         e.change_context(mapped)
                     })?
                 };
-                if let DraftStartOutcome::Started {
-                    game: active,
-                    boards,
-                } = outcome
-                {
-                    match persist_started_game(&uow, version, active, boards).await {
-                        Ok(_) => started_games.push(game_id),
-                        Err(err) if matches!(err.current_context(), GameUseCaseError::Conflict) => {
-                            debug!(
-                                ?game_id,
-                                "ready game start raced with concurrent update; skipping"
-                            );
-                        }
-                        Err(err) => return Err(err),
+                match outcome {
+                    DraftStartOutcome::Started {
+                        game: active,
+                        boards,
+                    } => {
+                        persist_started_game(&uow, version, active, boards).await?;
+                        Ok(StartCandidateOutcome::Started)
                     }
+                    _ => Ok(StartCandidateOutcome::Skipped),
                 }
             }
+            .await;
 
-            if !started_games.is_empty() {
-                info!(count = started_games.len(), "started ready games");
+            match uow.finish_with(step_result, map_update_repo_err).await {
+                Ok(StartCandidateOutcome::Started) => started_games.push(game_id),
+                Ok(StartCandidateOutcome::Rescheduled(at)) => {
+                    next_draft_closes_at = Some(match next_draft_closes_at {
+                        Some(existing) if existing <= at => existing,
+                        _ => at,
+                    });
+                }
+                Ok(StartCandidateOutcome::Skipped) => {}
+                Err(err) if matches!(err.current_context(), GameUseCaseError::Conflict) => {
+                    debug!(
+                        ?game_id,
+                        "ready game start raced with concurrent update; skipping"
+                    );
+                }
+                Err(err) => return Err(err),
             }
-
-            Ok::<_, Report<GameUseCaseError>>(StartReadyGamesOutcome {
-                started_games,
-                next_draft_closes_at,
-            })
         }
-        .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        if !started_games.is_empty() {
+            info!(count = started_games.len(), "started ready games");
+        }
+
+        Ok(StartReadyGamesOutcome {
+            started_games,
+            next_draft_closes_at,
+        })
     }
 }

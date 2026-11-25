@@ -295,23 +295,26 @@ export function DraftingPhase({
       clearTimeout(draftDebounceRef.current);
       draftDebounceRef.current = null;
     }
-    setHasPendingDebounce(false);
-    const payload = toPromptPayload(latestSlotsRef.current);
-    lastDigestRef.current = JSON.stringify(payload);
-    await savePromptsAsync({
-      gameId: game.id,
-      prompts: payload,
-    });
-    await mutations.lockPrompts.mutateAsync(game.id);
-    feedback.melden("Aufträge eingeloggt!");
+    const saved = await commitDraft(latestSlotsRef.current);
+    if (!saved) return;
+    try {
+      await mutations.lockPrompts.mutateAsync(game.id);
+      feedback.melden("Aufträge eingeloggt!");
+    } catch {
+      // Mutation error state is rendered via mutations.lockPrompts.error.
+    }
   }
 
   async function handleUnlock() {
     feedback.verwerfen();
-    await mutations.unlockPrompts.mutateAsync(game.id);
-    feedback.melden(
-      "Bereitschaft zurückgezogen – du kannst wieder bearbeiten.",
-    );
+    try {
+      await mutations.unlockPrompts.mutateAsync(game.id);
+      feedback.melden(
+        "Bereitschaft zurückgezogen – du kannst wieder bearbeiten.",
+      );
+    } catch {
+      // Mutation error state is rendered via mutations.unlockPrompts.error.
+    }
   }
 
   const countdownPct =

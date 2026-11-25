@@ -6,8 +6,8 @@ use std::sync::{Arc, Weak};
 use tracing::{error, instrument};
 
 use crate::adapters::{
-    BlankPdfRenderer, InMemoryObjectStore, InMemorySigning, InMemoryThrottle,
-    MultithreadedEventQueue, NullMailSender, SystemClock, SystemRng,
+    BlankPdfRenderer, BlockingEventQueue, InMemoryObjectStore, InMemorySigning, InMemoryThrottle,
+    NullMailSender, SystemClock, SystemRng,
 };
 use crate::application::context::{ContextPorts, EventCollector};
 use crate::application::instrumented::InstrumentedEventQueue;
@@ -209,7 +209,7 @@ impl App {
             };
             let raw_queue = match event_queue {
                 Some(init) => init.build(weak_app),
-                None => MultithreadedEventQueue::from_app(weak_app),
+                None => BlockingEventQueue::from_app(weak_app),
             };
             AppInner {
                 uow_provider,

@@ -37,6 +37,7 @@ pub async fn run_start_ready_games(app: &App) -> ResultReport<(), GameUseCaseErr
 
         let sleep_for = (next_at - now).to_std().unwrap_or(Duration::ZERO);
         debug!(?sleep_for, %next_at, "sleeping until next draft closes");
+        // Intentional tradeoff: sleep ignores shutdown, so shutdown hits the 250ms abort timeout during countdowns.
         tokio::time::sleep(sleep_for).await;
         if app.clock.now() <= now && !sleep_for.is_zero() {
             break;

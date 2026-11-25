@@ -83,7 +83,7 @@ async fn blocking_event_queue_runs_after_uow_commit_without_deadlock() {
 }
 
 #[test_log::test(pollster::test)]
-async fn default_multithreaded_event_queue_executes_and_stops_on_app_drop() {
+async fn default_event_queue_executes_submitted_events() {
     let app = App::builder()
         .uow_provider(Box::new(FakeUnitOfWorkProvider::empty()))
         .konto(IdentityProviderConfiguration::neu(

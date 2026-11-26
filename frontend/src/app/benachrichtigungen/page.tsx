@@ -63,7 +63,7 @@ function notificationSummary(item: NotificationView): {
       if (item.isBlurred) {
         return {
           title: `${catcher} hat ein Teaser-Foto hochgeladen`,
-          detail: `Verpixelter Teaser im Spiel „${item.gameTitle}“ — tippen zum Ansehen.`,
+          detail: `Spiel „${item.gameTitle}“`,
           badgeLabel: "Teaser",
           icon: Camera,
           accentClass: "bg-pink-subtle",
@@ -140,9 +140,6 @@ export default function NotificationsPage() {
               <CodeTag tone="pink">{unreadCount}</CodeTag>
             ) : null}
           </div>
-          <p className="text-sm font-medium text-secondary">
-            Spielstarts, neue Beweisfotos und Bingo-Siege im Überblick.
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {unreadCount > 0 ? (
@@ -175,8 +172,7 @@ export default function NotificationsPage() {
 
       {items.length === 0 ? (
         <CalloutNote label="Postfach leer" tone="yellow">
-          Sobald ein Spiel startet, dich jemand fotografiert oder ein Match
-          gewonnen wird, erscheint hier ein Eintrag.
+          Sobald in deinen Spielen etwas passiert, erscheint hier ein Eintrag.
         </CalloutNote>
       ) : (
         <div className="space-y-3">

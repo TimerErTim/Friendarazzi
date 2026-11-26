@@ -160,7 +160,7 @@ async fn notifications_game_started_capture_and_completion_with_no_self_notifica
         1
     );
 
-    // Carol got GameCompleted once.
+    // Carol (third watching player) also receives CapturePosted and GameCompleted once.
     let carol_notifs = harness
         .app()
         .execute_fn(AuthContext::Anonymous, async move |ctx| {
@@ -170,6 +170,13 @@ async fn notifications_game_started_capture_and_completion_with_no_self_notifica
         })
         .await
         .unwrap();
+    assert!(
+        carol_notifs
+            .iter()
+            .any(|n| n.art() == BenachrichtigungArt::AufnahmeHochgeladen
+                && n.capture_id() == Some(bob_capture_id)),
+        "Carol should also receive the capture notification"
+    );
     assert_eq!(
         carol_notifs
             .iter()
@@ -178,21 +185,32 @@ async fn notifications_game_started_capture_and_completion_with_no_self_notifica
         1
     );
 
-    // Capture email mentions catcher, target, prompt, and links directly to ?id=...&capture=... with no embedded <img>.
+    // Capture email is sent to both target Bob and spectator Carol, mentions catcher/target/prompt,
+    // links directly to ?id=...&capture=..., and contains no embedded <img>.
     let mails = harness.mail().sent();
-    let capture_mail = mails
-        .iter()
-        .find(|m| {
-            m.empfänger.as_ref() == "bob@example.at"
-                && m.text(FRONTEND_BASIS_URL)
-                    .contains(&format!("capture={}", bob_capture_id.0))
-        })
-        .expect("Bob received capture email with deep link");
-    assert!(capture_mail.betreff().contains("alice"));
-    assert!(capture_mail.betreff().contains("bob"));
-    let html = capture_mail.html(FRONTEND_BASIS_URL);
-    assert!(html.contains(bob_tile.prompt_text().as_str()));
-    assert!(!html.contains("<img"));
+    for recipient_email in ["bob@example.at", "carol@example.at"] {
+        let capture_mail = mails
+            .iter()
+            .find(|m| {
+                m.empfänger.as_ref() == recipient_email
+                    && m.text(FRONTEND_BASIS_URL)
+                        .contains(&format!("capture={}", bob_capture_id.0))
+            })
+            .unwrap_or_else(|| panic!("{recipient_email} received capture email with deep link"));
+        assert!(capture_mail.betreff().contains("alice"));
+        assert!(capture_mail.betreff().contains("bob"));
+        let html = capture_mail.html(FRONTEND_BASIS_URL);
+        assert!(html.contains(bob_tile.prompt_text().as_str()));
+        assert!(!html.contains("<img"));
+        assert!(!html.contains("eingebettet"));
+    }
+    assert!(
+        mails
+            .iter()
+            .all(|m| !(m.empfänger.as_ref() == "alice@example.at"
+                && m.text(FRONTEND_BASIS_URL).contains("capture="))),
+        "catcher Alice should not receive capture emails for her own uploads"
+    );
 
     // Game win email mentions game and winner in the subject.
     let win_mail = mails

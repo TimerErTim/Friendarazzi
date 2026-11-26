@@ -225,8 +225,7 @@ impl Mail {
             ),
             MailArt::SpielGestartet { game_title, .. } => format!(
                 "Hallo,\n\n\
-                 die Entwurfsphase für „{game_title}“ ist abgeschlossen und alle Spielbretter wurden ausgeteilt!\n\
-                 Die Foto-Jagd ist jetzt eröffnet:\n\n\
+                 „{game_title}“ ist gestartet und alle Spielbretter liegen bereit:\n\n\
                  {link}\n{unsub_footer}"
             ),
             MailArt::AufnahmeHochgeladen {
@@ -269,7 +268,7 @@ impl Mail {
         }
     }
 
-    /// Neubrutalist HTML representation matching Friendarazzi's visual identity (no embedded capture photos).
+    /// Neubrutalist HTML representation matching Friendarazzi's visual identity.
     pub fn html(&self, frontend_basis_url: &str) -> String {
         let link = self.art.primary_url(frontend_basis_url);
         let unsub_url = self.art.unsubscribe_url(frontend_basis_url);
@@ -301,14 +300,14 @@ impl Mail {
                     (
                         "SPIELSTART",
                         "#00e5ff",
-                        format!("Die Jagd beginnt: „{safe_title}“"),
+                        format!("Spiel gestartet: „{safe_title}“"),
                         format!(
                             "<p style=\"margin:0 0 16px;font-size:16px;line-height:1.55;color:#0d0d0d;\">\
-                             Alle Aufträge sind eingeloggt und der Countdown ist abgelaufen. Dein persönliches Bingo-Brett für <strong>{safe_title}</strong> liegt bereit!\
+                             Alle Aufträge sind eingeloggt – dein Bingo-Brett für <strong>{safe_title}</strong> liegt bereit.\
                              </p>"
                         ),
-                        "Jetzt zum Spielbrett",
-                        "Tipp: Halte deine Kamera bereit – wer zuerst eine Reihe, Spalte oder Diagonale voll hat, holt das Bingo.".to_owned(),
+                        "Zum Spielbrett",
+                        String::new(),
                     )
                 }
                 MailArt::AufnahmeHochgeladen {
@@ -328,7 +327,7 @@ impl Mail {
                             format!("Neuer Teaser in „{safe_game}“"),
                             format!(
                                 "<p style=\"margin:0 0 16px;font-size:16px;line-height:1.55;color:#0d0d0d;\">\
-                                 <strong>{safe_catcher}</strong> hat gerade ein neues verpixeltes Teaser-Foto hochgeladen.\
+                                 <strong>{safe_catcher}</strong> hat ein neues verpixeltes Teaser-Foto hochgeladen.\
                                  </p>\
                                  <div style=\"margin:0 0 20px;padding:14px 16px;background-color:#f0ece0;border:2px solid #0d0d0d;border-radius:6px;\">\
                                  <p style=\"margin:0;font-size:13px;font-weight:700;color:#454545;text-transform:uppercase;letter-spacing:0.05em;\">Spiel</p>\
@@ -336,7 +335,7 @@ impl Mail {
                                  </div>"
                             ),
                             "Teaser im Spiel ansehen",
-                            "Aus Datenschutz- und Spielmodus-Gründen wird das Foto nicht per E-Mail mitgeschickt.".to_owned(),
+                            String::new(),
                         )
                     } else {
                         let safe_target = escape_html(target_name.as_deref().unwrap_or("dich"));
@@ -358,11 +357,11 @@ impl Mail {
                             format!("{safe_catcher} hat {safe_target} erwischt!"),
                             format!(
                                 "<p style=\"margin:0 0 16px;font-size:16px;line-height:1.55;color:#0d0d0d;\">\
-                                 <strong>{safe_catcher}</strong> hat ein Beweisfoto von <strong>{safe_target}</strong> im Spiel <strong>„{safe_game}“</strong> eingereicht.\
+                                 <strong>{safe_catcher}</strong> hat <strong>{safe_target}</strong> im Spiel <strong>„{safe_game}“</strong> erwischt.\
                                  </p>{prompt_block}"
                             ),
                             "Beweisfoto ansehen",
-                            "Das Beweisfoto wird nicht direkt in dieser E-Mail eingebettet – öffne das Spiel, um den Moment anzusehen.".to_owned(),
+                            String::new(),
                         )
                     }
                 }
@@ -379,16 +378,16 @@ impl Mail {
                         format!("{safe_winner} hat „{safe_game}“ gewonnen!"),
                         format!(
                             "<p style=\"margin:0 0 16px;font-size:16px;line-height:1.55;color:#0d0d0d;\">\
-                             Das Bingo ist komplett! <strong>{safe_winner}</strong> holt die Goldmedaille in <strong>„{safe_game}“</strong>.\
+                             Bingo! <strong>{safe_winner}</strong> gewinnt <strong>„{safe_game}“</strong>.\
                              </p>\
                              <div style=\"margin:0 0 20px;padding:14px 16px;background-color:#d6fbff;border:2px solid #0d0d0d;border-radius:6px;\">\
                              <p style=\"margin:0;font-size:14px;font-weight:700;color:#0d0d0d;\">\
-                             Alle Spielbretter, Beweisfotos, die Zeitachse und die Auszeichnungen sind jetzt für alle freigeschaltet.\
+                             Alle Spielbretter, Fotos und Auszeichnungen sind jetzt freigeschaltet.\
                              </p>\
                              </div>"
                         ),
-                        "Siegerehrung & Galerie ansehen",
-                        "Schau dir alle aufgedeckten Bretter und Superlative direkt im Spiel an.".to_owned(),
+                        "Zur Galerie",
+                        String::new(),
                     )
                 }
             };
@@ -396,18 +395,41 @@ impl Mail {
         let safe_link = escape_html(&link);
         let brand_header = render_brand_header(frontend_basis_url);
         let safe_headline = headline;
-        let safe_footnote = escape_html(&footnote_html);
+        let footnote_paragraph = if footnote_html.is_empty() {
+            String::new()
+        } else {
+            let safe_footnote = escape_html(&footnote_html);
+            format!(
+                "<p style=\"margin:0;font-size:12px;line-height:1.5;color:#454545;\">{safe_footnote}</p>"
+            )
+        };
         let unsubscribe_block = unsub_url
             .map(|u| {
                 let safe_unsub = escape_html(&u);
+                let margin = if footnote_paragraph.is_empty() {
+                    "0"
+                } else {
+                    "14px 0 0"
+                };
                 format!(
-                    "<p style=\"margin:14px 0 0;font-size:12px;line-height:1.5;color:#454545;\">\
+                    "<p style=\"margin:{margin};font-size:12px;line-height:1.5;color:#454545;\">\
                      Du möchtest diese E-Mail-Benachrichtigungen nicht mehr erhalten? \
                      <a href=\"{safe_unsub}\" style=\"color:#0d0d0d;font-weight:700;text-decoration:underline;\">Hier abbestellen</a>.\
                      </p>"
                 )
             })
             .unwrap_or_default();
+        let footer_row = if footnote_paragraph.is_empty() && unsubscribe_block.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "<tr>\
+                   <td style=\"padding:16px 24px 20px;background-color:#f0ece0;border-top:2px solid #0d0d0d;\">\
+                     {footnote_paragraph}{unsubscribe_block}\
+                   </td>\
+                 </tr>"
+            )
+        };
 
         format!(
             "<!DOCTYPE html>\
@@ -451,12 +473,7 @@ impl Mail {
                           </p>\
                         </td>\
                       </tr>\
-                      <tr>\
-                        <td style=\"padding:16px 24px 20px;background-color:#f0ece0;border-top:2px solid #0d0d0d;\">\
-                          <p style=\"margin:0;font-size:12px;line-height:1.5;color:#454545;\">{safe_footnote}</p>\
-                          {unsubscribe_block}\
-                        </td>\
-                      </tr>\
+                      {footer_row}\
                     </table>\
                   </td>\
                 </tr>\
@@ -624,6 +641,7 @@ mod tests {
         assert!(html.contains("https://friendarazzi.app/games?id=00000000-0000-0000-0000-000000000000&amp;capture=00000000-0000-0000-0000-000000000000"));
         assert!(html.contains("https://friendarazzi.app/abbestellen?token=unsub-tok"));
         assert!(!html.contains("<img"));
+        assert!(!html.contains("eingebettet"));
         assert!(html.contains("<span style=\"color:#ffe600;\">F</span>"));
         assert!(html.contains("<span style=\"color:#ff3b9a;\">e</span>"));
         assert!(html.contains("<span style=\"color:#00e5ff;\">i</span>"));

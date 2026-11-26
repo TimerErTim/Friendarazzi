@@ -155,10 +155,6 @@ impl EventHandler for CaptureUpdated {
     type Error = Report<GameEventError>;
 
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<(), Self::Error> {
-        if self.target_id == self.uploader_id {
-            return Ok(());
-        }
-
         let now = ctx.clock().now();
         let uow = ctx
             .enter()
@@ -169,88 +165,102 @@ impl EventHandler for CaptureUpdated {
             let game = match uow.games().find_by_id(self.game_id).await {
                 Ok(g) => g.into_data(),
                 Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
-                    return Ok(None);
+                    return Ok(Vec::new());
                 }
                 Err(err) => return Err(err).change_context(GameEventError::Persistence),
             };
-            if !matches!(game, Game::Active(_) | Game::Completed(_)) {
-                return Ok(None);
-            }
-            if game.visibility_mode() == VisibilityMode::Undercover
-                || !game.player_watching(self.target_id).unwrap_or(false)
+            if !matches!(game, Game::Active(_) | Game::Completed(_))
+                || game.visibility_mode() == VisibilityMode::Undercover
             {
-                return Ok(None);
+                return Ok(Vec::new());
+            }
+
+            let recipients: Vec<BenutzerId> = game
+                .players()
+                .iter()
+                .filter(|p| p.user_id != self.uploader_id && p.watching)
+                .map(|p| p.user_id)
+                .collect();
+            if recipients.is_empty() {
+                return Ok(Vec::new());
             }
 
             let capture = match uow.captures().find_by_id(self.capture_id).await {
                 Ok(c) => c.into_data(),
                 Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
-                    return Ok(None);
+                    return Ok(Vec::new());
                 }
                 Err(err) => return Err(err).change_context(GameEventError::Persistence),
             };
 
-            create_notification_idempotent(
-                &uow,
-                NeueBenachrichtigung::aufnahme_hochgeladen(
-                    self.target_id,
-                    game.id(),
-                    self.capture_id,
-                    self.uploader_id,
-                    self.target_id,
-                    self.occurred_at,
-                ),
-            )
-            .await
-            .map_err(IntoReport::into_report)
-            .change_context(GameEventError::Persistence)?;
-
-            let user_map = load_users_map(&ctx, &uow, &[self.uploader_id, self.target_id]).await?;
-            let Some(target_user) = user_map.get(&self.target_id) else {
-                return Ok(None);
-            };
-            if !target_user.allows_email(BenachrichtigungArt::AufnahmeHochgeladen) {
-                return Ok(None);
+            for &uid in &recipients {
+                create_notification_idempotent(
+                    &uow,
+                    NeueBenachrichtigung::aufnahme_hochgeladen(
+                        uid,
+                        game.id(),
+                        self.capture_id,
+                        self.uploader_id,
+                        self.target_id,
+                        self.occurred_at,
+                    ),
+                )
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameEventError::Persistence)?;
             }
-            let Some(catcher_user) = user_map.get(&self.uploader_id) else {
-                return Ok(None);
+
+            let mut lookup_ids = recipients.clone();
+            if !lookup_ids.contains(&self.uploader_id) {
+                lookup_ids.push(self.uploader_id);
+            }
+            if !lookup_ids.contains(&self.target_id) {
+                lookup_ids.push(self.target_id);
+            }
+            let user_map = load_users_map(&ctx, &uow, &lookup_ids).await?;
+            let (Some(catcher_user), Some(target_user)) = (
+                user_map.get(&self.uploader_id),
+                user_map.get(&self.target_id),
+            ) else {
+                return Ok(Vec::new());
             };
 
             let is_blurred_teaser = matches!(game, Game::Active(_))
                 && game.visibility_mode() == VisibilityMode::BlurredTeaser;
-            let token = AbbestellToken::erzeugen(
-                self.target_id,
-                BenachrichtigungArt::AufnahmeHochgeladen,
-                now,
-                ctx.signing(),
-            );
-            let mail = Mail::aufnahme_hochgeladen(
-                target_user.email_address().clone(),
-                game.id(),
-                game.title().as_str(),
-                self.capture_id,
-                catcher_user.display_name().as_str(),
-                if is_blurred_teaser {
-                    None
-                } else {
-                    Some(target_user.display_name().as_str().to_owned())
-                },
-                if is_blurred_teaser {
-                    None
-                } else {
-                    Some(capture.prompt_text().as_str().to_owned())
-                },
-                is_blurred_teaser,
-                token,
-            );
 
-            Ok::<_, Report<GameEventError>>(Some(mail))
+            let mut mails = Vec::new();
+            for uid in recipients {
+                let Some(recipient) = user_map.get(&uid) else {
+                    continue;
+                };
+                if !recipient.allows_email(BenachrichtigungArt::AufnahmeHochgeladen) {
+                    continue;
+                }
+                let token = AbbestellToken::erzeugen(
+                    uid,
+                    BenachrichtigungArt::AufnahmeHochgeladen,
+                    now,
+                    ctx.signing(),
+                );
+                mails.push(Mail::aufnahme_hochgeladen(
+                    recipient.email_address().clone(),
+                    game.id(),
+                    game.title().as_str(),
+                    self.capture_id,
+                    catcher_user.display_name().as_str(),
+                    (!is_blurred_teaser).then(|| target_user.display_name().as_str().to_owned()),
+                    (!is_blurred_teaser).then(|| capture.prompt_text().as_str().to_owned()),
+                    is_blurred_teaser,
+                    token,
+                ));
+            }
+
+            Ok::<_, Report<GameEventError>>(mails)
         }
         .await;
 
-        if let Some(mail) = uow.finish(result, GameEventError::Persistence).await? {
-            send_best_effort(&ctx, vec![mail]).await;
-        }
+        let mails = uow.finish(result, GameEventError::Persistence).await?;
+        send_best_effort(&ctx, mails).await;
         Ok(())
     }
 }

@@ -17,8 +17,8 @@ use poem::http::StatusCode;
 use serde_json::json;
 
 use crate::{
-    E2eHarness, FRONTEND_BASIS_URL, PASSWORT, enroll_and_start_game, mailpit, neuer_benutzer,
-    test_konfiguration, test_signing_key,
+    E2eHarness, FRONTEND_BASIS_URL, PASSWORT, enroll_and_start_game, mailpit, test_konfiguration,
+    test_signing_key,
 };
 
 struct FailingMailSender;
@@ -36,10 +36,11 @@ impl MailSender for FailingMailSender {
 
 #[test_log::test(tokio::test)]
 async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redaction() {
-    let harness = E2eHarness::new().await;
-    let (t_alice, _id_alice) = neuer_benutzer(&harness, "n-alice@example.at").await;
-    let (t_bob, id_bob) = neuer_benutzer(&harness, "n-bob@example.at").await;
-    let (t_carol, _id_carol) = neuer_benutzer(&harness, "n-carol@example.at").await;
+    mailpit::leeren().await;
+    let harness = E2eHarness::mit_smtp().await;
+    let (t_alice, _id_alice, _) = register_via_mailpit(&harness, "n-alice@example.at").await;
+    let (t_bob, id_bob, _) = register_via_mailpit(&harness, "n-bob@example.at").await;
+    let (t_carol, id_carol, _) = register_via_mailpit(&harness, "n-carol@example.at").await;
 
     // Default preferences exist and default to true.
     let (st, prefs) = harness
@@ -65,8 +66,8 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
     assert_eq!(carol_prefs["emailGameStarted"], false);
     assert_eq!(carol_prefs["emailCapturePosted"], true);
 
-    // Start a LiveFeed game: Alice, Bob, Carol get GameStarted inbox entries; only Alice and Bob get GameStarted email.
-    harness.mail.clear();
+    // Start a LiveFeed game: Alice, Bob, Carol get GameStarted inbox entries; only Alice and Bob get GameStarted email in Mailpit.
+    mailpit::leeren().await;
     let (game_id, _invite_code) = enroll_and_start_game(
         &harness,
         &t_alice,
@@ -77,12 +78,16 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
     )
     .await;
 
-    let started_mails = harness.mail.sent();
-    assert_eq!(started_mails.len(), 2);
     assert!(
-        started_mails
-            .iter()
-            .all(|m| m.empfänger.as_ref() != "n-carol@example.at")
+        !mailpit::nachrichten_an("n-alice@example.at")
+            .await
+            .is_empty()
+    );
+    assert!(!mailpit::nachrichten_an("n-bob@example.at").await.is_empty());
+    assert!(
+        mailpit::nachrichten_an("n-carol@example.at")
+            .await
+            .is_empty()
     );
 
     let (st, carol_inbox) = harness
@@ -93,7 +98,7 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
     assert_eq!(carol_inbox["unreadCount"], 1);
     assert_eq!(carol_inbox["notifications"][0]["kind"], "GameStarted");
 
-    // Alice captures Bob and finishes a row -> Bob gets CapturePosted (with prompt + captureId) and GameCompleted!
+    // Alice captures Bob and finishes a row -> BOTH Bob and Carol get CapturePosted + GameCompleted in inbox and Mailpit.
     let (st, alice_detail) = harness
         .client
         .get_json_auth(&format!("/api/games/{game_id}"), &t_alice)
@@ -104,13 +109,14 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
         .iter()
         .find(|t| t["targetUser"]["id"] == id_bob)
         .unwrap();
+    let bob_prompt = bob_tile["promptText"].as_str().unwrap().to_owned();
     let bob_row = bob_tile["row"].as_u64().unwrap();
     let row_tiles: Vec<_> = tiles
         .iter()
         .filter(|t| t["row"].as_u64().unwrap() == bob_row)
         .collect();
 
-    harness.mail.clear();
+    mailpit::leeren().await;
     let png = png_bytes_for_test(220, 220);
     let mut bob_capture_id = String::new();
     for tile in row_tiles {
@@ -132,7 +138,49 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
         }
     }
 
-    // Bob's inbox shows unread count, capture details, and mark-read / mark-all-read updates it.
+    assert!(
+        mailpit::nachrichten_an("n-alice@example.at")
+            .await
+            .is_empty()
+    );
+    let capture_link_suffix = format!("/games?id={game_id}&capture={bob_capture_id}");
+    let capture_html_suffix = format!("/games?id={game_id}&amp;capture={bob_capture_id}");
+    let mut bob_cap_mail_unsub = String::new();
+    for email in ["n-bob@example.at", "n-carol@example.at"] {
+        let msgs = mailpit::nachrichten_an(email).await;
+        let cap_mail = msgs
+            .iter()
+            .find(|m| m.text.contains(&capture_link_suffix))
+            .unwrap_or_else(|| panic!("{email} should receive CapturePosted email via Mailpit"));
+        assert!(cap_mail.text.contains(&bob_prompt));
+        assert!(cap_mail.html.contains(&bob_prompt));
+        assert!(cap_mail.html.contains(&capture_html_suffix));
+        assert!(!cap_mail.html.contains("eingebettet"));
+        assert_html_has_website_brand_header_and_no_embedded_img(&cap_mail.html);
+
+        let win_mail = msgs
+            .iter()
+            .find(|m| m.subject.contains("Bingo!"))
+            .unwrap_or_else(|| panic!("{email} should receive GameCompleted email via Mailpit"));
+        assert!(win_mail.subject.contains("Live Hunt"));
+        assert!(win_mail.subject.contains("n-alice"));
+        assert!(win_mail.text.contains(&format!("/games?id={game_id}")));
+        assert!(win_mail.html.contains(&format!("/games?id={game_id}")));
+        assert_html_has_website_brand_header_and_no_embedded_img(&win_mail.html);
+
+        if email == "n-bob@example.at" {
+            bob_cap_mail_unsub = cap_mail
+                .header_first("List-Unsubscribe")
+                .expect("List-Unsubscribe header")
+                .trim_matches(|c| c == '<' || c == '>')
+                .split("token=")
+                .nth(1)
+                .unwrap()
+                .to_owned();
+        }
+    }
+
+    // Bob's and Carol's inboxes both contain the CapturePosted notification.
     let (st, bob_inbox) = harness
         .client
         .get_json_auth("/api/notifications", &t_bob)
@@ -140,6 +188,20 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
     assert_eq!(st, StatusCode::OK, "{bob_inbox}");
     let notifs = bob_inbox["notifications"].as_array().unwrap();
     assert!(bob_inbox["unreadCount"].as_u64().unwrap() >= 3);
+
+    let (st, carol_cap_inbox) = harness
+        .client
+        .get_json_auth("/api/notifications", &t_carol)
+        .await;
+    assert_eq!(st, StatusCode::OK, "{carol_cap_inbox}");
+    let carol_cap = carol_cap_inbox["notifications"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["captureId"].as_str() == Some(bob_capture_id.as_str()))
+        .expect("Carol inbox also has the capture notification");
+    assert_eq!(carol_cap["kind"], "CapturePosted");
+    assert_eq!(carol_cap["target"]["id"], id_bob);
 
     let cap_notif = notifs
         .iter()
@@ -196,26 +258,12 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
     assert_eq!(st, StatusCode::OK);
     assert_eq!(bob_inbox_after_all["unreadCount"], 0);
 
-    // Logged-out unsubscribe using token from Bob's capture mail disables ONLY emailCapturePosted.
-    let bob_cap_mail = harness
-        .mail
-        .sent()
-        .into_iter()
-        .find(|m| {
-            m.empfänger.as_ref() == "n-bob@example.at"
-                && m.text(FRONTEND_BASIS_URL).contains(&bob_capture_id)
-        })
-        .expect("Bob received capture mail");
-    let unsub_url = bob_cap_mail
-        .unsubscribe_url(FRONTEND_BASIS_URL)
-        .expect("has unsubscribe url");
-    let unsub_token = unsub_url.split("token=").nth(1).unwrap().to_owned();
-
+    // Logged-out unsubscribe using token from Bob's Mailpit email disables ONLY emailCapturePosted.
     let (st, unsub_res) = harness
         .client
         .post_json(
             "/api/notifications/unsubscribe",
-            json!({ "token": unsub_token }),
+            json!({ "token": bob_cap_mail_unsub }),
         )
         .await;
     assert_eq!(st, StatusCode::OK, "{unsub_res}");
@@ -229,7 +277,7 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
     assert_eq!(bob_prefs_after["emailCapturePosted"], false);
     assert_eq!(bob_prefs_after["emailGameCompleted"], true);
 
-    // BlurredTeaser mode does NOT expose target or promptText in inbox or mail while active.
+    // BlurredTeaser mode does NOT expose target or promptText in inbox or Mailpit email while active.
     let (blur_game_id, _) = enroll_and_start_game(
         &harness,
         &t_alice,
@@ -244,15 +292,19 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
         .get_json_auth(&format!("/api/games/{blur_game_id}"), &t_alice)
         .await;
     assert_eq!(st, StatusCode::OK);
-    let blur_bob_tile = blur_detail["myBoard"]["tiles"]
-        .as_array()
-        .unwrap()
+    let alice_tiles = blur_detail["myBoard"]["tiles"].as_array().unwrap();
+    let blur_bob_tile = alice_tiles
         .iter()
         .find(|t| t["targetUser"]["id"] == id_bob)
         .unwrap();
     let blur_tid = blur_bob_tile["id"].as_str().unwrap();
+    let blur_bob_prompt = blur_bob_tile["promptText"].as_str().unwrap();
+    let blur_carol_tile = alice_tiles
+        .iter()
+        .find(|t| t["targetUser"]["id"] == id_carol)
+        .unwrap();
 
-    harness.mail.clear();
+    mailpit::leeren().await;
     let (st, blur_cap_out) = harness
         .client
         .post_multipart_file_auth(
@@ -260,12 +312,23 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
             "file",
             "blur.png",
             "image/png",
-            png,
+            png.clone(),
             &t_alice,
         )
         .await;
     assert_eq!(st, StatusCode::OK, "{blur_cap_out}");
     let blur_cap_id = blur_cap_out["capture"]["id"].as_str().unwrap();
+
+    // Bob unsubscribed from CapturePosted emails, while watching Carol receives the redacted teaser email in Mailpit.
+    assert!(mailpit::nachrichten_an("n-bob@example.at").await.is_empty());
+    let carol_teaser = mailpit::letzte_nachricht_an("n-carol@example.at").await;
+    assert!(carol_teaser.subject.contains("Teaser"));
+    assert!(!carol_teaser.text.contains(blur_bob_prompt));
+    assert!(!carol_teaser.html.contains(blur_bob_prompt));
+    assert!(!carol_teaser.html.contains("n-bob"));
+    assert!(!carol_teaser.html.contains("Datenschutz"));
+    assert!(carol_teaser.html.contains("TEASER-FOTO"));
+    assert_html_has_website_brand_header_and_no_embedded_img(&carol_teaser.html);
 
     let (st, bob_blur_inbox) = harness
         .client
@@ -282,17 +345,51 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
     assert!(blur_notif["target"].is_null());
     assert!(blur_notif["promptText"].is_null());
 
-    // Per-game watch toggle via HTTP PUT /api/games/:id/watch.
+    // Carol un-watches this game via HTTP PUT /api/games/:id/watch; subsequent capture sends no inbox or email to Carol.
     let (st, unwatched_detail) = harness
         .client
         .put_json_auth(
             &format!("/api/games/{blur_game_id}/watch"),
             json!({ "watching": false }),
-            &t_bob,
+            &t_carol,
         )
         .await;
     assert_eq!(st, StatusCode::OK, "{unwatched_detail}");
     assert_eq!(unwatched_detail["watching"], false);
+
+    mailpit::leeren().await;
+    let blur_carol_tid = blur_carol_tile["id"].as_str().unwrap();
+    let (st, second_blur_cap) = harness
+        .client
+        .post_multipart_file_auth(
+            &format!("/api/games/{blur_game_id}/tiles/{blur_carol_tid}/capture"),
+            "file",
+            "blur2.png",
+            "image/png",
+            png,
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{second_blur_cap}");
+    let second_blur_cap_id = second_blur_cap["capture"]["id"].as_str().unwrap();
+
+    assert!(
+        mailpit::nachrichten_an("n-carol@example.at")
+            .await
+            .is_empty()
+    );
+    let (st, carol_inbox_after_unwatch) = harness
+        .client
+        .get_json_auth("/api/notifications", &t_carol)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert!(
+        !carol_inbox_after_unwatch["notifications"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|n| n["captureId"].as_str() == Some(second_blur_cap_id))
+    );
 }
 
 #[test_log::test(tokio::test)]
@@ -560,6 +657,29 @@ async fn e2e_mailpit_delivers_html_and_text_emails_across_registration_and_notif
     let (t_bob, id_bob, _) = register_via_mailpit(&harness, "mp-bob@example.at").await;
     let (t_carol, _id_carol, _) = register_via_mailpit(&harness, "mp-carol@example.at").await;
 
+    // Password recovery also delivers multipart HTML + plain text via Mailpit.
+    let (st, _) = harness
+        .client
+        .post_json(
+            "/api/passwort/vergessen",
+            json!({ "eMailAdresse": "mp-alice@example.at" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let reset_mail = mailpit::letzte_nachricht_an("mp-alice@example.at").await;
+    assert_eq!(reset_mail.subject, "Setze dein Passwort zurück");
+    assert!(
+        reset_mail
+            .text
+            .contains(&format!("{FRONTEND_BASIS_URL}/passwort?token="))
+    );
+    assert!(
+        reset_mail
+            .html
+            .contains(&format!("{FRONTEND_BASIS_URL}/passwort?token="))
+    );
+    assert_html_has_website_brand_header_and_no_embedded_img(&reset_mail.html);
+
     // Carol opts out of GameStarted email; Bob keeps defaults enabled.
     let (st, _) = harness
         .client
@@ -667,6 +787,24 @@ async fn e2e_mailpit_delivers_html_and_text_emails_across_registration_and_notif
     assert_html_has_website_brand_header_and_no_embedded_img(&bob_capture_mail.html);
 
     let carol_msgs = mailpit::nachrichten_an("mp-carol@example.at").await;
+    let carol_capture_mail = carol_msgs
+        .iter()
+        .find(|m| m.text.contains(&capture_link_suffix))
+        .expect("Carol (non-target watching player) also receives CapturePosted email via Mailpit");
+    assert!(carol_capture_mail.subject.contains("mp-alice"));
+    assert!(carol_capture_mail.subject.contains("mp-bob"));
+    assert!(carol_capture_mail.text.contains(&bob_prompt));
+    assert!(carol_capture_mail.html.contains(&bob_prompt));
+    assert!(!carol_capture_mail.html.contains("eingebettet"));
+    assert_html_has_website_brand_header_and_no_embedded_img(&carol_capture_mail.html);
+    assert!(
+        mailpit::nachrichten_an("mp-alice@example.at")
+            .await
+            .iter()
+            .all(|m| !m.text.contains("capture=")),
+        "catcher Alice receives no capture notification emails"
+    );
+
     let carol_win = carol_msgs
         .iter()
         .find(|m| m.subject.contains("Bingo!"))

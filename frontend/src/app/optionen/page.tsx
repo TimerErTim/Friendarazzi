@@ -116,9 +116,8 @@ export default function OptionsPage() {
                     Neue Spiele automatisch beobachten
                   </label>
                   <p className="text-xs font-medium text-secondary">
-                    Legt fest, ob Benachrichtigungen beim Erstellen oder
-                    Beitreten eines Spiels standardmäßig aktiv sind (kann pro
-                    Spiel umgeschaltet werden).
+                    Beim Erstellen oder Beitreten eines Spiels aktiv (pro Spiel
+                    änderbar).
                   </p>
                 </div>
                 <Switch
@@ -145,8 +144,7 @@ export default function OptionsPage() {
                       Spielstart (Entwurfsphase beendet)
                     </label>
                     <p className="text-xs font-medium text-secondary">
-                      Benachrichtigung per E-Mail, sobald alle Spielbretter
-                      ausgeteilt wurden.
+                      Wenn ein beobachtetes Spiel startet.
                     </p>
                   </div>
                   <Switch
@@ -168,8 +166,8 @@ export default function OptionsPage() {
                       Neue Beweisfotos
                     </label>
                     <p className="text-xs font-medium text-secondary">
-                      Benachrichtigung per E-Mail, wenn ein Foto von dir
-                      hochgeladen wurde (ohne Bildanhang).
+                      Wenn in einem beobachteten Spiel ein Beweisfoto
+                      hochgeladen wird.
                     </p>
                   </div>
                   <Switch
@@ -191,8 +189,7 @@ export default function OptionsPage() {
                       Spielende & Bingo-Sieg
                     </label>
                     <p className="text-xs font-medium text-secondary">
-                      Benachrichtigung per E-Mail, sobald jemand ein Spiel
-                      gewinnt.
+                      Wenn jemand ein beobachtetes Spiel gewinnt.
                     </p>
                   </div>
                   <Switch

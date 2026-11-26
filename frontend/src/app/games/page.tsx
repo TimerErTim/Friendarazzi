@@ -268,8 +268,8 @@ export default function GamePage() {
               }
               title={
                 game.watching
-                  ? "Benachrichtigungen aktiv (klicken zum Stummschalten)"
-                  : "Benachrichtigungen stumm (klicken zum Aktivieren)"
+                  ? "Benachrichtigungen aktiv"
+                  : "Benachrichtigungen stumm"
               }
               disabled={mutations.setGameWatch.isPending}
               onClick={() =>

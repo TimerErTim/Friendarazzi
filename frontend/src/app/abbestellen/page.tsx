@@ -72,9 +72,7 @@ export default function UnsubscribePage() {
               icon={<CheckCircle2 className="size-4" aria-hidden="true" />}
             >
               <p>
-                <strong>{kindLabel(data.kind)}</strong> wurden erfolgreich
-                abbestellt. Deine In-App-Benachrichtigungen bleiben davon
-                unberührt.
+                <strong>{kindLabel(data.kind)}</strong> wurden abbestellt.
               </p>
             </Alert>
           ) : null}

@@ -99,7 +99,18 @@ export default function OptionsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5 pt-5">
-          {prefs.isLoading || !prefs.data ? (
+          {phase.status === "unavailable" ? (
+            <Alert variant="error">
+              Der Server ist derzeit nicht erreichbar.
+            </Alert>
+          ) : prefs.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(prefs.error, {
+                fallback:
+                  "Benachrichtigungs-Einstellungen konnten nicht geladen werden.",
+              })}
+            </Alert>
+          ) : prefs.isLoading || !prefs.data ? (
             <div className="space-y-3">
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />

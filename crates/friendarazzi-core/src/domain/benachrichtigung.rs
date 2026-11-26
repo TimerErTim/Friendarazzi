@@ -9,7 +9,10 @@ use uuid::Uuid;
 
 use crate::{
     ResultReport,
-    domain::{BenutzerId, CaptureId, GameId, NonEmptyString, konto::SecretToken},
+    domain::{
+        BenutzerId, CaptureId, GameId, NonEmptyString,
+        konto::{SecretToken, SecretTokenHash},
+    },
 };
 
 const CONSTRUCTING: &str = "while constructing benachrichtigung";
@@ -78,7 +81,7 @@ pub struct NeueBenachrichtigung {
     pub actor_id: Option<BenutzerId>,
     pub target_id: Option<BenutzerId>,
     pub dedupe_key: NonEmptyString,
-    pub abbestell_token: NonEmptyString,
+    pub abbestell_token_hash: SecretTokenHash,
     pub erstellt_am: DateTime<Utc>,
 }
 
@@ -87,21 +90,25 @@ impl NeueBenachrichtigung {
         empfänger_id: BenutzerId,
         game_id: GameId,
         erstellt_am: DateTime<Utc>,
-    ) -> Self {
+    ) -> (Self, String) {
         let dedupe_key =
             NonEmptyString::neu(BenachrichtigungArt::SpielGestartet.dedupe_key(game_id, None))
                 .expect("static prefix makes dedupe key non-empty");
-        Self {
-            empfänger_id,
-            art: BenachrichtigungArt::SpielGestartet,
-            game_id,
-            capture_id: None,
-            actor_id: None,
-            target_id: None,
-            dedupe_key,
-            abbestell_token: AbbestellToken::neu(),
-            erstellt_am,
-        }
+        let (raw_token, abbestell_token_hash) = AbbestellToken::neu_paar();
+        (
+            Self {
+                empfänger_id,
+                art: BenachrichtigungArt::SpielGestartet,
+                game_id,
+                capture_id: None,
+                actor_id: None,
+                target_id: None,
+                dedupe_key,
+                abbestell_token_hash,
+                erstellt_am,
+            },
+            raw_token,
+        )
     }
 
     pub fn aufnahme_hochgeladen(
@@ -111,22 +118,26 @@ impl NeueBenachrichtigung {
         catcher_id: BenutzerId,
         target_id: BenutzerId,
         erstellt_am: DateTime<Utc>,
-    ) -> Self {
+    ) -> (Self, String) {
         let dedupe_key = NonEmptyString::neu(
             BenachrichtigungArt::AufnahmeHochgeladen.dedupe_key(game_id, Some(capture_id)),
         )
         .expect("static prefix makes dedupe key non-empty");
-        Self {
-            empfänger_id,
-            art: BenachrichtigungArt::AufnahmeHochgeladen,
-            game_id,
-            capture_id: Some(capture_id),
-            actor_id: Some(catcher_id),
-            target_id: Some(target_id),
-            dedupe_key,
-            abbestell_token: AbbestellToken::neu(),
-            erstellt_am,
-        }
+        let (raw_token, abbestell_token_hash) = AbbestellToken::neu_paar();
+        (
+            Self {
+                empfänger_id,
+                art: BenachrichtigungArt::AufnahmeHochgeladen,
+                game_id,
+                capture_id: Some(capture_id),
+                actor_id: Some(catcher_id),
+                target_id: Some(target_id),
+                dedupe_key,
+                abbestell_token_hash,
+                erstellt_am,
+            },
+            raw_token,
+        )
     }
 
     pub fn spiel_beendet(
@@ -134,21 +145,25 @@ impl NeueBenachrichtigung {
         game_id: GameId,
         winner_id: BenutzerId,
         erstellt_am: DateTime<Utc>,
-    ) -> Self {
+    ) -> (Self, String) {
         let dedupe_key =
             NonEmptyString::neu(BenachrichtigungArt::SpielBeendet.dedupe_key(game_id, None))
                 .expect("static prefix makes dedupe key non-empty");
-        Self {
-            empfänger_id,
-            art: BenachrichtigungArt::SpielBeendet,
-            game_id,
-            capture_id: None,
-            actor_id: Some(winner_id),
-            target_id: None,
-            dedupe_key,
-            abbestell_token: AbbestellToken::neu(),
-            erstellt_am,
-        }
+        let (raw_token, abbestell_token_hash) = AbbestellToken::neu_paar();
+        (
+            Self {
+                empfänger_id,
+                art: BenachrichtigungArt::SpielBeendet,
+                game_id,
+                capture_id: None,
+                actor_id: Some(winner_id),
+                target_id: None,
+                dedupe_key,
+                abbestell_token_hash,
+                erstellt_am,
+            },
+            raw_token,
+        )
     }
 }
 
@@ -163,7 +178,7 @@ pub struct Benachrichtigung {
     actor_id: Option<BenutzerId>,
     target_id: Option<BenutzerId>,
     dedupe_key: NonEmptyString,
-    abbestell_token: NonEmptyString,
+    abbestell_token_hash: SecretTokenHash,
     erstellt_am: DateTime<Utc>,
     gelesen_am: Option<DateTime<Utc>>,
 }
@@ -179,7 +194,7 @@ impl Benachrichtigung {
             actor_id: neu.actor_id,
             target_id: neu.target_id,
             dedupe_key: neu.dedupe_key,
-            abbestell_token: neu.abbestell_token,
+            abbestell_token_hash: neu.abbestell_token_hash,
             erstellt_am: neu.erstellt_am,
             gelesen_am: None,
         }
@@ -195,7 +210,7 @@ impl Benachrichtigung {
         actor_id: Option<BenutzerId>,
         target_id: Option<BenutzerId>,
         dedupe_key: String,
-        abbestell_token: String,
+        abbestell_token_hash: String,
         erstellt_am: DateTime<Utc>,
         gelesen_am: Option<DateTime<Utc>>,
     ) -> ResultReport<Self, BenachrichtigungFehler> {
@@ -203,7 +218,7 @@ impl Benachrichtigung {
         let dedupe_key = NonEmptyString::neu(dedupe_key)
             .change_context(BenachrichtigungFehler::UngültigerDedupeSchlüssel)
             .attach(CONSTRUCTING)?;
-        let abbestell_token = NonEmptyString::neu(abbestell_token)
+        let abbestell_token_hash = SecretTokenHash::from_hex(abbestell_token_hash)
             .change_context(BenachrichtigungFehler::UngültigesAbbestellToken)
             .attach(CONSTRUCTING)?;
         Ok(Self {
@@ -215,7 +230,7 @@ impl Benachrichtigung {
             actor_id,
             target_id,
             dedupe_key,
-            abbestell_token,
+            abbestell_token_hash,
             erstellt_am,
             gelesen_am,
         })
@@ -253,8 +268,8 @@ impl Benachrichtigung {
         &self.dedupe_key
     }
 
-    pub fn abbestell_token(&self) -> &NonEmptyString {
-        &self.abbestell_token
+    pub fn abbestell_token_hash(&self) -> &SecretTokenHash {
+        &self.abbestell_token_hash
     }
 
     pub fn erstellt_am(&self) -> DateTime<Utc> {
@@ -284,8 +299,8 @@ impl Benachrichtigung {
 /// Timestamped opt-in/opt-out toggle for one preference dimension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreferenceToggle {
-    pub aktiv: bool,
-    pub aktualisiert_am: DateTime<Utc>,
+    aktiv: bool,
+    aktualisiert_am: DateTime<Utc>,
 }
 
 impl PreferenceToggle {
@@ -294,6 +309,14 @@ impl PreferenceToggle {
             aktiv,
             aktualisiert_am,
         }
+    }
+
+    pub fn aktiv(&self) -> bool {
+        self.aktiv
+    }
+
+    pub fn aktualisiert_am(&self) -> DateTime<Utc> {
+        self.aktualisiert_am
     }
 
     pub fn setze(&mut self, aktiv: bool, jetzt: DateTime<Utc>) {
@@ -305,10 +328,10 @@ impl PreferenceToggle {
 /// Per-user notification preferences: default game watch state + per-event email opt-out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BenachrichtigungsEinstellungen {
-    pub standard_spiel_beobachten: PreferenceToggle,
-    pub email_spiel_gestartet: PreferenceToggle,
-    pub email_aufnahme_hochgeladen: PreferenceToggle,
-    pub email_spiel_beendet: PreferenceToggle,
+    standard_spiel_beobachten: PreferenceToggle,
+    email_spiel_gestartet: PreferenceToggle,
+    email_aufnahme_hochgeladen: PreferenceToggle,
+    email_spiel_beendet: PreferenceToggle,
 }
 
 impl BenachrichtigungsEinstellungen {
@@ -370,16 +393,21 @@ impl BenachrichtigungsEinstellungen {
     }
 }
 
-/// CSPRNG token persisted on [`Benachrichtigung`] for one-click email unsubscribe links.
+/// CSPRNG unsubscribe token generator/hasher paired with a persisted [`SecretTokenHash`].
 pub struct AbbestellToken;
 
 impl AbbestellToken {
-    pub fn neu() -> NonEmptyString {
-        let raw = SecretToken::random()
-            .expect("CSPRNG available")
-            .base64url()
-            .to_string();
-        NonEmptyString::neu(raw).expect("base64url SecretToken is non-empty")
+    pub fn neu_paar() -> (String, SecretTokenHash) {
+        let secret = SecretToken::random().expect("CSPRNG available");
+        let raw = secret.base64url().to_string();
+        let hash = secret.hash();
+        (raw, hash)
+    }
+
+    pub fn hash_für_suche(raw: &str) -> ResultReport<SecretTokenHash, BenachrichtigungFehler> {
+        SecretToken::try_from(raw.trim())
+            .map(|token| token.hash())
+            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))
     }
 }
 
@@ -399,16 +427,18 @@ mod tests {
         let capture_id = CaptureId(Uuid::new_v4());
         let catcher_id = BenutzerId(Uuid::new_v4());
 
-        let mut notif = Benachrichtigung::neu(
-            id,
-            NeueBenachrichtigung::aufnahme_hochgeladen(
-                user_id,
-                game_id,
-                capture_id,
-                catcher_id,
-                user_id,
-                jetzt(),
-            ),
+        let (neu, raw_token) = NeueBenachrichtigung::aufnahme_hochgeladen(
+            user_id,
+            game_id,
+            capture_id,
+            catcher_id,
+            user_id,
+            jetzt(),
+        );
+        let mut notif = Benachrichtigung::neu(id, neu);
+        assert_eq!(
+            &AbbestellToken::hash_für_suche(&raw_token).unwrap(),
+            notif.abbestell_token_hash()
         );
         assert!(notif.ist_ungelesen());
         assert!(!notif.abbestell_token_abgelaufen(jetzt() + Duration::days(29)));
@@ -432,7 +462,7 @@ mod tests {
             notif.actor_id(),
             notif.target_id(),
             notif.dedupe_key().as_str().to_owned(),
-            notif.abbestell_token().as_str().to_owned(),
+            notif.abbestell_token_hash().as_str().to_owned(),
             notif.erstellt_am(),
             notif.gelesen_am(),
         )
@@ -441,10 +471,22 @@ mod tests {
     }
 
     #[test_log::test]
-    fn abbestell_token_is_unique_and_from_parts_rejects_empty() {
-        let first = AbbestellToken::neu();
-        let second = AbbestellToken::neu();
-        assert_ne!(first, second);
+    fn abbestell_token_is_unique_hashed_and_rejects_malformed() {
+        let (first_raw, first_hash) = AbbestellToken::neu_paar();
+        let (second_raw, second_hash) = AbbestellToken::neu_paar();
+        assert_ne!(first_raw, second_raw);
+        assert_ne!(first_hash, second_hash);
+        assert_eq!(
+            AbbestellToken::hash_für_suche(&first_raw).unwrap(),
+            first_hash
+        );
+
+        assert!(matches!(
+            AbbestellToken::hash_für_suche("not-a-valid-token")
+                .unwrap_err()
+                .current_context(),
+            BenachrichtigungFehler::UngültigesAbbestellToken
+        ));
 
         let err = Benachrichtigung::from_parts(
             BenachrichtigungId(Uuid::new_v4()),
@@ -455,7 +497,7 @@ mod tests {
             None,
             None,
             "dedupe".to_owned(),
-            "   ".to_owned(),
+            "not-hex".to_owned(),
             jetzt(),
             None,
         )
@@ -469,7 +511,7 @@ mod tests {
     #[test_log::test]
     fn einstellungen_update_tracks_only_changed_toggle() {
         let mut prefs = BenachrichtigungsEinstellungen::standard(jetzt());
-        assert!(prefs.standard_spiel_beobachten().aktiv);
+        assert!(prefs.standard_spiel_beobachten().aktiv());
         assert!(prefs.email_erlaubt(BenachrichtigungArt::SpielGestartet));
         assert!(prefs.email_erlaubt(BenachrichtigungArt::AufnahmeHochgeladen));
         assert!(prefs.email_erlaubt(BenachrichtigungArt::SpielBeendet));
@@ -477,7 +519,7 @@ mod tests {
         let later = jetzt() + Duration::hours(2);
         prefs.setze_email(BenachrichtigungArt::AufnahmeHochgeladen, false, later);
         assert!(!prefs.email_erlaubt(BenachrichtigungArt::AufnahmeHochgeladen));
-        assert_eq!(prefs.email_aufnahme_hochgeladen().aktualisiert_am, later);
-        assert_eq!(prefs.email_spiel_beendet().aktualisiert_am, jetzt());
+        assert_eq!(prefs.email_aufnahme_hochgeladen().aktualisiert_am(), later);
+        assert_eq!(prefs.email_spiel_beendet().aktualisiert_am(), jetzt());
     }
 }

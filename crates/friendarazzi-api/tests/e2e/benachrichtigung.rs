@@ -384,12 +384,97 @@ async fn e2e_notifications_inbox_preferences_watch_unsubscribe_and_blurred_redac
         .await;
     assert_eq!(st, StatusCode::OK);
     assert!(
-        !carol_inbox_after_unwatch["notifications"]
+        carol_inbox_after_unwatch["notifications"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|n| n["captureId"].as_str() == Some(second_blur_cap_id))
+            .all(|n| n["captureId"].as_str() != Some(second_blur_cap_id))
     );
+
+    // Complete Blurred Round and verify Bob's BlurredTeaser inbox entry reveals target + promptText.
+    if second_blur_cap["winningLine"].is_null() {
+        let blur_bob_row = blur_bob_tile["row"].as_u64().unwrap();
+        for tile in alice_tiles.iter().filter(|t| {
+            let tid = t["id"].as_str().unwrap();
+            t["row"].as_u64().unwrap() == blur_bob_row && tid != blur_tid && tid != blur_carol_tid
+        }) {
+            let tid = tile["id"].as_str().unwrap();
+            let (st, out) = harness
+                .client
+                .post_multipart_file_auth(
+                    &format!("/api/games/{blur_game_id}/tiles/{tid}/capture"),
+                    "file",
+                    "win.png",
+                    "image/png",
+                    png_bytes_for_test(220, 220),
+                    &t_alice,
+                )
+                .await;
+            assert_eq!(st, StatusCode::OK, "{out}");
+            if !out["winningLine"].is_null() {
+                break;
+            }
+        }
+    }
+    let (st, bob_revealed_inbox) = harness
+        .client
+        .get_json_auth("/api/notifications", &t_bob)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let revealed_blur_notif = bob_revealed_inbox["notifications"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|n| n["captureId"].as_str() == Some(blur_cap_id))
+        .expect("blurred teaser notif present after completion");
+    assert_eq!(revealed_blur_notif["isBlurred"], false);
+    assert_eq!(revealed_blur_notif["target"]["id"], id_bob);
+    assert_eq!(revealed_blur_notif["promptText"], blur_bob_prompt);
+
+    // HTTP 400 / 401 / 404 contracts + defaultWatchGames = false via HTTP POST /api/games and /api/games/join.
+    let (st, _) = harness.client.get_json("/api/notifications").await;
+    assert_eq!(st, StatusCode::UNAUTHORIZED);
+    let (st, _) = harness
+        .client
+        .post_json(
+            "/api/notifications/unsubscribe",
+            json!({ "token": "invalid-token" }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+    let (st, _) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/notifications/{}/read", uuid::Uuid::new_v4()),
+            json!({}),
+            &t_bob,
+        )
+        .await;
+    assert_eq!(st, StatusCode::NOT_FOUND);
+
+    let (st, _) = harness
+        .client
+        .put_json_auth(
+            "/api/notifications/preferences",
+            json!({ "defaultWatchGames": false }),
+            &t_bob,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let (st, created_unwatched) = harness
+        .client
+        .post_json_auth(
+            "/api/games",
+            json!({
+                "title": "Unwatched Default",
+                "gridSize": 3,
+                "visibilityMode": "LiveFeed"
+            }),
+            &t_bob,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{created_unwatched}");
+    assert_eq!(created_unwatched["watching"], false);
 }
 
 #[test_log::test(tokio::test)]
@@ -722,10 +807,7 @@ async fn e2e_mailpit_delivers_html_and_text_emails_across_registration_and_notif
             .header_first("List-Unsubscribe")
             .is_some_and(|h| h.contains("/abbestellen?token="))
     );
-    assert_eq!(
-        bob_started.header_first("List-Unsubscribe-Post"),
-        Some("List-Unsubscribe=One-Click")
-    );
+    assert!(bob_started.header_first("List-Unsubscribe-Post").is_none());
 
     // Alice captures Bob and completes a row -> Bob gets CapturePosted (with deep link) and Carol gets GameCompleted.
     let (st, alice_detail) = harness

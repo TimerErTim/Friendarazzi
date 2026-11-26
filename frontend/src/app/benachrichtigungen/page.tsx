@@ -69,7 +69,7 @@ function notificationSummary(item: NotificationView): {
           accentClass: "bg-pink-subtle",
         };
       }
-      const target = item.target?.displayName ?? "dich";
+      const target = item.target?.displayName ?? "einen Mitspieler";
       const prompt = item.promptText ? `„${item.promptText}“` : "einem Auftrag";
       return {
         title: `${catcher} hat ${target} erwischt!`,
@@ -112,6 +112,14 @@ export default function NotificationsPage() {
       mutations.markNotificationRead.mutate(item.id);
     }
     router.push(notificationHref(item));
+  }
+
+  if (phase.status === "unavailable") {
+    return (
+      <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
+        <Alert variant="error">Der Server ist derzeit nicht erreichbar.</Alert>
+      </div>
+    );
   }
 
   if (phase.status !== "authenticated" || inbox.isLoading) {

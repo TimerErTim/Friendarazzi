@@ -225,7 +225,7 @@ pub trait BenachrichtigungRepository: Send + Sync {
 
     async fn find_by_abbestell_token(
         &self,
-        token: &str,
+        token_hash: &crate::domain::konto::SecretTokenHash,
     ) -> RepositoryResult<Versioned<Benachrichtigung>>;
 
     async fn update(

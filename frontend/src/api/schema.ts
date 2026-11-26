@@ -2040,7 +2040,7 @@ export interface paths {
         put?: never;
         /**
          * Unsubscribe via email token.
-         * @description Applies a signed expiring unsubscribe token for one notification email type without login.
+         * @description Applies an expiring persisted unsubscribe token for one notification email type without login.
          */
         post: {
             parameters: {
@@ -2620,7 +2620,7 @@ export interface components {
              * @description Timestamp of the last change to `emailGameStarted`.
              */
             emailGameStartedUpdatedAt: string;
-            /** @description Send email when a new capture is posted targeting the caller. */
+            /** @description Send email when a new capture is uploaded in a watched game. */
             emailCapturePosted: boolean;
             /**
              * Format: date-time
@@ -2889,7 +2889,7 @@ export interface components {
          * @description Token-based one-click email unsubscribe payload.
          */
         UnsubscribeNotificationRequest: {
-            /** @description Signed expiring unsubscribe token from the email footer or `List-Unsubscribe` header. */
+            /** @description Expiring unsubscribe token from the email footer or `List-Unsubscribe` header. */
             token: string;
         };
         /**

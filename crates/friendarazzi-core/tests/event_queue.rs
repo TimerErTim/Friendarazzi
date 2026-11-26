@@ -68,9 +68,9 @@ impl BenachrichtigungRepository for FaultyBenachrichtigungRepo {
 
     async fn find_by_abbestell_token(
         &self,
-        token: &str,
+        token_hash: &friendarazzi_core::domain::konto::SecretTokenHash,
     ) -> RepositoryResult<Versioned<Benachrichtigung>> {
-        self.inner.find_by_abbestell_token(token).await
+        self.inner.find_by_abbestell_token(token_hash).await
     }
 
     async fn update(

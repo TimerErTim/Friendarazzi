@@ -157,6 +157,7 @@ http_status!(BenachrichtigungUseCaseError {
     Unauthorized => StatusCode::UNAUTHORIZED,
     Forbidden => StatusCode::FORBIDDEN,
     NotFound => StatusCode::NOT_FOUND,
+    Conflict => StatusCode::CONFLICT,
     InvalidToken => StatusCode::BAD_REQUEST,
     Persistence => StatusCode::INTERNAL_SERVER_ERROR,
 });

@@ -42,7 +42,12 @@ import {
   gameNextActionLabel,
   sortActiveGames,
 } from "@/lib/game-overview";
-import { authHrefWithRedirect, gameHref, paths } from "@/lib/navigation";
+import {
+  authHrefWithRedirect,
+  captureHref,
+  gameHref,
+  paths,
+} from "@/lib/navigation";
 import { useGameCountdown } from "@/lib/use-game-countdown";
 import { useQueryParam } from "@/lib/use-query-param";
 
@@ -82,11 +87,14 @@ export default function GamePage() {
 
   useEffect(() => {
     if (phase.status === "anonymous") {
-      router.replace(
-        authHrefWithRedirect("/anmeldung", id ? gameHref(id) : paths.games),
-      );
+      const target = id
+        ? captureParam
+          ? captureHref(id, captureParam)
+          : gameHref(id)
+        : paths.games;
+      router.replace(authHrefWithRedirect("/anmeldung", target));
     }
-  }, [phase.status, id, router]);
+  }, [phase.status, id, captureParam, router]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

@@ -948,7 +948,7 @@ impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
         if map.values().any(|existing| {
             (existing.empfänger_id() == neu.empfänger_id
                 && existing.dedupe_key() == &neu.dedupe_key)
-                || existing.abbestell_token() == &neu.abbestell_token
+                || existing.abbestell_token_hash() == &neu.abbestell_token_hash
         }) {
             return Err(Report::new(RepositoryError::Conflict));
         }
@@ -990,12 +990,12 @@ impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
 
     async fn find_by_abbestell_token(
         &self,
-        token: &str,
+        token_hash: &friendarazzi_core::domain::konto::SecretTokenHash,
     ) -> RepositoryResult<Versioned<Benachrichtigung>> {
         self.datastore
             .benachrichtigungen()
             .values()
-            .find(|n| n.abbestell_token().as_str() == token)
+            .find(|n| n.abbestell_token_hash() == token_hash)
             .cloned()
             .ok_or_else(|| Report::new(RepositoryError::NotFound))
     }

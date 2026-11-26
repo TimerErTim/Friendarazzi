@@ -81,10 +81,7 @@ async fn benachrichtigungs_mail_trägt_list_unsubscribe_header_und_html_details(
         roh.contains("List-Unsubscribe: <https://friendarazzi.app/abbestellen?token=unsub-123>"),
         "{roh}"
     );
-    assert!(
-        roh.contains("List-Unsubscribe-Post: List-Unsubscribe=One-Click"),
-        "{roh}"
-    );
+    assert!(!roh.contains("List-Unsubscribe-Post:"));
     let rumpf = entfalte_quoted_printable(&roh);
     assert!(rumpf.contains("Lacht laut"));
     assert!(rumpf.contains("NEUER SCHNAPPSCHUSS"));

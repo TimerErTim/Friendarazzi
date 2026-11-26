@@ -22,7 +22,7 @@ pub enum MailArt {
         game_title: String,
         unsubscribe_token: String,
     },
-    /// Another player posted a capture targeting the recipient (no image embedded).
+    /// Another player uploaded a capture in a watched game (no image embedded).
     AufnahmeHochgeladen {
         game_id: GameId,
         game_title: String,
@@ -246,7 +246,7 @@ impl Mail {
                          Teaser ansehen:\n{link}\n{unsub_footer}"
                     )
                 } else {
-                    let target = target_name.as_deref().unwrap_or("dich");
+                    let target = target_name.as_deref().unwrap_or("einen Mitspieler");
                     let activity = prompt_text
                         .as_deref()
                         .map(|p| format!(" bei „{p}“"))
@@ -341,7 +341,8 @@ impl Mail {
                             String::new(),
                         )
                     } else {
-                        let safe_target = escape_html(target_name.as_deref().unwrap_or("dich"));
+                        let safe_target =
+                            escape_html(target_name.as_deref().unwrap_or("einen Mitspieler"));
                         let prompt_block = prompt_text
                             .as_deref()
                             .map(|p| {

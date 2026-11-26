@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use chrono::Duration;
 use error_stack::Report;
 use friendarazzi_core::{
-    App, ResultReport,
+    ResultReport,
     adapters::InMemoryThrottle,
     application::AuthContext,
     domain::{
@@ -19,7 +19,7 @@ use friendarazzi_core::{
         AlleBenachrichtigungenAlsGelesenMarkieren, BenachrichtigungAbbestellenMitToken,
         BenachrichtigungAlsGelesenMarkieren, BenachrichtigungUseCaseError,
         BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen, CreateGame, JoinGame,
-        SpielBeobachtungSetzen, SubmitCapture,
+        RegistrierungStarten, SpielBeobachtungSetzen, SubmitCapture,
     },
 };
 use friendarazzi_fakes::{FixedClock, FixedRng, png_bytes_for_test};
@@ -274,9 +274,9 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
         )
         .await
         .unwrap();
-    assert!(!prefs.standard_spiel_beobachten().aktiv);
-    assert!(!prefs.email_spiel_gestartet().aktiv);
-    assert!(prefs.email_aufnahme_hochgeladen().aktiv);
+    assert!(!prefs.standard_spiel_beobachten().aktiv());
+    assert!(!prefs.email_spiel_gestartet().aktiv());
+    assert!(prefs.email_aufnahme_hochgeladen().aktiv());
 
     // Create & join game: Bob's initial watching state follows his account default (false)!
     let created = harness
@@ -300,33 +300,24 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
         .app()
         .execute_fn(AuthContext::Anonymous, async move |ctx| {
             let uow = ctx.enter().await.unwrap();
-            let valid = uow
-                .benachrichtigungen()
-                .create(NeueBenachrichtigung::aufnahme_hochgeladen(
-                    carol_id,
-                    created_game_id,
-                    CaptureId(uuid::Uuid::new_v4()),
-                    user_id_of(alice),
-                    carol_id,
-                    now,
-                ))
-                .await
-                .unwrap();
-            let expired = uow
-                .benachrichtigungen()
-                .create(NeueBenachrichtigung::spiel_beendet(
-                    carol_id,
-                    created_game_id,
-                    user_id_of(alice),
-                    now - Duration::days(31),
-                ))
-                .await
-                .unwrap();
+            let (valid_neu, valid_token) = NeueBenachrichtigung::aufnahme_hochgeladen(
+                carol_id,
+                created_game_id,
+                CaptureId(uuid::Uuid::new_v4()),
+                user_id_of(alice),
+                carol_id,
+                now,
+            );
+            uow.benachrichtigungen().create(valid_neu).await.unwrap();
+            let (expired_neu, expired_token) = NeueBenachrichtigung::spiel_beendet(
+                carol_id,
+                created_game_id,
+                user_id_of(alice),
+                now - Duration::days(31),
+            );
+            uow.benachrichtigungen().create(expired_neu).await.unwrap();
             uow.commit().await.unwrap();
-            Ok::<_, Report<RepositoryError>>((
-                valid.abbestell_token().as_str().to_owned(),
-                expired.abbestell_token().as_str().to_owned(),
-            ))
+            Ok::<_, Report<RepositoryError>>((valid_token, expired_token))
         })
         .await
         .unwrap();
@@ -408,8 +399,22 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
         .unwrap();
     assert_eq!(watched_bob.player_watching(bob_id), Some(true));
 
-    // Deleting a user with preferences succeeds cleanly and removes their preferences.
+    // Deleting a user with preferences and notifications removes both cleanly.
     let dave = register_user(&harness, "dave2@example.at").await;
+    let dave_id = user_id_of(dave);
+    let dave_game_id = created.id();
+    let dave_now = harness.jetzt();
+    harness
+        .app()
+        .execute_fn(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let (neu, _) = NeueBenachrichtigung::spiel_gestartet(dave_id, dave_game_id, dave_now);
+            uow.benachrichtigungen().create(neu).await.unwrap();
+            uow.commit().await.unwrap();
+            Ok::<_, Report<RepositoryError>>(())
+        })
+        .await
+        .unwrap();
     harness
         .app()
         .execute(
@@ -434,26 +439,21 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
         )
         .await
         .unwrap();
+    let dave_notifs_after = harness
+        .app()
+        .execute_fn::<_, _, RepositoryError>(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await?;
+            let list = uow.benachrichtigungen().find_by_empfänger(dave_id).await?;
+            uow.rollback().await?;
+            Ok(list)
+        })
+        .await
+        .unwrap();
+    assert!(dave_notifs_after.is_empty());
 }
 
 #[test_log::test(pollster::test)]
 async fn undercover_suppresses_capture_notifications_and_mail_failure_does_not_fail_capture() {
-    let base = super::super::base_app_builder().await;
-    let clock = Arc::new(FixedClock::new(super::helpers::jetzt()));
-    let app = base
-        .signing(Arc::new(test_signing_key()))
-        .throttle(Arc::new(InMemoryThrottle::new()))
-        .mail_sender(Arc::new(FailingMailSender))
-        .konto(test_konfiguration())
-        .clock(clock.clone())
-        .rng(Arc::new(FixedRng::default()))
-        .build();
-
-    // Register via use cases directly isn't needed if we just verify SubmitCapture on FailingMailSender:
-    // use a normal harness to set up, OR check that FailingMailSender doesn't stop registration/capture!
-    // Registration sends email and ignores FailingMailSender too!
-    let _ = app;
-
     let harness = build(super::super::base_app_builder().await);
     let alice = register_user(&harness, "uc-alice@example.at").await;
     let bob = register_user(&harness, "uc-bob@example.at").await;
@@ -507,13 +507,67 @@ async fn undercover_suppresses_capture_notifications_and_mail_failure_does_not_f
             .all(|n| n.art() != BenachrichtigungArt::AufnahmeHochgeladen)
     );
 
-    // Also prove FailingMailSender never fails SubmitCapture on a LiveFeed game!
-    let _ = App::builder()
-        .uow_provider(
-            // Smoke-check that FailingMailSender implements MailSender and is wired cleanly.
-            Box::new(friendarazzi_fakes::FakeUnitOfWorkProvider::empty()),
-        )
-        .konto(test_konfiguration())
+    // Build an app wired with FailingMailSender on a fresh builder and verify FailingMailSender
+    // does not abort registration or GameStarted/CaptureUploaded persistence.
+    let fail_app = super::super::base_app_builder()
+        .await
+        .signing(Arc::new(test_signing_key()))
+        .throttle(Arc::new(InMemoryThrottle::new()))
         .mail_sender(Arc::new(FailingMailSender))
+        .konto(test_konfiguration())
+        .clock(Arc::new(FixedClock::new(super::helpers::jetzt())))
+        .rng(Arc::new(FixedRng::default()))
         .build();
+    let fail_alice = fail_app
+        .execute_fn::<_, _, RepositoryError>(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await?;
+            let user = uow
+                .benutzer()
+                .create(friendarazzi_core::domain::NeuerBenutzer::registrierung(
+                    friendarazzi_core::domain::EmailAdresse::normalisiert("fm-alice@example.at")
+                        .unwrap(),
+                    super::helpers::jetzt(),
+                ))
+                .await?;
+            let other = uow
+                .benutzer()
+                .create(friendarazzi_core::domain::NeuerBenutzer::registrierung(
+                    friendarazzi_core::domain::EmailAdresse::normalisiert("fm-bob@example.at")
+                        .unwrap(),
+                    super::helpers::jetzt(),
+                ))
+                .await?;
+            let g = uow
+                .games()
+                .create(friendarazzi_core::domain::NewGame {
+                    invite_code: friendarazzi_core::domain::InviteCode::new("FAILMAIL").unwrap(),
+                    host_user_id: user.id(),
+                    host_watching: true,
+                    title: NonEmptyString::neu("Fail Mail Game").unwrap(),
+                    grid_size: GridSize::Three,
+                    visibility_mode: VisibilityMode::LiveFeed,
+                    created_at: super::helpers::jetzt(),
+                })
+                .await?;
+            uow.commit().await?;
+            Ok((user.id(), other.id(), g.id()))
+        })
+        .await
+        .unwrap();
+    // Actually invoke mail-sending use cases + event dispatch against FailingMailSender to prove resilience.
+    fail_app
+        .execute(
+            AuthContext::Anonymous,
+            RegistrierungStarten {
+                email: friendarazzi_core::domain::EmailAdresse::normalisiert("fm-reg@example.at")
+                    .unwrap(),
+                client_key: friendarazzi_core::ports::ClientKey::new(
+                    "127.0.0.1".parse().unwrap(),
+                    "fm-reg@example.at".to_owned(),
+                ),
+            },
+        )
+        .await
+        .unwrap();
+    assert_ne!(fail_alice.0, fail_alice.1);
 }

@@ -1080,20 +1080,35 @@ impl FriendarazziAppApi {
 
                     for item in raw {
                         let n = item.into_data();
-                        if !game_cache.contains_key(&n.game_id())
-                            && let Ok(g) = uow.games().find_by_id(n.game_id()).await
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            game_cache.entry(n.game_id())
                         {
-                            let g = g.into_data();
-                            let ids = g.sorted_player_ids();
-                            let users = uow
-                                .benutzer()
-                                .find_by_ids(&ids)
-                                .await
-                                .map_err(IntoReport::into_report)
-                                .change_context(NotificationReadError::Persistence)?;
-                            let badges =
-                                build_badge_map(&g, users.into_iter().map(|b| b.into_data()));
-                            game_cache.insert(n.game_id(), (g, badges));
+                            match uow.games().find_by_id(n.game_id()).await {
+                                Ok(g) => {
+                                    let g = g.into_data();
+                                    let ids = g.sorted_player_ids();
+                                    let users = uow
+                                        .benutzer()
+                                        .find_by_ids(&ids)
+                                        .await
+                                        .map_err(IntoReport::into_report)
+                                        .change_context(NotificationReadError::Persistence)?;
+                                    let badges = build_badge_map(
+                                        &g,
+                                        users.into_iter().map(|b| b.into_data()),
+                                    );
+                                    e.insert((g, badges));
+                                }
+                                Err(err)
+                                    if matches!(
+                                        err.current_context(),
+                                        RepositoryError::NotFound
+                                    ) => {}
+                                Err(err) => {
+                                    return Err(err)
+                                        .change_context(NotificationReadError::Persistence);
+                                }
+                            }
                         }
 
                         let Some((game, badges)) = game_cache.get(&n.game_id()) else {
@@ -1111,9 +1126,21 @@ impl FriendarazziAppApi {
                         {
                             if let std::collections::hash_map::Entry::Vacant(entry) =
                                 capture_cache.entry(cid)
-                                && let Ok(c) = uow.captures().find_by_id(cid).await
                             {
-                                entry.insert(c.into_data());
+                                match uow.captures().find_by_id(cid).await {
+                                    Ok(c) => {
+                                        entry.insert(c.into_data());
+                                    }
+                                    Err(err)
+                                        if matches!(
+                                            err.current_context(),
+                                            RepositoryError::NotFound
+                                        ) => {}
+                                    Err(err) => {
+                                        return Err(err)
+                                            .change_context(NotificationReadError::Persistence);
+                                    }
+                                }
                             }
                             if let Some(cap) = capture_cache.get(&cid) {
                                 if !can_view_blurred_capture(game, cap, viewer_id) {
@@ -1127,6 +1154,21 @@ impl FriendarazziAppApi {
                                 } else {
                                     target = None;
                                     is_blurred = true;
+                                }
+                            } else if !matches!(game, Game::Completed(_)) {
+                                // Fail closed by game visibility mode if capture cannot be loaded.
+                                match game.visibility_mode() {
+                                    domain::VisibilityMode::Undercover => {
+                                        actor = None;
+                                        target = None;
+                                        capture_id = None;
+                                        is_blurred = true;
+                                    }
+                                    domain::VisibilityMode::BlurredTeaser => {
+                                        target = None;
+                                        is_blurred = true;
+                                    }
+                                    domain::VisibilityMode::LiveFeed => {}
                                 }
                             }
                         }

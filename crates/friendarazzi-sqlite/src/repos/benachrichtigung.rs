@@ -8,6 +8,7 @@ use friendarazzi_core::{
     application::uow::Versioned,
     domain::{
         Benachrichtigung, BenachrichtigungId, BenutzerId, CaptureId, GameId, NeueBenachrichtigung,
+        konto::SecretTokenHash,
     },
     ports::{BenachrichtigungRepository, RepositoryError, RepositoryResult},
 };
@@ -22,7 +23,7 @@ use crate::{
     },
 };
 
-const SELECT_NOTIF: &str = r#"SELECT id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, abbestell_token, erstellt_am, gelesen_am, _version FROM "benachrichtigung""#;
+const SELECT_NOTIF: &str = r#"SELECT id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, abbestell_token_hash, erstellt_am, gelesen_am, _version FROM "benachrichtigung""#;
 
 fn notif_from_row(row: &Row) -> RepositoryResult<Versioned<Benachrichtigung>> {
     let id_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
@@ -33,7 +34,7 @@ fn notif_from_row(row: &Row) -> RepositoryResult<Versioned<Benachrichtigung>> {
     let actor_raw: Option<String> = row.get(5).contextualize(RepositoryError::Data)?;
     let target_raw: Option<String> = row.get(6).contextualize(RepositoryError::Data)?;
     let dedupe_key: String = row.get(7).contextualize(RepositoryError::Data)?;
-    let abbestell_token: Option<String> = row.get(8).contextualize(RepositoryError::Data)?;
+    let abbestell_token_hash: String = row.get(8).contextualize(RepositoryError::Data)?;
     let erstellt_raw: String = row.get(9).contextualize(RepositoryError::Data)?;
     let gelesen_raw: Option<String> = row.get(10).contextualize(RepositoryError::Data)?;
     let version = parse_version(row, 11)?;
@@ -56,7 +57,7 @@ fn notif_from_row(row: &Row) -> RepositoryResult<Versioned<Benachrichtigung>> {
             .transpose()?
             .map(BenutzerId),
         dedupe_key,
-        abbestell_token.unwrap_or_default(),
+        abbestell_token_hash,
         parse_datetime(&erstellt_raw)?,
         gelesen_raw.map(|s| parse_datetime(&s)).transpose()?,
     )
@@ -83,7 +84,7 @@ impl BenachrichtigungRepository for SQLiteBenachrichtigungRepository {
 
         tx.execute(
             r#"INSERT INTO "benachrichtigung"
-               (id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, abbestell_token, erstellt_am, gelesen_am, _version)
+               (id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, abbestell_token_hash, erstellt_am, gelesen_am, _version)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0)"#,
             (
                 id.0.to_string(),
@@ -94,7 +95,7 @@ impl BenachrichtigungRepository for SQLiteBenachrichtigungRepository {
                 domain.actor_id().map(|u| u.0.to_string()),
                 domain.target_id().map(|u| u.0.to_string()),
                 domain.dedupe_key().as_str(),
-                domain.abbestell_token().as_str(),
+                domain.abbestell_token_hash().as_str(),
                 format_datetime(domain.erstellt_am()),
                 domain.gelesen_am().map(format_datetime),
             ),
@@ -161,15 +162,15 @@ impl BenachrichtigungRepository for SQLiteBenachrichtigungRepository {
 
     async fn find_by_abbestell_token(
         &self,
-        token: &str,
+        token_hash: &SecretTokenHash,
     ) -> RepositoryResult<Versioned<Benachrichtigung>> {
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         let mut rows = tx
             .query(
-                &format!(r#"{SELECT_NOTIF} WHERE abbestell_token = ?1"#),
-                [token],
+                &format!(r#"{SELECT_NOTIF} WHERE abbestell_token_hash = ?1"#),
+                [token_hash.as_str()],
             )
             .await
             .contextualize_with(libsql_error_to_persistence_error)?;

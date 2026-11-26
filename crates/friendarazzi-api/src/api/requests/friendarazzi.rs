@@ -219,6 +219,6 @@ impl SetGameWatchRequest {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnsubscribeNotificationRequest {
-    /// Signed expiring unsubscribe token from the email footer or `List-Unsubscribe` header.
+    /// Expiring unsubscribe token from the email footer or `List-Unsubscribe` header.
     pub token: String,
 }

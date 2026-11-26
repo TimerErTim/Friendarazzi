@@ -85,7 +85,7 @@ pub struct NotificationPreferences {
     pub email_game_started: bool,
     /// Timestamp of the last change to `emailGameStarted`.
     pub email_game_started_updated_at: DateTime<Utc>,
-    /// Send email when a new capture is posted targeting the caller.
+    /// Send email when a new capture is uploaded in a watched game.
     pub email_capture_posted: bool,
     /// Timestamp of the last change to `emailCapturePosted`.
     pub email_capture_posted_updated_at: DateTime<Utc>,
@@ -98,14 +98,14 @@ pub struct NotificationPreferences {
 impl From<domain::BenachrichtigungsEinstellungen> for NotificationPreferences {
     fn from(value: domain::BenachrichtigungsEinstellungen) -> Self {
         Self {
-            default_watch_games: value.standard_spiel_beobachten().aktiv,
-            default_watch_updated_at: value.standard_spiel_beobachten().aktualisiert_am,
-            email_game_started: value.email_spiel_gestartet().aktiv,
-            email_game_started_updated_at: value.email_spiel_gestartet().aktualisiert_am,
-            email_capture_posted: value.email_aufnahme_hochgeladen().aktiv,
-            email_capture_posted_updated_at: value.email_aufnahme_hochgeladen().aktualisiert_am,
-            email_game_completed: value.email_spiel_beendet().aktiv,
-            email_game_completed_updated_at: value.email_spiel_beendet().aktualisiert_am,
+            default_watch_games: value.standard_spiel_beobachten().aktiv(),
+            default_watch_updated_at: value.standard_spiel_beobachten().aktualisiert_am(),
+            email_game_started: value.email_spiel_gestartet().aktiv(),
+            email_game_started_updated_at: value.email_spiel_gestartet().aktualisiert_am(),
+            email_capture_posted: value.email_aufnahme_hochgeladen().aktiv(),
+            email_capture_posted_updated_at: value.email_aufnahme_hochgeladen().aktualisiert_am(),
+            email_game_completed: value.email_spiel_beendet().aktiv(),
+            email_game_completed_updated_at: value.email_spiel_beendet().aktualisiert_am(),
         }
     }
 }

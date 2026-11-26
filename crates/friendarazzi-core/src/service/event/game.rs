@@ -56,12 +56,13 @@ async fn send_best_effort(ctx: &ExecutionContext<'_>, mails: Vec<Mail>) {
 /// one player never rolls back or skips deliveries for other players.
 async fn notify_recipients<F, M>(
     ctx: &ExecutionContext<'_>,
+    game_id: GameId,
     recipients: Vec<BenutzerId>,
     mut build_notif: F,
     mut build_mail: M,
 ) -> Result<(), Report<GameEventError>>
 where
-    F: FnMut(BenutzerId) -> NeueBenachrichtigung,
+    F: FnMut(BenutzerId) -> (NeueBenachrichtigung, String),
     M: FnMut(&Benutzer, &str) -> Option<Mail>,
 {
     let mut first_error: Option<Report<GameEventError>> = None;
@@ -74,14 +75,15 @@ where
                 .change_context(GameEventError::Persistence)?;
 
             let work = async {
-                let (notif, created) = create_notification_idempotent(&uow, build_notif(uid))
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(GameEventError::Persistence)?;
-                if !created {
-                    return Ok::<_, Report<GameEventError>>(None);
+                // Verify both game and recipient exist inside this UoW before inserting so a
+                // concurrent deletion skips cleanly instead of creating orphans or FK conflicts.
+                match uow.games().find_by_id(game_id).await {
+                    Ok(_) => {}
+                    Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                        return Ok::<_, Report<GameEventError>>(None);
+                    }
+                    Err(err) => return Err(err).change_context(GameEventError::Persistence),
                 }
-
                 let user = match uow.benutzer().find_by_id(uid).await {
                     Ok(u) => u.into_data(),
                     Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
@@ -89,7 +91,16 @@ where
                     }
                     Err(err) => return Err(err).change_context(GameEventError::Persistence),
                 };
-                Ok(build_mail(&user, notif.abbestell_token().as_str()))
+
+                let (neu, raw_token) = build_notif(uid);
+                let (_notif, created) = create_notification_idempotent(&uow, neu)
+                    .await
+                    .map_err(IntoReport::into_report)
+                    .change_context(GameEventError::Persistence)?;
+                if !created {
+                    return Ok(None);
+                }
+                Ok(build_mail(&user, &raw_token))
             }
             .await;
 
@@ -161,6 +172,7 @@ impl EventHandler for GameStarted {
 
         notify_recipients(
             &ctx,
+            game_id,
             recipients,
             |uid| NeueBenachrichtigung::spiel_gestartet(uid, game_id, self.started_at),
             |user, token| {
@@ -269,6 +281,7 @@ impl EventHandler for CaptureUploaded {
 
         notify_recipients(
             &ctx,
+            game_id,
             recipients,
             |uid| {
                 NeueBenachrichtigung::aufnahme_hochgeladen(
@@ -359,6 +372,7 @@ impl EventHandler for GameFinished {
 
         notify_recipients(
             &ctx,
+            game_id,
             recipients,
             |uid| {
                 NeueBenachrichtigung::spiel_beendet(uid, game_id, self.winner_id, self.finished_at)

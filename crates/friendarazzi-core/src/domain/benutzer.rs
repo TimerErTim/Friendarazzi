@@ -165,14 +165,24 @@ impl Benutzer {
         self.notification_preferences
     }
 
-    pub fn notification_preferences_mut(&mut self) -> &mut BenachrichtigungsEinstellungen {
-        &mut self.notification_preferences
+    pub fn set_default_watch_games(&mut self, active: bool, now: DateTime<Utc>) {
+        self.notification_preferences
+            .setze_standard_spiel_beobachten(active, now);
+    }
+
+    pub fn set_email_preference(
+        &mut self,
+        art: BenachrichtigungArt,
+        active: bool,
+        now: DateTime<Utc>,
+    ) {
+        self.notification_preferences.setze_email(art, active, now);
     }
 
     pub fn default_watch_games(&self) -> bool {
         self.notification_preferences
             .standard_spiel_beobachten()
-            .aktiv
+            .aktiv()
     }
 
     pub fn allows_email(&self, art: BenachrichtigungArt) -> bool {

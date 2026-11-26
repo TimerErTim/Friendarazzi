@@ -185,6 +185,11 @@ export function useFriendarazziMutations() {
     unsubscribeNotification: useMutation({
       mutationFn: (token: string) => api.notificationUnsubscribe(token),
       ...SITE_HANDLED,
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: friendarazziKeys.notifications.preferences(),
+        });
+      },
     }),
     submitCapture: useMutation({
       mutationFn: (vars: { gameId: string; tileId: string; file: File }) =>

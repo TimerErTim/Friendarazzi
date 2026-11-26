@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Persistent in-app notification inbox (`/benachrichtigungen`) with unread badge counter, mark-read / mark-all-read controls, and deep links directly to started/completed games (`/games?id=...`) or directly into the photo inspection lightbox for new captures (`/games?id=...&capture=...`).
-- Styled Neubrutalist HTML + plain-text emails with RFC 8058 `List-Unsubscribe` headers and signed one-click logged-out unsubscribe (`/abbestellen`) for game starts (draft phase finished), new captures (mentioning catcher, target, and prompt without embedding images, respecting Undercover/BlurredTeaser visibility rules), and game wins (naming game and winner in the subject).
+- Styled Neubrutalist HTML + plain-text emails with `List-Unsubscribe` headers and one-click logged-out unsubscribe (`/abbestellen`) for game starts (draft phase finished), new captures (mentioning catcher, target, and prompt without embedding images, respecting Undercover/BlurredTeaser visibility rules), and game wins (naming game and winner in the subject).
 - Per-game notification watch toggle (GitHub Watch style) in the game header plus account-wide notification preferences in `/optionen` for default game-watch state on join/create and per-event email opt-out.
 - Reversible prompt locking with a shared 60-second pre-game countdown once all players mark ready, allowing any player to withdraw readiness and adjust prompts before boards are dealt.
 - Parallel-game session overview with progress indicators, action-needed highlights, explicit multi-game selection, and switch-safe autosave (flushing pending draft and lobby edits before switching or closing).

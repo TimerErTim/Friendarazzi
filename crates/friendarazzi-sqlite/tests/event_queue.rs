@@ -245,16 +245,11 @@ async fn unsubscribe_token_survives_process_restart_with_fresh_random_signing_ke
                     created_at: test_time(),
                 })
                 .await?;
-            let notif = uow
-                .benachrichtigungen()
-                .create(NeueBenachrichtigung::spiel_gestartet(
-                    user.id(),
-                    game.id(),
-                    test_time(),
-                ))
-                .await?;
+            let (neu, raw_token) =
+                NeueBenachrichtigung::spiel_gestartet(user.id(), game.id(), test_time());
+            uow.benachrichtigungen().create(neu).await?;
             uow.commit().await?;
-            Ok((user.id(), notif.abbestell_token().as_str().to_owned()))
+            Ok((user.id(), raw_token))
         })
         .await
         .unwrap();

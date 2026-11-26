@@ -818,7 +818,7 @@ impl FriendarazziApiSpec {
 
     /// Unsubscribe via email token.
     ///
-    /// Applies a signed expiring unsubscribe token for one notification email type without login.
+    /// Applies an expiring persisted unsubscribe token for one notification email type without login.
     #[oai(
         path = "/notifications/unsubscribe",
         method = "post",

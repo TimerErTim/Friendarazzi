@@ -1,7 +1,7 @@
 //! SMTP adapter for the `MailSender` port.
 //!
 //! Builds `multipart/alternative` messages carrying both a `text/plain` body and a styled
-//! `text/html` body, plus RFC 8058 `List-Unsubscribe` headers on opt-out notification mails.
+//! `text/html` body, plus RFC 2369 `List-Unsubscribe` headers on opt-out notification mails.
 //!
 //! Configuration is data, not behaviour: credentials arrive from deployment configuration
 //! and the relay is either Mailpit on loopback (development, tests) or the production
@@ -118,23 +118,6 @@ impl Header for ListUnsubscribeHeader {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ListUnsubscribePostHeader(String);
-
-impl Header for ListUnsubscribePostHeader {
-    fn name() -> HeaderName {
-        HeaderName::new_from_ascii_str("List-Unsubscribe-Post")
-    }
-
-    fn parse(s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(Self(s.to_owned()))
-    }
-
-    fn display(&self) -> HeaderValue {
-        HeaderValue::new(Self::name(), self.0.clone())
-    }
-}
-
 impl SmtpMailSender {
     /// Build the transport once and reuse its connection pool across sends.
     pub fn neu(konfiguration: SmtpKonfiguration) -> ResultReport<Self, MailError> {
@@ -199,11 +182,7 @@ impl SmtpMailSender {
             .subject(mail.betreff());
 
         if let Some(unsub_url) = mail.unsubscribe_url(&self.konfiguration.frontend_basis_url) {
-            builder = builder
-                .header(ListUnsubscribeHeader(format!("<{unsub_url}>")))
-                .header(ListUnsubscribePostHeader(
-                    "List-Unsubscribe=One-Click".to_owned(),
-                ));
+            builder = builder.header(ListUnsubscribeHeader(format!("<{unsub_url}>")));
         }
 
         let plain_body = mail.text(&self.konfiguration.frontend_basis_url);

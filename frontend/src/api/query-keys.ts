@@ -16,5 +16,11 @@ export const friendarazziKeys = {
     gallery: (id: string) =>
       [...friendarazziKeys.profiles.all(), id, "gallery"] as const,
   },
+  notifications: {
+    all: () => [...friendarazziKeys.root, "notifications"] as const,
+    inbox: () => [...friendarazziKeys.notifications.all(), "inbox"] as const,
+    preferences: () =>
+      [...friendarazziKeys.notifications.all(), "preferences"] as const,
+  },
   media: (key: string) => [...friendarazziKeys.root, "media", key] as const,
 };

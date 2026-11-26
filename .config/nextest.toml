@@ -14,3 +14,10 @@ default-filter = 'not binary(e2e)'
 [profile.e2e]
 inherits = "default"
 default-filter = 'binary(e2e)'
+
+[test-groups.mailpit]
+max-threads = 1
+
+[[profile.e2e.overrides]]
+filter = 'test(ac19) | test(mailpit) | test(e2e_notifications)'
+test-group = 'mailpit'

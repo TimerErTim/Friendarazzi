@@ -9,7 +9,7 @@ use crate::{
     application::{ExecutionContext, uow::Versioned},
     domain::{BoardCoordinates, BoardTileId, Capture, CaptureId, Game, GameId, NewCapture},
     ports::RepositoryError,
-    service::{CaptureUploaded, UseCase},
+    service::{CaptureUploaded, GameFinished, UseCase},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -165,7 +165,16 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 game_id: self.game_id,
                 capture_id,
                 uploader_id: user_id,
+                target_id: tile.target_user_id(),
+                occurred_at: now,
             });
+            if winning_line.is_some() {
+                ctx.events().submit(GameFinished {
+                    game_id: self.game_id,
+                    winner_id: user_id,
+                    finished_at: now,
+                });
+            }
 
             Ok::<_, Report<CaptureUseCaseError>>(SubmitCaptureOutcome {
                 capture: capture.into_data(),
@@ -175,13 +184,16 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
         .await;
 
         let committed = uow.finish(result, CaptureUseCaseError::Persistence).await;
-        if committed.is_err() {
-            for key in [&full_key, &thumb_key] {
-                if let Err(err) = ctx.object_store().ensure_deleted(key).await {
-                    warn!(%key, fehler = %err, "failed to roll back uploaded capture media");
+        match committed {
+            Ok(outcome) => Ok(outcome),
+            Err(err) => {
+                for key in [&full_key, &thumb_key] {
+                    if let Err(cleanup_err) = ctx.object_store().ensure_deleted(key).await {
+                        warn!(%key, fehler = %cleanup_err, "failed to roll back uploaded capture media");
+                    }
                 }
+                Err(err)
             }
         }
-        committed
     }
 }

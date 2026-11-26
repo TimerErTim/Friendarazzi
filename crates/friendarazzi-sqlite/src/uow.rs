@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use friendarazzi_core::{
     ErrorReportExt, ResultReport,
     ports::{
-        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
-        EmailBestätigungRepository, GameRepository, KontoRepository,
+        BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
+        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
         PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
@@ -17,9 +17,10 @@ use crate::{
     SQLiteConnection, SQLiteInstance,
     errors::libsql_error_to_persistence_error,
     repos::{
-        SQLiteBenutzerRepository, SQLiteBoardRepository, SQLiteCaptureRepository,
-        SQLiteDeckRepository, SQLiteEmailBestätigungRepository, SQLiteGameRepository,
-        SQLiteKontoRepository, SQLitePasswortWiederherstellungRepository, SQLiteSessionRepository,
+        SQLiteBenachrichtigungRepository, SQLiteBenutzerRepository, SQLiteBoardRepository,
+        SQLiteCaptureRepository, SQLiteDeckRepository, SQLiteEmailBestätigungRepository,
+        SQLiteGameRepository, SQLiteKontoRepository, SQLitePasswortWiederherstellungRepository,
+        SQLiteSessionRepository,
     },
 };
 
@@ -36,6 +37,7 @@ pub struct SQLiteUnitOfWork {
     session_repo: SQLiteSessionRepository,
     bestätigung_repo: SQLiteEmailBestätigungRepository,
     wiederherstellung_repo: SQLitePasswortWiederherstellungRepository,
+    benachrichtigung_repo: SQLiteBenachrichtigungRepository,
 }
 
 #[async_trait]
@@ -58,6 +60,7 @@ impl UnitOfWorkProvider for SQLiteInstance {
             session_repo: SQLiteSessionRepository { tx: tx.clone() },
             bestätigung_repo: SQLiteEmailBestätigungRepository { tx: tx.clone() },
             wiederherstellung_repo: SQLitePasswortWiederherstellungRepository { tx: tx.clone() },
+            benachrichtigung_repo: SQLiteBenachrichtigungRepository { tx: tx.clone() },
             tx,
         }))
     }
@@ -115,5 +118,9 @@ impl UnitOfWorkImpl for SQLiteUnitOfWork {
 
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository {
         &self.wiederherstellung_repo
+    }
+
+    fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
+        &self.benachrichtigung_repo
     }
 }

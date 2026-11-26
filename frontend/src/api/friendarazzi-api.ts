@@ -1,12 +1,19 @@
 import {
   type components,
   GameStatus,
+  NotificationKind,
   PromptSource,
   SuperlativeKind,
   VisibilityMode,
 } from "./schema";
 
-export { GameStatus, PromptSource, SuperlativeKind, VisibilityMode };
+export {
+  GameStatus,
+  NotificationKind,
+  PromptSource,
+  SuperlativeKind,
+  VisibilityMode,
+};
 
 /** Transport-neutral API surface for Friendarazzi. */
 export interface FriendarazziApi {
@@ -32,6 +39,17 @@ export interface FriendarazziApi {
   ): Promise<GameDetail>;
   gameLockPrompts(gameId: string): Promise<GameDetail>;
   gameUnlockPrompts(gameId: string): Promise<GameDetail>;
+  gameSetWatch(gameId: string, watching: boolean): Promise<GameDetail>;
+
+  // ---------------------------------------------------------------- Notifications
+  notificationsList(): Promise<NotificationsInbox>;
+  notificationMarkRead(notificationId: string): Promise<void>;
+  notificationsMarkAllRead(): Promise<void>;
+  notificationPreferencesGet(): Promise<NotificationPreferences>;
+  notificationPreferencesUpdate(
+    input: UpdateNotificationPreferencesInput,
+  ): Promise<NotificationPreferences>;
+  notificationUnsubscribe(token: string): Promise<UnsubscribeOutcome>;
 
   // ---------------------------------------------------------------- Captures & Media
   captureSubmit(
@@ -95,3 +113,10 @@ export type UpdateGameSettingsInput =
 export type DraftPromptRequestItem =
   components["schemas"]["DraftPromptRequestItem"];
 export type UpdateProfileInput = components["schemas"]["UpdateProfileRequest"];
+export type NotificationView = components["schemas"]["NotificationView"];
+export type NotificationsInbox = components["schemas"]["NotificationsInbox"];
+export type NotificationPreferences =
+  components["schemas"]["NotificationPreferences"];
+export type UpdateNotificationPreferencesInput =
+  components["schemas"]["UpdateNotificationPreferencesRequest"];
+export type UnsubscribeOutcome = components["schemas"]["UnsubscribeOutcome"];

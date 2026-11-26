@@ -4,17 +4,18 @@ use async_trait::async_trait;
 use error_stack::Report;
 use friendarazzi_core::{
     ports::{
-        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
-        EmailBestätigungRepository, GameRepository, KontoRepository,
+        BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
+        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
         PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
 };
 
 use crate::repository::{
-    FakeBenutzerRepository, FakeBoardRepository, FakeCaptureRepository, FakeDatastore,
-    FakeDeckRepository, FakeEmailBestätigungRepository, FakeGameRepository, FakeKontoRepository,
-    FakePasswortWiederherstellungRepository, FakeSessionRepository,
+    FakeBenachrichtigungRepository, FakeBenutzerRepository, FakeBoardRepository,
+    FakeCaptureRepository, FakeDatastore, FakeDeckRepository, FakeEmailBestätigungRepository,
+    FakeGameRepository, FakeKontoRepository, FakePasswortWiederherstellungRepository,
+    FakeSessionRepository,
 };
 
 pub struct FakeUnitOfWorkProvider {
@@ -66,6 +67,7 @@ pub struct FakeUnitOfWork {
     sessions: FakeSessionRepository,
     bestätigungen: FakeEmailBestätigungRepository,
     wiederherstellungen: FakePasswortWiederherstellungRepository,
+    benachrichtigungen: FakeBenachrichtigungRepository,
 }
 
 impl FakeUnitOfWork {
@@ -89,6 +91,7 @@ impl FakeUnitOfWork {
             wiederherstellungen: FakePasswortWiederherstellungRepository::new(
                 transaction_datastore.clone(),
             ),
+            benachrichtigungen: FakeBenachrichtigungRepository::new(transaction_datastore.clone()),
             snapshotted_datastore,
             transaction_datastore,
         }
@@ -158,6 +161,10 @@ impl UnitOfWorkImpl for FakeUnitOfWork {
 
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository {
         &self.wiederherstellungen
+    }
+
+    fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
+        &self.benachrichtigungen
     }
 }
 

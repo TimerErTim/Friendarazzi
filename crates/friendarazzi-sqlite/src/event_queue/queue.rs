@@ -7,7 +7,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use error_stack::ResultExt;
 use friendarazzi_core::domain::{BenutzerId, CaptureId, GameId};
 use friendarazzi_core::ports::{EventQueue, EventQueueError};
-use friendarazzi_core::service::{CaptureUploaded, Event};
+use friendarazzi_core::service::{CaptureUploaded, Event, GameFinished, GameStarted};
 use friendarazzi_core::{ErrorReportExt, ResultReport};
 use molting::{AppliableMigration, MigrationTarget};
 use serde::{Deserialize, Serialize};
@@ -31,20 +31,42 @@ pub enum SqliteEventQueueError {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 enum PersistedEvent {
+    GameStarted {
+        game_id: Uuid,
+        started_at: DateTime<Utc>,
+    },
     CaptureUploaded {
         game_id: Uuid,
         capture_id: Uuid,
         uploader_id: Uuid,
+        target_id: Uuid,
+        occurred_at: DateTime<Utc>,
+    },
+    GameFinished {
+        game_id: Uuid,
+        winner_id: Uuid,
+        finished_at: DateTime<Utc>,
     },
 }
 
 impl From<&Event> for PersistedEvent {
     fn from(event: &Event) -> Self {
         match event {
+            Event::GameStarted(ev) => Self::GameStarted {
+                game_id: ev.game_id.0,
+                started_at: ev.started_at,
+            },
             Event::CaptureUploaded(ev) => Self::CaptureUploaded {
                 game_id: ev.game_id.0,
                 capture_id: ev.capture_id.0,
                 uploader_id: ev.uploader_id.0,
+                target_id: ev.target_id.0,
+                occurred_at: ev.occurred_at,
+            },
+            Event::GameFinished(ev) => Self::GameFinished {
+                game_id: ev.game_id.0,
+                winner_id: ev.winner_id.0,
+                finished_at: ev.finished_at,
             },
         }
     }
@@ -53,14 +75,34 @@ impl From<&Event> for PersistedEvent {
 impl From<PersistedEvent> for Event {
     fn from(persisted: PersistedEvent) -> Self {
         match persisted {
+            PersistedEvent::GameStarted {
+                game_id,
+                started_at,
+            } => Event::GameStarted(Box::new(GameStarted {
+                game_id: GameId(game_id),
+                started_at,
+            })),
             PersistedEvent::CaptureUploaded {
                 game_id,
                 capture_id,
                 uploader_id,
+                target_id,
+                occurred_at,
             } => Event::CaptureUploaded(Box::new(CaptureUploaded {
                 game_id: GameId(game_id),
                 capture_id: CaptureId(capture_id),
                 uploader_id: BenutzerId(uploader_id),
+                target_id: BenutzerId(target_id),
+                occurred_at,
+            })),
+            PersistedEvent::GameFinished {
+                game_id,
+                winner_id,
+                finished_at,
+            } => Event::GameFinished(Box::new(GameFinished {
+                game_id: GameId(game_id),
+                winner_id: BenutzerId(winner_id),
+                finished_at,
             })),
         }
     }

@@ -1,5 +1,6 @@
 //! SQLite repository adapters.
 
+mod benachrichtigung;
 mod benutzer;
 mod bestaetigung;
 mod board;
@@ -11,6 +12,7 @@ mod konto;
 mod passwort_wiederherstellung;
 mod session;
 
+pub use benachrichtigung::SQLiteBenachrichtigungRepository;
 pub use benutzer::SQLiteBenutzerRepository;
 pub use bestaetigung::SQLiteEmailBestätigungRepository;
 pub use board::SQLiteBoardRepository;

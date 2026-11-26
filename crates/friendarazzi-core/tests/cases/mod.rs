@@ -2,6 +2,7 @@
 
 pub mod helpers;
 
+mod benachrichtigung;
 mod capture;
 mod game;
 mod konto;

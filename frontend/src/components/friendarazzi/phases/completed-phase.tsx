@@ -1,7 +1,7 @@
 "use client";
 
 import { Crown, Flame, Ghost, Target, Zap } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   type CaptureFeedItem,
@@ -50,9 +50,29 @@ function superlativeMeta(kind: SuperlativeKind, metric: number) {
   }
 }
 
-export function CompletedPhase({ game }: { game: GameDetail }) {
+export function CompletedPhase({
+  game,
+  initialCaptureId = null,
+  onConsumeInitialCapture,
+}: {
+  game: GameDetail;
+  initialCaptureId?: string | null;
+  onConsumeInitialCapture?: () => void;
+}) {
   const [selectedCapture, setSelectedCapture] =
     useState<CaptureFeedItem | null>(null);
+  const openedCaptureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!initialCaptureId || openedCaptureRef.current === initialCaptureId) {
+      return;
+    }
+    const found = game.feed.find((item) => item.id === initialCaptureId);
+    if (found) {
+      openedCaptureRef.current = initialCaptureId;
+      setSelectedCapture(found);
+    }
+  }, [initialCaptureId, game.feed]);
 
   return (
     <div className="space-y-8">
@@ -170,7 +190,12 @@ export function CompletedPhase({ game }: { game: GameDetail }) {
         capture={selectedCapture}
         open={Boolean(selectedCapture)}
         onOpenChange={(open) => {
-          if (!open) setSelectedCapture(null);
+          if (!open) {
+            setSelectedCapture(null);
+            if (initialCaptureId) {
+              onConsumeInitialCapture?.();
+            }
+          }
         }}
       />
     </div>

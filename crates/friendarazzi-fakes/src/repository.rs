@@ -10,9 +10,9 @@ use friendarazzi_core::{
     ResultReport,
     application::uow::Versioned,
     domain::{
-        Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId,
-        InviteCode, Konto, KontoId, NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck,
-        builtin_starter_decks,
+        Benachrichtigung, BenachrichtigungId, Benutzer, BenutzerId, Board, BoardId, Capture,
+        CaptureId, EmailAdresse, Game, GameId, InviteCode, Konto, KontoId, NeueBenachrichtigung,
+        NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck, builtin_starter_decks,
         konto::{
             BestätigungId, EmailBestätigung, NeueBestätigung, NeuePasswortWiederherstellung,
             NeueSession, NeuesKonto, PasswortWiederherstellung, PasswortWiederherstellungId,
@@ -20,9 +20,10 @@ use friendarazzi_core::{
         },
     },
     ports::{
-        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
-        EmailBestätigungRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
-        PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
+        BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
+        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository, Mail,
+        MailError, MailSender, PasswortWiederherstellungRepository, RepositoryError,
+        RepositoryResult, SessionRepository,
     },
 };
 
@@ -38,6 +39,7 @@ pub struct FakeDatastore {
     pub bestätigungen: Mutex<FxHashMap<BestätigungId, Versioned<EmailBestätigung>>>,
     pub wiederherstellungen:
         Mutex<FxHashMap<PasswortWiederherstellungId, Versioned<PasswortWiederherstellung>>>,
+    pub benachrichtigungen: Mutex<FxHashMap<BenachrichtigungId, Versioned<Benachrichtigung>>>,
 }
 
 impl Clone for FakeDatastore {
@@ -52,6 +54,7 @@ impl Clone for FakeDatastore {
             sessions: Mutex::new(self.sessions().clone()),
             bestätigungen: Mutex::new(self.bestätigungen().clone()),
             wiederherstellungen: Mutex::new(self.wiederherstellungen().clone()),
+            benachrichtigungen: Mutex::new(self.benachrichtigungen().clone()),
         }
     }
 }
@@ -74,6 +77,7 @@ impl FakeDatastore {
             sessions: Mutex::new(FxHashMap::default()),
             bestätigungen: Mutex::new(FxHashMap::default()),
             wiederherstellungen: Mutex::new(FxHashMap::default()),
+            benachrichtigungen: Mutex::new(FxHashMap::default()),
         }
     }
 
@@ -118,6 +122,12 @@ impl FakeDatastore {
         self.wiederherstellungen.lock().unwrap()
     }
 
+    pub fn benachrichtigungen(
+        &self,
+    ) -> MutexGuard<'_, FxHashMap<BenachrichtigungId, Versioned<Benachrichtigung>>> {
+        self.benachrichtigungen.lock().unwrap()
+    }
+
     pub fn replace_with(&self, other: &FakeDatastore) {
         *self.games() = other.games().clone();
         *self.boards() = other.boards().clone();
@@ -128,6 +138,7 @@ impl FakeDatastore {
         *self.sessions() = other.sessions().clone();
         *self.bestätigungen() = other.bestätigungen().clone();
         *self.wiederherstellungen() = other.wiederherstellungen().clone();
+        *self.benachrichtigungen() = other.benachrichtigungen().clone();
     }
 
     /// 3-way merge of `tx` against `reference` into `target`.
@@ -157,6 +168,7 @@ impl FakeDatastore {
         let mut target_sessions = lock_map(&target.sessions)?;
         let mut target_bestätigungen = lock_map(&target.bestätigungen)?;
         let mut target_wiederherstellungen = lock_map(&target.wiederherstellungen)?;
+        let mut target_benachrichtigungen = lock_map(&target.benachrichtigungen)?;
 
         let merged_games = Self::merge_single_aggregate(
             &target_games,
@@ -198,6 +210,11 @@ impl FakeDatastore {
             &*lock_map(&reference.wiederherstellungen)?,
             &*lock_map(&tx.wiederherstellungen)?,
         )?;
+        let merged_benachrichtigungen = Self::merge_single_aggregate(
+            &target_benachrichtigungen,
+            &*lock_map(&reference.benachrichtigungen)?,
+            &*lock_map(&tx.benachrichtigungen)?,
+        )?;
 
         *target_games = merged_games.clone();
         *target_boards = merged_boards.clone();
@@ -207,6 +224,7 @@ impl FakeDatastore {
         *target_sessions = merged_sessions.clone();
         *target_bestätigungen = merged_bestätigungen.clone();
         *target_wiederherstellungen = merged_wiederherstellungen.clone();
+        *target_benachrichtigungen = merged_benachrichtigungen.clone();
 
         Ok(FakeDatastore {
             games: Mutex::new(merged_games),
@@ -218,6 +236,7 @@ impl FakeDatastore {
             sessions: Mutex::new(merged_sessions),
             bestätigungen: Mutex::new(merged_bestätigungen),
             wiederherstellungen: Mutex::new(merged_wiederherstellungen),
+            benachrichtigungen: Mutex::new(merged_benachrichtigungen),
         })
     }
 
@@ -909,6 +928,120 @@ impl PasswortWiederherstellungRepository for FakePasswortWiederherstellungReposi
     }
 }
 
+pub struct FakeBenachrichtigungRepository {
+    datastore: Arc<FakeDatastore>,
+}
+
+impl FakeBenachrichtigungRepository {
+    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
+        Self { datastore }
+    }
+}
+
+#[async_trait]
+impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
+    async fn create(
+        &self,
+        neu: NeueBenachrichtigung,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>> {
+        let mut map = self.datastore.benachrichtigungen();
+        if map.values().any(|existing| {
+            (existing.empfänger_id() == neu.empfänger_id
+                && existing.dedupe_key() == &neu.dedupe_key)
+                || existing.abbestell_token_hash() == &neu.abbestell_token_hash
+        }) {
+            return Err(Report::new(RepositoryError::Conflict));
+        }
+        let id = BenachrichtigungId(Uuid::new_v4());
+        let entity = Versioned::init(Benachrichtigung::neu(id, neu));
+        map.insert(id, entity.clone());
+        Ok(entity)
+    }
+
+    async fn find_by_id(
+        &self,
+        id: BenachrichtigungId,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>> {
+        self.datastore
+            .benachrichtigungen()
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn find_by_empfänger(
+        &self,
+        empfänger_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<Benachrichtigung>>> {
+        let mut list: Vec<Versioned<Benachrichtigung>> = self
+            .datastore
+            .benachrichtigungen()
+            .values()
+            .filter(|n| n.empfänger_id() == empfänger_id)
+            .cloned()
+            .collect();
+        list.sort_by(|a, b| {
+            b.erstellt_am()
+                .cmp(&a.erstellt_am())
+                .then(b.id().cmp(&a.id()))
+        });
+        Ok(list)
+    }
+
+    async fn find_by_abbestell_token(
+        &self,
+        token_hash: &friendarazzi_core::domain::konto::SecretTokenHash,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>> {
+        self.datastore
+            .benachrichtigungen()
+            .values()
+            .find(|n| n.abbestell_token_hash() == token_hash)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn update(
+        &self,
+        benachrichtigung: &mut Versioned<Benachrichtigung>,
+    ) -> RepositoryResult<()> {
+        let mut map = self.datastore.benachrichtigungen();
+        let Some(existing) = map.get(&benachrichtigung.id()) else {
+            return Err(Report::new(RepositoryError::NotFound));
+        };
+        if existing.v() != benachrichtigung.v() {
+            return Err(Report::new(RepositoryError::VersionMismatch {
+                expected: benachrichtigung.v(),
+                actual: Some(existing.v()),
+            }));
+        }
+        benachrichtigung.increment();
+        map.insert(benachrichtigung.id(), benachrichtigung.clone());
+        Ok(())
+    }
+
+    async fn delete(&self, benachrichtigung: Versioned<Benachrichtigung>) -> RepositoryResult<()> {
+        let mut map = self.datastore.benachrichtigungen();
+        let Some(existing) = map.get(&benachrichtigung.id()) else {
+            return Err(Report::new(RepositoryError::NotFound));
+        };
+        if existing.v() != benachrichtigung.v() {
+            return Err(Report::new(RepositoryError::VersionMismatch {
+                expected: benachrichtigung.v(),
+                actual: Some(existing.v()),
+            }));
+        }
+        map.remove(&benachrichtigung.id());
+        Ok(())
+    }
+
+    async fn delete_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<()> {
+        self.datastore
+            .benachrichtigungen()
+            .retain(|_, n| n.empfänger_id() != empfänger_id);
+        Ok(())
+    }
+}
+
 #[derive(Default)]
 pub struct FakeMailSender {
     gesendet: Mutex<Vec<Mail>>,
@@ -985,6 +1118,7 @@ mod tests {
             id,
             NewGame {
                 host_user_id: host,
+                host_watching: true,
                 invite_code: InviteCode::new(code).unwrap(),
                 title: NonEmptyString::neu(title).unwrap(),
                 grid_size: GridSize::Three,

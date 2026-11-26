@@ -11,8 +11,12 @@ import type {
   FriendarazziApi,
   GameDetail,
   GameSummary,
+  NotificationPreferences,
+  NotificationsInbox,
   StarterDeck,
+  UnsubscribeOutcome,
   UpdateGameSettingsInput,
+  UpdateNotificationPreferencesInput,
   UpdateProfileInput,
   UserGallery,
   UserProfile,
@@ -293,6 +297,70 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
       this.client.POST("/games/{game_id}/prompts/unlock", {
         params: { path: { game_id: gameId } },
         headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameSetWatch(gameId: string, watching: boolean): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.PUT("/games/{game_id}/watch", {
+        params: { path: { game_id: gameId } },
+        body: { watching },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  // ---------------------------------------------------------------- Notifications
+
+  async notificationsList(): Promise<NotificationsInbox> {
+    return this.authenticated(() =>
+      this.client.GET("/notifications", {
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async notificationMarkRead(notificationId: string): Promise<void> {
+    await this.authenticated(() =>
+      this.client.POST("/notifications/{notification_id}/read", {
+        params: { path: { notification_id: notificationId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async notificationsMarkAllRead(): Promise<void> {
+    await this.authenticated(() =>
+      this.client.POST("/notifications/read-all", {
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async notificationPreferencesGet(): Promise<NotificationPreferences> {
+    return this.authenticated(() =>
+      this.client.GET("/notifications/preferences", {
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async notificationPreferencesUpdate(
+    input: UpdateNotificationPreferencesInput,
+  ): Promise<NotificationPreferences> {
+    return this.authenticated(() =>
+      this.client.PUT("/notifications/preferences", {
+        body: input,
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async notificationUnsubscribe(token: string): Promise<UnsubscribeOutcome> {
+    return unwrap(
+      await this.client.POST("/notifications/unsubscribe", {
+        body: { token },
       }),
     );
   }

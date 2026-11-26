@@ -1,8 +1,7 @@
 //! SMTP adapter for the `MailSender` port.
 //!
-//! Transaction mail is plain text: a token-bearing HTML mail invites link rewriting,
-//! prefetching, and rendering bugs that a one-click link cannot afford, so this adapter
-//! only ever builds a `text/plain; charset=utf-8` body.
+//! Builds `multipart/alternative` messages carrying both a `text/plain` body and a styled
+//! `text/html` body, plus RFC 2369 `List-Unsubscribe` headers on opt-out notification mails.
 //!
 //! Configuration is data, not behaviour: credentials arrive from deployment configuration
 //! and the relay is either Mailpit on loopback (development, tests) or the production
@@ -18,7 +17,10 @@ use friendarazzi_core::{
 };
 use lettre::{
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
-    message::{Mailbox, header::ContentType},
+    message::{
+        Mailbox, MultiPart, SinglePart,
+        header::{ContentType, Header, HeaderName, HeaderValue},
+    },
     transport::smtp::{
         authentication::Credentials,
         client::{Tls, TlsParameters},
@@ -99,6 +101,23 @@ pub struct SmtpMailSender {
     transport: AsyncSmtpTransport<Tokio1Executor>,
 }
 
+#[derive(Debug, Clone)]
+struct ListUnsubscribeHeader(String);
+
+impl Header for ListUnsubscribeHeader {
+    fn name() -> HeaderName {
+        HeaderName::new_from_ascii_str("List-Unsubscribe")
+    }
+
+    fn parse(s: &str) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self(s.to_owned()))
+    }
+
+    fn display(&self) -> HeaderValue {
+        HeaderValue::new(Self::name(), self.0.clone())
+    }
+}
+
 impl SmtpMailSender {
     /// Build the transport once and reuse its connection pool across sends.
     pub fn neu(konfiguration: SmtpKonfiguration) -> ResultReport<Self, MailError> {
@@ -157,12 +176,31 @@ impl SmtpMailSender {
             .parse()
             .change_context(MailError::Zustellung)?;
 
-        Message::builder()
+        let mut builder = Message::builder()
             .from(von)
             .to(Mailbox::new(None, an))
-            .subject(mail.betreff())
-            .header(ContentType::TEXT_PLAIN)
-            .body(mail.text(&self.konfiguration.frontend_basis_url))
+            .subject(mail.betreff());
+
+        if let Some(unsub_url) = mail.unsubscribe_url(&self.konfiguration.frontend_basis_url) {
+            builder = builder.header(ListUnsubscribeHeader(format!("<{unsub_url}>")));
+        }
+
+        let plain_body = mail.text(&self.konfiguration.frontend_basis_url);
+        let html_body = mail.html(&self.konfiguration.frontend_basis_url);
+        let multipart = MultiPart::alternative()
+            .singlepart(
+                SinglePart::builder()
+                    .header(ContentType::TEXT_PLAIN)
+                    .body(plain_body),
+            )
+            .singlepart(
+                SinglePart::builder()
+                    .header(ContentType::TEXT_HTML)
+                    .body(html_body),
+            );
+
+        builder
+            .multipart(multipart)
             .map_err(IntoReport::into_report)
             .change_context(MailError::Zustellung)
     }

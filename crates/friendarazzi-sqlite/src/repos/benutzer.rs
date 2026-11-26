@@ -9,7 +9,10 @@ use uuid::Uuid;
 use friendarazzi_core::{
     ErrorReportExt,
     application::uow::Versioned,
-    domain::{Benutzer, BenutzerId, EmailAdresse, NeuerBenutzer},
+    domain::{
+        BenachrichtigungsEinstellungen, Benutzer, BenutzerId, EmailAdresse, NeuerBenutzer,
+        PreferenceToggle,
+    },
     ports::{BenutzerRepository, RepositoryError, RepositoryResult},
 };
 
@@ -21,7 +24,7 @@ use crate::{
     },
 };
 
-const SELECT: &str = r#"SELECT id, email_address, display_name, avatar_storage_key, gold_medal_count, equipped_title, registered_at, _version FROM "benutzer""#;
+const SELECT: &str = r#"SELECT id, email_address, display_name, avatar_storage_key, gold_medal_count, equipped_title, default_watch_games, default_watch_updated_at, email_game_started, email_game_started_updated_at, email_capture_posted, email_capture_posted_updated_at, email_game_completed, email_game_completed_updated_at, registered_at, _version FROM "benutzer""#;
 
 fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
     let id_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
@@ -30,8 +33,18 @@ fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
     let avatar_storage_key: Option<String> = row.get(3).contextualize(RepositoryError::Data)?;
     let gold_medal_count_raw: i64 = row.get(4).contextualize(RepositoryError::Data)?;
     let equipped_title: Option<String> = row.get(5).contextualize(RepositoryError::Data)?;
-    let registered_at_raw: String = row.get(6).contextualize(RepositoryError::Data)?;
-    let version = parse_version(row, 7)?;
+    let default_watch_games: i64 = row.get(6).contextualize(RepositoryError::Data)?;
+    let default_watch_updated_at: String = row.get(7).contextualize(RepositoryError::Data)?;
+    let email_game_started: i64 = row.get(8).contextualize(RepositoryError::Data)?;
+    let email_game_started_updated_at: String = row.get(9).contextualize(RepositoryError::Data)?;
+    let email_capture_posted: i64 = row.get(10).contextualize(RepositoryError::Data)?;
+    let email_capture_posted_updated_at: String =
+        row.get(11).contextualize(RepositoryError::Data)?;
+    let email_game_completed: i64 = row.get(12).contextualize(RepositoryError::Data)?;
+    let email_game_completed_updated_at: String =
+        row.get(13).contextualize(RepositoryError::Data)?;
+    let registered_at_raw: String = row.get(14).contextualize(RepositoryError::Data)?;
+    let version = parse_version(row, 15)?;
 
     let id = parse_uuid(&id_raw)?;
     let email_address =
@@ -39,6 +52,24 @@ fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
     let gold_medal_count =
         u32::try_from(gold_medal_count_raw).contextualize(RepositoryError::Data)?;
     let registered_at = parse_datetime(&registered_at_raw)?;
+    let notification_preferences = BenachrichtigungsEinstellungen::from_parts(
+        PreferenceToggle::neu(
+            default_watch_games != 0,
+            parse_datetime(&default_watch_updated_at)?,
+        ),
+        PreferenceToggle::neu(
+            email_game_started != 0,
+            parse_datetime(&email_game_started_updated_at)?,
+        ),
+        PreferenceToggle::neu(
+            email_capture_posted != 0,
+            parse_datetime(&email_capture_posted_updated_at)?,
+        ),
+        PreferenceToggle::neu(
+            email_game_completed != 0,
+            parse_datetime(&email_game_completed_updated_at)?,
+        ),
+    );
 
     let benutzer = Benutzer::from_parts(
         BenutzerId(id),
@@ -47,6 +78,7 @@ fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
         avatar_storage_key,
         gold_medal_count,
         equipped_title,
+        notification_preferences,
         registered_at,
     )
     .change_context(RepositoryError::Data)?;
@@ -63,13 +95,20 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
     async fn create(&self, benutzer: NeuerBenutzer) -> RepositoryResult<Versioned<Benutzer>> {
         let id = BenutzerId(Uuid::new_v4());
         let domain = Benutzer::neu(id, benutzer);
+        let prefs = domain.notification_preferences();
 
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 
         tx.execute(
-            r#"INSERT INTO "benutzer" (id, email_address, display_name, avatar_storage_key, gold_medal_count, equipped_title, registered_at, _version)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)"#,
+            r#"INSERT INTO "benutzer"
+               (id, email_address, display_name, avatar_storage_key, gold_medal_count, equipped_title,
+                default_watch_games, default_watch_updated_at,
+                email_game_started, email_game_started_updated_at,
+                email_capture_posted, email_capture_posted_updated_at,
+                email_game_completed, email_game_completed_updated_at,
+                registered_at, _version)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 0)"#,
             (
                 id.0.to_string(),
                 domain.email_address().as_ref(),
@@ -77,6 +116,14 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
                 domain.avatar_storage_key().map(str::to_owned),
                 i64::from(domain.gold_medal_count()),
                 domain.equipped_title().map(str::to_owned),
+                i64::from(prefs.standard_spiel_beobachten().aktiv()),
+                format_datetime(prefs.standard_spiel_beobachten().aktualisiert_am()),
+                i64::from(prefs.email_spiel_gestartet().aktiv()),
+                format_datetime(prefs.email_spiel_gestartet().aktualisiert_am()),
+                i64::from(prefs.email_aufnahme_hochgeladen().aktiv()),
+                format_datetime(prefs.email_aufnahme_hochgeladen().aktualisiert_am()),
+                i64::from(prefs.email_spiel_beendet().aktiv()),
+                format_datetime(prefs.email_spiel_beendet().aktualisiert_am()),
                 format_datetime(domain.registered_at()),
             ),
         )
@@ -161,14 +208,20 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
     async fn update(&self, benutzer: &mut Versioned<Benutzer>) -> RepositoryResult<()> {
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
+        let prefs = benutzer.notification_preferences();
 
         update_versioned(
             tx,
             r#"UPDATE "benutzer"
                SET email_address = ?2, display_name = ?3, avatar_storage_key = ?4,
-                   gold_medal_count = ?5, equipped_title = ?6, registered_at = ?7,
-                   _version = ?8 + 1
-               WHERE id = ?1 AND _version = ?8"#,
+                   gold_medal_count = ?5, equipped_title = ?6,
+                   default_watch_games = ?7, default_watch_updated_at = ?8,
+                   email_game_started = ?9, email_game_started_updated_at = ?10,
+                   email_capture_posted = ?11, email_capture_posted_updated_at = ?12,
+                   email_game_completed = ?13, email_game_completed_updated_at = ?14,
+                   registered_at = ?15,
+                   _version = ?16 + 1
+               WHERE id = ?1 AND _version = ?16"#,
             (
                 benutzer.id().0.to_string(),
                 benutzer.email_address().as_ref().to_string(),
@@ -176,6 +229,14 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
                 benutzer.avatar_storage_key().map(str::to_owned),
                 i64::from(benutzer.gold_medal_count()),
                 benutzer.equipped_title().map(str::to_owned),
+                i64::from(prefs.standard_spiel_beobachten().aktiv()),
+                format_datetime(prefs.standard_spiel_beobachten().aktualisiert_am()),
+                i64::from(prefs.email_spiel_gestartet().aktiv()),
+                format_datetime(prefs.email_spiel_gestartet().aktualisiert_am()),
+                i64::from(prefs.email_aufnahme_hochgeladen().aktiv()),
+                format_datetime(prefs.email_aufnahme_hochgeladen().aktualisiert_am()),
+                i64::from(prefs.email_spiel_beendet().aktiv()),
+                format_datetime(prefs.email_spiel_beendet().aktualisiert_am()),
                 format_datetime(benutzer.registered_at()),
                 benutzer.v() as i64,
             ),

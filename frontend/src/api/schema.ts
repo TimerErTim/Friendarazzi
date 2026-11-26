@@ -748,6 +748,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/games/{game_id}/watch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Watch or unwatch a game's notifications.
+         * @description Sets whether the authenticated participant receives in-app and email notifications for a game.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["SetGameWatchRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/games/{game_id}/tiles/{tile_id}/capture": {
         parameters: {
             query?: never;
@@ -1697,6 +1759,337 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List in-app notifications.
+         * @description Returns the authenticated caller's inbox newest first together with the unread count.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["NotificationsInbox"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{notification_id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark a notification as read.
+         * @description Marks one notification in the authenticated caller's inbox as read idempotently.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    notification_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["Ok"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark all notifications as read.
+         * @description Marks every unread notification in the authenticated caller's inbox as read.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["Ok"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read notification preferences.
+         * @description Returns the caller's account-wide game watch default and per-event email opt-out settings.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["NotificationPreferences"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        /**
+         * Update notification preferences.
+         * @description Updates the caller's default game watch preference and per-event email opt-out toggles.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["UpdateNotificationPreferencesRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["NotificationPreferences"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/unsubscribe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unsubscribe via email token.
+         * @description Applies an expiring persisted unsubscribe token for one notification email type without login.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["UnsubscribeNotificationRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["UnsubscribeOutcome"];
+                    };
+                };
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1962,6 +2355,8 @@ export interface components {
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
             /** @description Current lifecycle state. */
             status: components["schemas"]["GameStatus"] & unknown;
+            /** @description Whether the caller is subscribed to notifications for this game. */
+            watching: boolean;
             /**
              * Format: uint32
              * @description Playable tile count per player.
@@ -2037,6 +2432,8 @@ export interface components {
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
             /** @description Current lifecycle state. */
             status: components["schemas"]["GameStatus"] & unknown;
+            /** @description Whether the caller is subscribed to notifications for this game. */
+            watching: boolean;
             /**
              * Format: uint32
              * @description Playable tile count per player.
@@ -2200,6 +2597,101 @@ export interface components {
             status: MailHealth_UnknownStatus;
         } & components["schemas"]["MailHealthUnknown"];
         /**
+         * @description Type of notification event.
+         * @enum {string}
+         */
+        NotificationKind: NotificationKind;
+        /**
+         * NotificationPreferences
+         * @description Account-wide notification defaults and per-event email preferences.
+         */
+        NotificationPreferences: {
+            /** @description Default watch/subscription state applied when creating or joining a game. */
+            defaultWatchGames: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last change to `defaultWatchGames`.
+             */
+            defaultWatchUpdatedAt: string;
+            /** @description Send email when a game starts (drafting phase finishes). */
+            emailGameStarted: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last change to `emailGameStarted`.
+             */
+            emailGameStartedUpdatedAt: string;
+            /** @description Send email when a new capture is uploaded in a watched game. */
+            emailCapturePosted: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last change to `emailCapturePosted`.
+             */
+            emailCapturePostedUpdatedAt: string;
+            /** @description Send email when another player completes a game. */
+            emailGameCompleted: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp of the last change to `emailGameCompleted`.
+             */
+            emailGameCompletedUpdatedAt: string;
+        };
+        /**
+         * NotificationView
+         * @description One inbox notification item with visibility-mode-aware details.
+         */
+        NotificationView: {
+            /**
+             * Format: uuid
+             * @description Notification ID.
+             */
+            id: string;
+            /** @description Event kind. */
+            kind: components["schemas"]["NotificationKind"] & unknown;
+            /**
+             * Format: uuid
+             * @description Affected game ID.
+             */
+            gameId: string;
+            /** @description Title of the affected game. */
+            gameTitle: string;
+            /**
+             * Format: uuid
+             * @description Capture ID for `CapturePosted` notifications, used to open the inspection dialog directly.
+             */
+            captureId?: string | null;
+            /** @description Catcher (for `CapturePosted`) or winner (for `GameCompleted`). */
+            actor?: components["schemas"]["PlayerBadge"] | (never | null);
+            /** @description Captured target player (redacted in `BlurredTeaser` during active play). */
+            target?: components["schemas"]["PlayerBadge"] | (never | null);
+            /** @description Prompt/activity text (redacted in `BlurredTeaser` during active play). */
+            promptText?: string | null;
+            /** @description Whether the capture is still blurred/redacted under `BlurredTeaser`. */
+            isBlurred: boolean;
+            /**
+             * Format: date-time
+             * @description Timestamp when the notification was created.
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description Timestamp when the notification was marked read, if any.
+             */
+            readAt?: string | null;
+        };
+        /**
+         * NotificationsInbox
+         * @description Caller's persistent notification inbox and unread badge count.
+         */
+        NotificationsInbox: {
+            /**
+             * Format: uint32
+             * @description Number of unread notifications in the inbox.
+             */
+            unreadCount: number;
+            /** @description Inbox items ordered newest first. */
+            notifications: components["schemas"]["NotificationView"][];
+        };
+        /**
          * Ok
          * @description Acknowledgement of a request that has nothing to return.
          * @example {
@@ -2325,6 +2817,14 @@ export interface components {
             accessToken: string;
         };
         /**
+         * SetGameWatchRequest
+         * @description Toggle notification subscription for one game.
+         */
+        SetGameWatchRequest: {
+            /** @description Whether the caller wants to watch notifications for this game. */
+            watching: boolean;
+        };
+        /**
          * StarterDeck
          * @description Quick-Start deck template collection.
          */
@@ -2385,6 +2885,24 @@ export interface components {
             captureId?: string | null;
         };
         /**
+         * UnsubscribeNotificationRequest
+         * @description Token-based one-click email unsubscribe payload.
+         */
+        UnsubscribeNotificationRequest: {
+            /** @description Expiring unsubscribe token from the email footer or `List-Unsubscribe` header. */
+            token: string;
+        };
+        /**
+         * UnsubscribeOutcome
+         * @description Confirmation returned by one-click token-based email unsubscribe.
+         */
+        UnsubscribeOutcome: {
+            /** @description Always `true` when the preference was unsubscribed. */
+            ok: boolean;
+            /** @description The notification kind that was unsubscribed. */
+            kind: components["schemas"]["NotificationKind"] & unknown;
+        };
+        /**
          * UpdateGameSettingsRequest
          * @description Update lobby settings before drafting starts.
          */
@@ -2398,6 +2916,20 @@ export interface components {
             gridSize: number;
             /** @description Proof visibility mode. */
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+        };
+        /**
+         * UpdateNotificationPreferencesRequest
+         * @description Update account-wide notification preferences and per-event email opt-outs.
+         */
+        UpdateNotificationPreferencesRequest: {
+            /** @description Default watching state when creating or joining a game. */
+            defaultWatchGames?: boolean | null;
+            /** @description Email notification on game start. */
+            emailGameStarted?: boolean | null;
+            /** @description Email notification on new capture. */
+            emailCapturePosted?: boolean | null;
+            /** @description Email notification on game completion. */
+            emailGameCompleted?: boolean | null;
         };
         /**
          * UpdateProfileRequest
@@ -2489,6 +3021,11 @@ export enum MailHealth_OkStatus {
 }
 export enum MailHealth_UnknownStatus {
     Unknown = "Unknown"
+}
+export enum NotificationKind {
+    GameStarted = "GameStarted",
+    CapturePosted = "CapturePosted",
+    GameCompleted = "GameCompleted"
 }
 export enum PromptSource {
     Custom = "Custom",

@@ -14,7 +14,7 @@ use crate::{
         PromptSubmissionId, VisibilityMode,
     },
     ports::RepositoryError,
-    service::UseCase,
+    service::{GameStarted, UseCase, use_cases::benachrichtigung::load_default_watch_for_user},
 };
 
 const MAX_INVITE_CODE_ATTEMPTS: usize = 8;
@@ -130,11 +130,17 @@ impl UseCase<Game> for CreateGame {
                 }
             };
 
+            let host_watching = load_default_watch_for_user(&uow, host_id)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
             let game = uow
                 .games()
                 .create(NewGame {
                     invite_code,
                     host_user_id: host_id,
+                    host_watching,
                     title: self.title,
                     grid_size: self.grid_size,
                     visibility_mode: self.visibility_mode,
@@ -191,7 +197,12 @@ impl UseCase<Game> for JoinGame {
                 return Err(Report::new(GameUseCaseError::Conflict));
             };
 
-            lobby.join_player(user_id, now);
+            let watching = load_default_watch_for_user(&uow, user_id)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
+            lobby.join_player(user_id, now, watching);
             let mut updated = Versioned::new(version, Game::Lobby(lobby));
             uow.games()
                 .update(&mut updated)
@@ -694,7 +705,13 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
             .await;
 
             match uow.finish_with(step_result, map_update_repo_err).await {
-                Ok(StartCandidateOutcome::Started) => started_games.push(game_id),
+                Ok(StartCandidateOutcome::Started) => {
+                    ctx.events().submit(GameStarted {
+                        game_id,
+                        started_at: now,
+                    });
+                    started_games.push(game_id);
+                }
                 Ok(StartCandidateOutcome::Rescheduled(at)) => {
                     next_draft_closes_at = Some(match next_draft_closes_at {
                         Some(existing) if existing <= at => existing,

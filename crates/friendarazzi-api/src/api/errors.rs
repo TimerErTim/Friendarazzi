@@ -38,3 +38,12 @@ pub enum MediaReadError {
     #[error("Medium konnte nicht geladen werden")]
     Storage,
 }
+
+/// Refusals when reading notifications or preferences.
+#[derive(Debug, thiserror::Error)]
+pub enum NotificationReadError {
+    #[error("für diese Aktion ist eine Anmeldung erforderlich")]
+    Unauthorized,
+    #[error("Benachrichtigungen konnten nicht geladen werden")]
+    Persistence,
+}

@@ -220,6 +220,7 @@ pub mod state {
 pub struct GamePlayer {
     pub user_id: BenutzerId,
     pub joined_at: DateTime<Utc>,
+    pub watching: bool,
 }
 
 /// One submitted prompt entity owned by a `Game` aggregate.
@@ -257,6 +258,7 @@ impl PromptSubmission {
 pub struct NewGame {
     pub invite_code: InviteCode,
     pub host_user_id: BenutzerId,
+    pub host_watching: bool,
     pub title: NonEmptyString,
     pub grid_size: GridSize,
     pub visibility_mode: VisibilityMode,
@@ -368,6 +370,25 @@ impl<S> GameIn<S> {
         self.players.iter().any(|p| p.user_id == user_id)
     }
 
+    pub fn player_watching(&self, user_id: BenutzerId) -> Option<bool> {
+        self.players
+            .iter()
+            .find(|p| p.user_id == user_id)
+            .map(|p| p.watching)
+    }
+
+    pub fn set_player_watching(
+        &mut self,
+        user_id: BenutzerId,
+        watching: bool,
+    ) -> ResultReport<(), GameError> {
+        let Some(player) = self.players.iter_mut().find(|p| p.user_id == user_id) else {
+            return Err(Report::new(GameError::PlayerNotInGame));
+        };
+        player.watching = watching;
+        Ok(())
+    }
+
     pub fn created_at(&self) -> DateTime<Utc> {
         self.created_at
     }
@@ -430,6 +451,7 @@ impl LobbyGame {
         let host_player = GamePlayer {
             user_id: input.host_user_id,
             joined_at: input.created_at,
+            watching: input.host_watching,
         };
         Self {
             id,
@@ -457,13 +479,14 @@ impl LobbyGame {
     }
 
     /// Join `user_id` to the lobby (idempotent if already present).
-    pub fn join_player(&mut self, user_id: BenutzerId, now: DateTime<Utc>) {
+    pub fn join_player(&mut self, user_id: BenutzerId, now: DateTime<Utc>, watching: bool) {
         if self.has_player(user_id) {
             return;
         }
         self.players.push(GamePlayer {
             user_id,
             joined_at: now,
+            watching,
         });
     }
 
@@ -787,6 +810,28 @@ impl Game {
         }
     }
 
+    pub fn player_watching(&self, user_id: BenutzerId) -> Option<bool> {
+        match self {
+            Self::Lobby(g) => g.player_watching(user_id),
+            Self::Drafting(g) => g.player_watching(user_id),
+            Self::Active(g) => g.player_watching(user_id),
+            Self::Completed(g) => g.player_watching(user_id),
+        }
+    }
+
+    pub fn set_player_watching(
+        &mut self,
+        user_id: BenutzerId,
+        watching: bool,
+    ) -> ResultReport<(), GameError> {
+        match self {
+            Self::Lobby(g) => g.set_player_watching(user_id, watching),
+            Self::Drafting(g) => g.set_player_watching(user_id, watching),
+            Self::Active(g) => g.set_player_watching(user_id, watching),
+            Self::Completed(g) => g.set_player_watching(user_id, watching),
+        }
+    }
+
     pub fn created_at(&self) -> DateTime<Utc> {
         match self {
             Self::Lobby(g) => g.created_at(),
@@ -1098,6 +1143,7 @@ mod tests {
             NewGame {
                 invite_code: InviteCode::new("TEST12").unwrap(),
                 host_user_id: players[0],
+                host_watching: true,
                 title: NonEmptyString::neu("Testabend").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
@@ -1106,8 +1152,12 @@ mod tests {
         );
         assert!(lobby.clone().start_drafting().is_err());
 
-        lobby.join_player(players[1], now);
-        lobby.join_player(players[2], now);
+        lobby.join_player(players[1], now, true);
+        lobby.join_player(players[2], now, false);
+        assert_eq!(lobby.player_watching(players[0]), Some(true));
+        assert_eq!(lobby.player_watching(players[2]), Some(false));
+        lobby.set_player_watching(players[2], true).unwrap();
+        assert_eq!(lobby.player_watching(players[2]), Some(true));
         lobby.update_settings(
             NonEmptyString::neu("Updated").unwrap(),
             GridSize::Three,

@@ -57,38 +57,47 @@ pub async fn nachrichten() -> Vec<Value> {
         .await
         .expect("Mailpit antwortet mit JSON");
 
-    antwort["messages"].as_array().cloned().unwrap_or_default()
+    let mut messages = antwort["messages"].as_array().cloned().unwrap_or_default();
+    messages.reverse();
+    messages
 }
 
-/// The body of the newest message addressed to `empfänger`, decoded from Mailpit's
-/// base64-free `Text` field.
-pub async fn letzter_text_an(empfänger: &str) -> String {
-    let nachrichten = nachrichten().await;
-    let passend = nachrichten
-        .iter()
-        .rev()
-        .find(|nachricht| {
-            nachricht["To"]
-                .as_array()
-                .map(|empfänger_liste| {
-                    empfänger_liste.iter().any(|eintrag| {
-                        eintrag["Address"]
-                            .as_str()
-                            .map(|adresse| adresse.eq_ignore_ascii_case(empfänger))
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false)
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "keine Mail an {empfänger} in Mailpit; vorhanden: {}",
-                nachrichten.len()
-            )
-        });
+/// Message details returned by Mailpit's REST API, including plain text, HTML, and headers.
+#[derive(Debug, Clone)]
+pub struct MailpitNachricht {
+    pub subject: String,
+    pub text: String,
+    pub html: String,
+    pub headers: Value,
+}
 
-    let id = passend["ID"].as_str().expect("jede Nachricht hat eine ID");
-    let detail = reqwest::Client::new()
+impl MailpitNachricht {
+    pub fn header_first(&self, name: &str) -> Option<&str> {
+        self.headers
+            .as_object()?
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(name))
+            .and_then(|(_, v)| v.as_array()?.first()?.as_str())
+    }
+}
+
+fn hat_empfänger(nachricht: &Value, empfänger: &str) -> bool {
+    nachricht["To"]
+        .as_array()
+        .map(|empfänger_liste| {
+            empfänger_liste.iter().any(|eintrag| {
+                eintrag["Address"]
+                    .as_str()
+                    .map(|adresse| adresse.eq_ignore_ascii_case(empfänger))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+async fn lade_nachricht(id: &str) -> MailpitNachricht {
+    let client = reqwest::Client::new();
+    let detail = client
         .get(format!("{}/api/v1/message/{id}", basis_url()))
         .send()
         .await
@@ -97,10 +106,51 @@ pub async fn letzter_text_an(empfänger: &str) -> String {
         .await
         .expect("Mailpit antwortet mit JSON");
 
-    detail["Text"]
-        .as_str()
-        .unwrap_or_else(|| detail["HTML"].as_str().unwrap_or_default())
-        .to_owned()
+    let headers = client
+        .get(format!("{}/api/v1/message/{id}/headers", basis_url()))
+        .send()
+        .await
+        .expect("Mailpit liefert die Header")
+        .json::<Value>()
+        .await
+        .expect("Mailpit antwortet mit Header-JSON");
+
+    MailpitNachricht {
+        subject: detail["Subject"].as_str().unwrap_or_default().to_owned(),
+        text: detail["Text"].as_str().unwrap_or_default().to_owned(),
+        html: detail["HTML"].as_str().unwrap_or_default().to_owned(),
+        headers,
+    }
+}
+
+/// Every message addressed to `empfänger`, oldest first, with decoded plain-text, HTML, and headers.
+pub async fn nachrichten_an(empfänger: &str) -> Vec<MailpitNachricht> {
+    let all = nachrichten().await;
+    let mut out = Vec::new();
+    for msg in all.iter().filter(|m| hat_empfänger(m, empfänger)) {
+        let id = msg["ID"].as_str().expect("jede Nachricht hat eine ID");
+        out.push(lade_nachricht(id).await);
+    }
+    out
+}
+
+/// Full details of the newest message addressed to `empfänger`.
+pub async fn letzte_nachricht_an(empfänger: &str) -> MailpitNachricht {
+    let msgs = nachrichten_an(empfänger).await;
+    msgs.into_iter().last().unwrap_or_else(|| {
+        panic!("keine Mail an {empfänger} in Mailpit");
+    })
+}
+
+/// The body of the newest message addressed to `empfänger`, decoded from Mailpit's
+/// base64-free `Text` field.
+pub async fn letzter_text_an(empfänger: &str) -> String {
+    let msg = letzte_nachricht_an(empfänger).await;
+    if msg.text.is_empty() {
+        msg.html
+    } else {
+        msg.text
+    }
 }
 
 /// Forget every message, so a case asserts on its own mail only.

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ChevronUp, Upload, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiErrorMessage } from "@/api/errors";
 import {
@@ -44,7 +44,15 @@ import { normalizeImageForUpload } from "@/lib/media-capture";
 
 const INITIAL_FEED_ITEMS = 3;
 
-export function ActivePlayPhase({ game }: { game: GameDetail }) {
+export function ActivePlayPhase({
+  game,
+  initialCaptureId = null,
+  onConsumeInitialCapture,
+}: {
+  game: GameDetail;
+  initialCaptureId?: string | null;
+  onConsumeInitialCapture?: () => void;
+}) {
   const mutations = useFriendarazziMutations();
   const [selectedTile, setSelectedTile] = useState<BoardTileView | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -54,6 +62,18 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
     useState<CaptureFeedItem | null>(null);
   const [mobileFeedOpen, setMobileFeedOpen] = useState(false);
   const [showAllFeed, setShowAllFeed] = useState(false);
+  const openedCaptureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!initialCaptureId || openedCaptureRef.current === initialCaptureId) {
+      return;
+    }
+    const found = game.feed.find((item) => item.id === initialCaptureId);
+    if (found) {
+      openedCaptureRef.current = initialCaptureId;
+      setLightboxCapture(found);
+    }
+  }, [initialCaptureId, game.feed]);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -360,7 +380,12 @@ export function ActivePlayPhase({ game }: { game: GameDetail }) {
         capture={lightboxCapture}
         open={Boolean(lightboxCapture)}
         onOpenChange={(open) => {
-          if (!open) setLightboxCapture(null);
+          if (!open) {
+            setLightboxCapture(null);
+            if (initialCaptureId) {
+              onConsumeInitialCapture?.();
+            }
+          }
         }}
       />
     </div>

@@ -4,8 +4,9 @@ use error_stack::{Report, ResultExt};
 use friendarazzi_core::{
     domain::{BenutzerId, GameId, GridSize, InviteCode, NonEmptyString},
     service::{
-        CreateGame, DraftPromptInput, GameUseCaseError, JoinGame, ProfileUseCaseError,
-        SaveDraftPrompts, UpdateGameSettings, UpdateProfile,
+        BenachrichtigungsEinstellungenAktualisieren, CreateGame, DraftPromptInput,
+        GameUseCaseError, JoinGame, ProfileUseCaseError, SaveDraftPrompts, SpielBeobachtungSetzen,
+        UpdateGameSettings, UpdateProfile,
     },
 };
 use uuid::Uuid;
@@ -161,4 +162,63 @@ impl UpdateProfileRequest {
             equipped_title,
         })
     }
+}
+
+/// Update account-wide notification preferences and per-event email opt-outs.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateNotificationPreferencesRequest {
+    /// Default watching state when creating or joining a game.
+    pub default_watch_games: Option<bool>,
+    /// Email notification on game start.
+    pub email_game_started: Option<bool>,
+    /// Email notification on new capture.
+    pub email_capture_posted: Option<bool>,
+    /// Email notification on game completion.
+    pub email_game_completed: Option<bool>,
+}
+
+impl From<UpdateNotificationPreferencesRequest> for BenachrichtigungsEinstellungenAktualisieren {
+    fn from(value: UpdateNotificationPreferencesRequest) -> Self {
+        Self {
+            default_watch_games: value.default_watch_games,
+            email_game_started: value.email_game_started,
+            email_capture_posted: value.email_capture_posted,
+            email_game_completed: value.email_game_completed,
+        }
+    }
+}
+
+/// Toggle notification subscription for one game.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetGameWatchRequest {
+    /// Whether the caller wants to watch notifications for this game.
+    pub watching: bool,
+}
+
+impl SetGameWatchRequest {
+    pub fn into_use_case(self, game_id: GameId) -> SpielBeobachtungSetzen {
+        SpielBeobachtungSetzen {
+            game_id,
+            watching: self.watching,
+        }
+    }
+}
+
+/// Token-based one-click email unsubscribe payload.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsubscribeNotificationRequest {
+    /// Expiring unsubscribe token from the email footer or `List-Unsubscribe` header.
+    pub token: String,
 }

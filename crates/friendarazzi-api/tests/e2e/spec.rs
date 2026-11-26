@@ -56,7 +56,15 @@ fn jede_operation_hat_genau_einen_veröffentlichten_tag() {
         .collect();
     assert_eq!(
         dokumentiert,
-        ["Betrieb", "Captures", "Decks", "Games", "Konto", "Profiles"],
+        [
+            "Betrieb",
+            "Captures",
+            "Decks",
+            "Games",
+            "Konto",
+            "Notifications",
+            "Profiles"
+        ],
         "the public sections are fixed"
     );
 
@@ -89,7 +97,7 @@ fn bearer_schema_ist_veröffentlicht() {
             .is_some_and(|text| !text.is_empty()),
     );
 
-    const OHNE_TOKEN: [(&str, &str); 9] = [
+    const OHNE_TOKEN: [(&str, &str); 10] = [
         ("/health", "get"),
         ("/health/mail", "get"),
         ("/version", "get"),
@@ -99,6 +107,7 @@ fn bearer_schema_ist_veröffentlicht() {
         ("/session/erneuern", "post"),
         ("/passwort/vergessen", "post"),
         ("/passwort/wiederherstellen", "post"),
+        ("/notifications/unsubscribe", "post"),
     ];
 
     for (path, method, operation) in operationen(&spec) {
@@ -183,6 +192,10 @@ fn schema_namen_und_felder_bleiben_wire_kompatibel() {
         "UserProfile",
         "UserGallery",
         "StarterDeck",
+        "NotificationView",
+        "NotificationsInbox",
+        "NotificationPreferences",
+        "UnsubscribeOutcome",
     ] {
         assert!(schemas.contains_key(name), "missing wire schema {name}");
     }

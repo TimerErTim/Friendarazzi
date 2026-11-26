@@ -9,13 +9,16 @@ use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
     domain::{
-        self, BenutzerId, BoardTileId, Capture, Game, GameAwards, GameId, InviteCode, MIN_PLAYERS,
+        self, BenachrichtigungArt, BenachrichtigungId, BenachrichtigungsEinstellungen, BenutzerId,
+        BoardTileId, Capture, Game, GameAwards, GameId, InviteCode, MIN_PLAYERS,
         can_view_blurred_capture, can_view_full_capture, compute_game_awards,
         target_quotas_for_author,
     },
     ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
     service::{
-        Abmeldung, AbmeldungFehler, Anmeldung, AnmeldungFehler, BenutzerLöschen,
+        Abmeldung, AbmeldungFehler, AlleBenachrichtigungenAlsGelesenMarkieren, Anmeldung,
+        AnmeldungFehler, BenachrichtigungAbbestellenMitToken, BenachrichtigungAlsGelesenMarkieren,
+        BenachrichtigungUseCaseError, BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen,
         BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
         LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
         PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
@@ -28,11 +31,13 @@ use tracing::warn;
 pub mod errors;
 pub mod requests;
 
-use self::errors::{GameReadError, MediaReadError, ProfileReadError};
+use self::errors::{GameReadError, MediaReadError, NotificationReadError, ProfileReadError};
 use crate::schema::{
     AuthenticatedBenutzer, BoardTileView, BoardView, BuildVersion, CaptureFeedItem, CaptureOutcome,
-    DraftTargetQuota, GalleryGameGroup, GameDetail, GameSummary, GridCoordinate, PlayerBadge,
-    PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView, UserGallery, UserProfile,
+    DraftTargetQuota, GalleryGameGroup, GameDetail, GameSummary, GridCoordinate,
+    NotificationPreferences, NotificationView, NotificationsInbox, PlayerBadge,
+    PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView, UnsubscribeOutcome,
+    UserGallery, UserProfile,
 };
 
 #[derive(Clone)]
@@ -186,7 +191,7 @@ impl FriendarazziAppApi {
         let invite_code = InviteCode::new(code).change_context(GameReadError::BadRequest)?;
         self.app
             .execute_fn(auth, async |ctx| {
-                let _user_id = ctx
+                let user_id = ctx
                     .auth()
                     .require_benutzer_id()
                     .change_context(GameReadError::Unauthorized)?;
@@ -196,6 +201,13 @@ impl FriendarazziAppApi {
                     .await
                     .change_context(GameReadError::Persistence)?;
                 let res = async {
+                    let default_watch = match uow.benutzer().find_by_id(user_id).await {
+                        Ok(u) => u.default_watch_games(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            true
+                        }
+                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
+                    };
                     let game = match uow.games().find_by_invite_code(&invite_code).await {
                         Ok(g) => g.into_data(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
@@ -216,7 +228,11 @@ impl FriendarazziAppApi {
                         }
                         Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
                     };
-                    Ok::<_, Report<GameReadError>>(game_to_summary(&game, None, None, winner, now))
+                    let mut summary = game_to_summary(&game, Some(user_id), None, winner, now);
+                    if game.player_watching(user_id).is_none() {
+                        summary.watching = default_watch;
+                    }
+                    Ok::<_, Report<GameReadError>>(summary)
                 }
                 .await;
                 uow.finish(res, GameReadError::Persistence).await
@@ -301,6 +317,22 @@ impl FriendarazziAppApi {
             .await?;
         self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
             .await
+    }
+
+    pub async fn game_set_watch(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::SetGameWatchRequest,
+    ) -> ResultReport<GameDetail, BenachrichtigungUseCaseError> {
+        let uc = req.into_use_case(game_id);
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(
+            auth,
+            game.id(),
+            BenachrichtigungUseCaseError::Persistence,
+        )
+        .await
     }
 
     async fn load_game_detail_after_write<E: friendarazzi_core::ThreadSafeError>(
@@ -507,6 +539,7 @@ impl FriendarazziAppApi {
                         grid_size: game.grid_size() as u8,
                         visibility_mode: game.visibility_mode().into(),
                         status: (&game).into(),
+                        watching: game.player_watching(viewer_id).unwrap_or(true),
                         playable_tile_count: game.playable_tile_count() as u32,
                         draft_closes_at,
                         server_now: now,
@@ -1014,6 +1047,245 @@ impl FriendarazziAppApi {
         let use_case: BenutzerLöschen = anfrage.in_use_case()?;
         self.app.execute(auth, use_case).await
     }
+
+    // ---------------------------------------------------------------- Notifications
+
+    pub async fn notifications_list(
+        &self,
+        auth: AuthContext,
+    ) -> ResultReport<NotificationsInbox, NotificationReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let viewer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(NotificationReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(NotificationReadError::Persistence)?;
+                let res = async {
+                    let raw = uow
+                        .benachrichtigungen()
+                        .find_by_empfänger(viewer_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(NotificationReadError::Persistence)?;
+
+                    let mut game_cache: HashMap<GameId, (Game, HashMap<BenutzerId, PlayerBadge>)> =
+                        HashMap::new();
+                    let mut capture_cache: HashMap<domain::CaptureId, Capture> = HashMap::new();
+                    let mut views = Vec::with_capacity(raw.len());
+                    let mut unread_count = 0u32;
+
+                    for item in raw {
+                        let n = item.into_data();
+                        if let std::collections::hash_map::Entry::Vacant(e) =
+                            game_cache.entry(n.game_id())
+                        {
+                            match uow.games().find_by_id(n.game_id()).await {
+                                Ok(g) => {
+                                    let g = g.into_data();
+                                    let ids = g.sorted_player_ids();
+                                    let users = uow
+                                        .benutzer()
+                                        .find_by_ids(&ids)
+                                        .await
+                                        .map_err(IntoReport::into_report)
+                                        .change_context(NotificationReadError::Persistence)?;
+                                    let badges = build_badge_map(
+                                        &g,
+                                        users.into_iter().map(|b| b.into_data()),
+                                    );
+                                    e.insert((g, badges));
+                                }
+                                Err(err)
+                                    if matches!(
+                                        err.current_context(),
+                                        RepositoryError::NotFound
+                                    ) => {}
+                                Err(err) => {
+                                    return Err(err)
+                                        .change_context(NotificationReadError::Persistence);
+                                }
+                            }
+                        }
+
+                        let Some((game, badges)) = game_cache.get(&n.game_id()) else {
+                            continue;
+                        };
+
+                        let mut actor = n.actor_id().and_then(|aid| badges.get(&aid).cloned());
+                        let mut target = n.target_id().and_then(|tid| badges.get(&tid).cloned());
+                        let mut prompt_text = None;
+                        let mut is_blurred = false;
+                        let mut capture_id = n.capture_id().map(|c| c.0);
+
+                        if n.art() == BenachrichtigungArt::AufnahmeHochgeladen
+                            && let Some(cid) = n.capture_id()
+                        {
+                            if let std::collections::hash_map::Entry::Vacant(entry) =
+                                capture_cache.entry(cid)
+                            {
+                                match uow.captures().find_by_id(cid).await {
+                                    Ok(c) => {
+                                        entry.insert(c.into_data());
+                                    }
+                                    Err(err)
+                                        if matches!(
+                                            err.current_context(),
+                                            RepositoryError::NotFound
+                                        ) => {}
+                                    Err(err) => {
+                                        return Err(err)
+                                            .change_context(NotificationReadError::Persistence);
+                                    }
+                                }
+                            }
+                            if let Some(cap) = capture_cache.get(&cid) {
+                                if !can_view_blurred_capture(game, cap, viewer_id) {
+                                    // Never expose Undercover capture details before reveal.
+                                    actor = None;
+                                    target = None;
+                                    capture_id = None;
+                                    is_blurred = true;
+                                } else if can_view_full_capture(game, cap, viewer_id) {
+                                    prompt_text = Some(cap.prompt_text().as_str().to_owned());
+                                } else {
+                                    target = None;
+                                    is_blurred = true;
+                                }
+                            } else if !matches!(game, Game::Completed(_)) {
+                                // Fail closed by game visibility mode if capture cannot be loaded.
+                                match game.visibility_mode() {
+                                    domain::VisibilityMode::Undercover => {
+                                        actor = None;
+                                        target = None;
+                                        capture_id = None;
+                                        is_blurred = true;
+                                    }
+                                    domain::VisibilityMode::BlurredTeaser => {
+                                        target = None;
+                                        is_blurred = true;
+                                    }
+                                    domain::VisibilityMode::LiveFeed => {}
+                                }
+                            }
+                        }
+
+                        if n.ist_ungelesen() {
+                            unread_count += 1;
+                        }
+
+                        views.push(NotificationView {
+                            id: n.id().0,
+                            kind: n.art().into(),
+                            game_id: n.game_id().0,
+                            game_title: game.title().as_str().to_owned(),
+                            capture_id,
+                            actor,
+                            target,
+                            prompt_text,
+                            is_blurred,
+                            created_at: n.erstellt_am(),
+                            read_at: n.gelesen_am(),
+                        });
+                    }
+
+                    Ok::<_, Report<NotificationReadError>>(NotificationsInbox {
+                        unread_count,
+                        notifications: views,
+                    })
+                }
+                .await;
+                uow.finish(res, NotificationReadError::Persistence).await
+            })
+            .await
+    }
+
+    pub async fn notification_mark_read(
+        &self,
+        auth: AuthContext,
+        notification_id: BenachrichtigungId,
+    ) -> ResultReport<(), BenachrichtigungUseCaseError> {
+        self.app
+            .execute(
+                auth,
+                BenachrichtigungAlsGelesenMarkieren {
+                    benachrichtigung_id: notification_id,
+                },
+            )
+            .await
+    }
+
+    pub async fn notifications_mark_all_read(
+        &self,
+        auth: AuthContext,
+    ) -> ResultReport<(), BenachrichtigungUseCaseError> {
+        self.app
+            .execute(auth, AlleBenachrichtigungenAlsGelesenMarkieren)
+            .await
+    }
+
+    pub async fn notification_preferences_get(
+        &self,
+        auth: AuthContext,
+    ) -> ResultReport<NotificationPreferences, NotificationReadError> {
+        self.app
+            .execute_fn(auth, async |ctx| {
+                let user_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(NotificationReadError::Unauthorized)?;
+                let now = ctx.clock().now();
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(NotificationReadError::Persistence)?;
+                let res = async {
+                    let prefs = match uow.benutzer().find_by_id(user_id).await {
+                        Ok(u) => u.notification_preferences(),
+                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                            BenachrichtigungsEinstellungen::standard(now)
+                        }
+                        Err(err) => {
+                            return Err(err).change_context(NotificationReadError::Persistence);
+                        }
+                    };
+                    Ok::<_, Report<NotificationReadError>>(NotificationPreferences::from(prefs))
+                }
+                .await;
+                uow.finish(res, NotificationReadError::Persistence).await
+            })
+            .await
+    }
+
+    pub async fn notification_preferences_update(
+        &self,
+        auth: AuthContext,
+        req: requests::UpdateNotificationPreferencesRequest,
+    ) -> ResultReport<NotificationPreferences, BenachrichtigungUseCaseError> {
+        let uc = BenachrichtigungsEinstellungenAktualisieren::from(req);
+        let updated = self.app.execute(auth, uc).await?;
+        Ok(NotificationPreferences::from(updated))
+    }
+
+    pub async fn notification_unsubscribe(
+        &self,
+        req: requests::UnsubscribeNotificationRequest,
+    ) -> ResultReport<UnsubscribeOutcome, BenachrichtigungUseCaseError> {
+        let art = self
+            .app
+            .execute(
+                AuthContext::Anonymous,
+                BenachrichtigungAbbestellenMitToken { token: req.token },
+            )
+            .await?;
+        Ok(UnsubscribeOutcome {
+            ok: true,
+            kind: art.into(),
+        })
+    }
 }
 
 fn game_to_summary(
@@ -1050,6 +1322,9 @@ fn game_to_summary(
         grid_size: game.grid_size() as u8,
         visibility_mode: game.visibility_mode().into(),
         status: game.into(),
+        watching: viewer_id
+            .and_then(|uid| game.player_watching(uid))
+            .unwrap_or(true),
         playable_tile_count: game.playable_tile_count() as u32,
         player_count: game.players().len() as u32,
         my_captured_tiles,

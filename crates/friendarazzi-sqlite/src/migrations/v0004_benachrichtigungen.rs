@@ -29,10 +29,12 @@ impl UpMigration<libsql::Transaction, libsql::Error> for Migration {
                 actor_id TEXT,
                 target_id TEXT,
                 dedupe_key TEXT NOT NULL,
+                abbestell_token TEXT NOT NULL,
                 erstellt_am TEXT NOT NULL,
                 gelesen_am TEXT,
                 _version INTEGER NOT NULL DEFAULT 0,
-                UNIQUE (empfaenger_id, dedupe_key)
+                UNIQUE (empfaenger_id, dedupe_key),
+                UNIQUE (abbestell_token)
             );
 
             CREATE INDEX IF NOT EXISTS "idx_benachrichtigung_empfaenger"

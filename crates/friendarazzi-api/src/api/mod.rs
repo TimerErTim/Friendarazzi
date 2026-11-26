@@ -201,12 +201,8 @@ impl FriendarazziAppApi {
                     .await
                     .change_context(GameReadError::Persistence)?;
                 let res = async {
-                    let default_watch = match uow
-                        .benachrichtigungs_einstellungen()
-                        .find_by_benutzer(user_id)
-                        .await
-                    {
-                        Ok(p) => p.standard_spiel_beobachten().aktiv,
+                    let default_watch = match uow.benutzer().find_by_id(user_id).await {
+                        Ok(u) => u.default_watch_games(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                             true
                         }
@@ -1205,14 +1201,10 @@ impl FriendarazziAppApi {
                     .await
                     .change_context(NotificationReadError::Persistence)?;
                 let res = async {
-                    let prefs = match uow
-                        .benachrichtigungs_einstellungen()
-                        .find_by_benutzer(user_id)
-                        .await
-                    {
-                        Ok(p) => p.into_data(),
+                    let prefs = match uow.benutzer().find_by_id(user_id).await {
+                        Ok(u) => u.notification_preferences(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
-                            BenachrichtigungsEinstellungen::standard(user_id, now)
+                            BenachrichtigungsEinstellungen::standard(now)
                         }
                         Err(err) => {
                             return Err(err).change_context(NotificationReadError::Persistence);

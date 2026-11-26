@@ -12,9 +12,7 @@ mod konto;
 mod passwort_wiederherstellung;
 mod session;
 
-pub use benachrichtigung::{
-    SQLiteBenachrichtigungRepository, SQLiteBenachrichtigungsEinstellungenRepository,
-};
+pub use benachrichtigung::SQLiteBenachrichtigungRepository;
 pub use benutzer::SQLiteBenutzerRepository;
 pub use bestaetigung::SQLiteEmailBestätigungRepository;
 pub use board::SQLiteBoardRepository;

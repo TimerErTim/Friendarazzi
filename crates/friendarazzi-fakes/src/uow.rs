@@ -4,19 +4,18 @@ use async_trait::async_trait;
 use error_stack::Report;
 use friendarazzi_core::{
     ports::{
-        BenachrichtigungRepository, BenachrichtigungsEinstellungenRepository, BenutzerRepository,
-        BoardRepository, CaptureRepository, DeckRepository, EmailBestätigungRepository,
-        GameRepository, KontoRepository, PasswortWiederherstellungRepository, RepositoryResult,
-        SessionRepository,
+        BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
+        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
+        PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
 };
 
 use crate::repository::{
-    FakeBenachrichtigungRepository, FakeBenachrichtigungsEinstellungenRepository,
-    FakeBenutzerRepository, FakeBoardRepository, FakeCaptureRepository, FakeDatastore,
-    FakeDeckRepository, FakeEmailBestätigungRepository, FakeGameRepository, FakeKontoRepository,
-    FakePasswortWiederherstellungRepository, FakeSessionRepository,
+    FakeBenachrichtigungRepository, FakeBenutzerRepository, FakeBoardRepository,
+    FakeCaptureRepository, FakeDatastore, FakeDeckRepository, FakeEmailBestätigungRepository,
+    FakeGameRepository, FakeKontoRepository, FakePasswortWiederherstellungRepository,
+    FakeSessionRepository,
 };
 
 pub struct FakeUnitOfWorkProvider {
@@ -69,7 +68,6 @@ pub struct FakeUnitOfWork {
     bestätigungen: FakeEmailBestätigungRepository,
     wiederherstellungen: FakePasswortWiederherstellungRepository,
     benachrichtigungen: FakeBenachrichtigungRepository,
-    benachrichtigungs_einstellungen: FakeBenachrichtigungsEinstellungenRepository,
 }
 
 impl FakeUnitOfWork {
@@ -94,9 +92,6 @@ impl FakeUnitOfWork {
                 transaction_datastore.clone(),
             ),
             benachrichtigungen: FakeBenachrichtigungRepository::new(transaction_datastore.clone()),
-            benachrichtigungs_einstellungen: FakeBenachrichtigungsEinstellungenRepository::new(
-                transaction_datastore.clone(),
-            ),
             snapshotted_datastore,
             transaction_datastore,
         }
@@ -170,10 +165,6 @@ impl UnitOfWorkImpl for FakeUnitOfWork {
 
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
         &self.benachrichtigungen
-    }
-
-    fn benachrichtigungs_einstellungen(&self) -> &dyn BenachrichtigungsEinstellungenRepository {
-        &self.benachrichtigungs_einstellungen
     }
 }
 

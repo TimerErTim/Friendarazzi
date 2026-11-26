@@ -13,8 +13,8 @@ pub mod media;
 
 pub use benachrichtigung::{
     AbbestellToken, Benachrichtigung, BenachrichtigungArt, BenachrichtigungFehler,
-    BenachrichtigungId, BenachrichtigungsEinstellungen, NeueBenachrichtigung,
-    NeueBenachrichtigungsEinstellungen, PreferenceToggle, UNSUBSCRIBE_TOKEN_LIFETIME,
+    BenachrichtigungId, BenachrichtigungsEinstellungen, NeueBenachrichtigung, PreferenceToggle,
+    UNSUBSCRIBE_TOKEN_LIFETIME,
 };
 pub use benutzer::{Benutzer, BenutzerId, NeuerBenutzer, ProfileError, RANK_TIERS};
 pub use board::{

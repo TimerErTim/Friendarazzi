@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::{
     ResultReport,
     domain::{
-        EmailAdresse, NonEmptyString,
+        BenachrichtigungArt, BenachrichtigungsEinstellungen, EmailAdresse, NonEmptyString,
         media::{MediaProcessingError, decode_image_within_limit, encode_webp, resize_square},
     },
 };
@@ -91,6 +91,7 @@ pub struct Benutzer {
     avatar_storage_key: Option<String>,
     gold_medal_count: u32,
     equipped_title: Option<String>,
+    notification_preferences: BenachrichtigungsEinstellungen,
     registered_at: DateTime<Utc>,
 }
 
@@ -104,6 +105,7 @@ impl Benutzer {
             avatar_storage_key: None,
             gold_medal_count: 0,
             equipped_title: None,
+            notification_preferences: BenachrichtigungsEinstellungen::standard(neu.registered_at),
             registered_at: neu.registered_at,
         }
     }
@@ -117,6 +119,7 @@ impl Benutzer {
         avatar_storage_key: Option<String>,
         gold_medal_count: u32,
         equipped_title: Option<String>,
+        notification_preferences: BenachrichtigungsEinstellungen,
         registered_at: DateTime<Utc>,
     ) -> ResultReport<Self, ProfileError> {
         let display_name = NonEmptyString::neu(display_name)
@@ -129,6 +132,7 @@ impl Benutzer {
             avatar_storage_key,
             gold_medal_count,
             equipped_title,
+            notification_preferences,
             registered_at,
         })
     }
@@ -155,6 +159,24 @@ impl Benutzer {
 
     pub fn equipped_title(&self) -> Option<&str> {
         self.equipped_title.as_deref()
+    }
+
+    pub fn notification_preferences(&self) -> BenachrichtigungsEinstellungen {
+        self.notification_preferences
+    }
+
+    pub fn notification_preferences_mut(&mut self) -> &mut BenachrichtigungsEinstellungen {
+        &mut self.notification_preferences
+    }
+
+    pub fn default_watch_games(&self) -> bool {
+        self.notification_preferences
+            .standard_spiel_beobachten()
+            .aktiv
+    }
+
+    pub fn allows_email(&self, art: BenachrichtigungArt) -> bool {
+        self.notification_preferences.email_erlaubt(art)
     }
 
     pub fn registered_at(&self) -> DateTime<Utc> {
@@ -321,6 +343,7 @@ mod tests {
             original.avatar_storage_key().map(str::to_owned),
             original.gold_medal_count(),
             original.equipped_title().map(str::to_owned),
+            original.notification_preferences(),
             original.registered_at(),
         )
         .unwrap();

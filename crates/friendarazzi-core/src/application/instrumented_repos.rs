@@ -13,15 +13,14 @@ use crate::domain::konto::{
     PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Benachrichtigung, BenachrichtigungId, BenachrichtigungsEinstellungen, Benutzer, BenutzerId,
-    Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId, InviteCode,
-    NeueBenachrichtigung, NeueBenachrichtigungsEinstellungen, NeuerBenutzer, NewBoard, NewCapture,
-    NewGame, StarterDeck,
+    Benachrichtigung, BenachrichtigungId, Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId,
+    EmailAdresse, Game, GameId, InviteCode, NeueBenachrichtigung, NeuerBenutzer, NewBoard,
+    NewCapture, NewGame, StarterDeck,
 };
 use crate::ports::{
-    BenachrichtigungRepository, BenachrichtigungsEinstellungenRepository, BenutzerRepository,
-    BoardRepository, CaptureRepository, DeckRepository, EmailBestätigungRepository, GameRepository,
-    KontoRepository, PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
+    BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
+    DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
+    PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
 };
 
 macro_rules! impl_instrumented_repo {
@@ -259,24 +258,6 @@ impl_instrumented_repo!(
     ]
 );
 
-impl_instrumented_repo!(
-    InstrumentedBenachrichtigungsEinstellungenRepository,
-    BenachrichtigungsEinstellungenRepository,
-    benachrichtigungs_einstellungen,
-    methods: [
-        #[instrument(skip(self, einstellungen), level = "debug", err(Debug))]
-        fn create(&self, einstellungen: NeueBenachrichtigungsEinstellungen) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
-        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
-        fn find_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
-        #[instrument(skip(self, einstellungen), level = "debug", err(Debug))]
-        fn update(&self, einstellungen: &mut Versioned<BenachrichtigungsEinstellungen>) -> RepositoryResult<()>;
-        #[instrument(skip(self, einstellungen), level = "debug", err(Debug))]
-        fn delete(&self, einstellungen: Versioned<BenachrichtigungsEinstellungen>) -> RepositoryResult<()>;
-        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "debug", err(Debug))]
-        fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
-    ]
-);
-
 /// Pinned bundle: instrumented repos hold pointers into `uow` (field order keeps drop safe).
 pub(crate) struct RepoStorage {
     pub(crate) games: InstrumentedGameRepository,
@@ -289,8 +270,6 @@ pub(crate) struct RepoStorage {
     pub(crate) bestätigungen: InstrumentedEmailBestätigungRepository,
     pub(crate) wiederherstellungen: InstrumentedPasswortWiederherstellungRepository,
     pub(crate) benachrichtigungen: InstrumentedBenachrichtigungRepository,
-    pub(crate) benachrichtigungs_einstellungen:
-        InstrumentedBenachrichtigungsEinstellungenRepository,
     pub(crate) uow: Box<dyn UnitOfWorkImpl>,
 }
 
@@ -307,8 +286,6 @@ impl RepoStorage {
             bestätigungen: InstrumentedEmailBestätigungRepository::disabled(),
             wiederherstellungen: InstrumentedPasswortWiederherstellungRepository::disabled(),
             benachrichtigungen: InstrumentedBenachrichtigungRepository::disabled(),
-            benachrichtigungs_einstellungen:
-                InstrumentedBenachrichtigungsEinstellungenRepository::disabled(),
             uow,
         });
 
@@ -326,8 +303,6 @@ impl RepoStorage {
             this.wiederherstellungen =
                 InstrumentedPasswortWiederherstellungRepository::new(uow_ptr);
             this.benachrichtigungen = InstrumentedBenachrichtigungRepository::new(uow_ptr);
-            this.benachrichtigungs_einstellungen =
-                InstrumentedBenachrichtigungsEinstellungenRepository::new(uow_ptr);
         }
 
         pinned

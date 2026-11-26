@@ -38,43 +38,21 @@ impl UpMigration<libsql::Transaction, libsql::Error> for Migration {
             CREATE INDEX IF NOT EXISTS "idx_benachrichtigung_empfaenger"
                 ON "benachrichtigung" (empfaenger_id, erstellt_am DESC);
 
-            CREATE TABLE IF NOT EXISTS "benachrichtigungs_einstellungen" (
-                benutzer_id TEXT PRIMARY KEY REFERENCES "benutzer" (id) ON DELETE CASCADE,
-                default_watch_games INTEGER NOT NULL DEFAULT 1,
-                default_watch_updated_at TEXT NOT NULL,
-                email_game_started INTEGER NOT NULL DEFAULT 1,
-                email_game_started_updated_at TEXT NOT NULL,
-                email_capture_posted INTEGER NOT NULL DEFAULT 1,
-                email_capture_posted_updated_at TEXT NOT NULL,
-                email_game_completed INTEGER NOT NULL DEFAULT 1,
-                email_game_completed_updated_at TEXT NOT NULL,
-                _version INTEGER NOT NULL DEFAULT 0
-            );
+            ALTER TABLE "benutzer" ADD COLUMN default_watch_games INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE "benutzer" ADD COLUMN default_watch_updated_at TEXT NOT NULL DEFAULT '';
+            ALTER TABLE "benutzer" ADD COLUMN email_game_started INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE "benutzer" ADD COLUMN email_game_started_updated_at TEXT NOT NULL DEFAULT '';
+            ALTER TABLE "benutzer" ADD COLUMN email_capture_posted INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE "benutzer" ADD COLUMN email_capture_posted_updated_at TEXT NOT NULL DEFAULT '';
+            ALTER TABLE "benutzer" ADD COLUMN email_game_completed INTEGER NOT NULL DEFAULT 1;
+            ALTER TABLE "benutzer" ADD COLUMN email_game_completed_updated_at TEXT NOT NULL DEFAULT '';
 
-            INSERT OR IGNORE INTO "benachrichtigungs_einstellungen" (
-                benutzer_id,
-                default_watch_games,
-                default_watch_updated_at,
-                email_game_started,
-                email_game_started_updated_at,
-                email_capture_posted,
-                email_capture_posted_updated_at,
-                email_game_completed,
-                email_game_completed_updated_at,
-                _version
-            )
-            SELECT
-                id,
-                1,
-                registered_at,
-                1,
-                registered_at,
-                1,
-                registered_at,
-                1,
-                registered_at,
-                0
-            FROM "benutzer";
+            UPDATE "benutzer" SET
+                default_watch_updated_at = registered_at,
+                email_game_started_updated_at = registered_at,
+                email_capture_posted_updated_at = registered_at,
+                email_game_completed_updated_at = registered_at
+            WHERE default_watch_updated_at = '';
         "#,
             )
             .await?;

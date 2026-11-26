@@ -9,7 +9,7 @@ use friendarazzi_core::{
     application::{AuthContext, IdentityProviderConfiguration},
     domain::{BenutzerId, CaptureId, GameId},
     ports::{Clock, EventQueue, RepositoryError},
-    service::{CaptureUploaded, Event},
+    service::{CaptureUpdated, Event, GameFinished, GameStarted},
 };
 use friendarazzi_fakes::FixedClock;
 use friendarazzi_sqlite::SQLiteInstance;
@@ -38,11 +38,13 @@ fn build_app_on_db(
         .build()
 }
 
-fn sample_event() -> CaptureUploaded {
-    CaptureUploaded {
+fn sample_event() -> CaptureUpdated {
+    CaptureUpdated {
         game_id: GameId(Uuid::new_v4()),
         capture_id: CaptureId(Uuid::new_v4()),
         uploader_id: BenutzerId(Uuid::new_v4()),
+        target_id: BenutzerId(Uuid::new_v4()),
+        occurred_at: test_time(),
     }
 }
 
@@ -60,17 +62,26 @@ async fn sqlite_event_queue_persists_across_restart_and_processes_events() {
 
     let app = build_app_on_db(Arc::clone(&sqlite), Arc::clone(&clock), Arc::clone(&queue));
 
-    let ev1 = sample_event();
+    let ev1 = GameStarted {
+        game_id: GameId(Uuid::new_v4()),
+        started_at: test_time(),
+    };
     let ev2 = sample_event();
+    let ev3 = GameFinished {
+        game_id: GameId(Uuid::new_v4()),
+        winner_id: BenutzerId(Uuid::new_v4()),
+        finished_at: test_time(),
+    };
     app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
         let uow = ctx.enter().await?;
         ctx.events().submit(ev1);
         ctx.events().submit(ev2);
+        ctx.events().submit(ev3);
         uow.commit().await
     })
     .await
     .unwrap();
-    assert_eq!(queue.pending_count().await.unwrap(), 2);
+    assert_eq!(queue.pending_count().await.unwrap(), 3);
 
     // Simulate process restart on the same SQLite file.
     drop(app);
@@ -82,7 +93,7 @@ async fn sqlite_event_queue_persists_across_restart_and_processes_events() {
     let mut queue2 = SqliteEventQueue::new(Arc::clone(&sqlite2));
     queue2.migrate_to_latest().await.unwrap();
     let queue2 = Arc::new(queue2);
-    assert_eq!(queue2.pending_count().await.unwrap(), 2);
+    assert_eq!(queue2.pending_count().await.unwrap(), 3);
 
     let app2 = build_app_on_db(
         Arc::clone(&sqlite2),
@@ -112,7 +123,7 @@ async fn sqlite_event_queue_persists_across_restart_and_processes_events() {
 
     let _ = shutdown_tx.send(true);
     let report = worker.await.unwrap().unwrap();
-    assert_eq!(report.processed, 2);
+    assert_eq!(report.processed, 3);
     assert_eq!(report.failed, 0);
     assert_eq!(queue2.pending_count().await.unwrap(), 0);
 }

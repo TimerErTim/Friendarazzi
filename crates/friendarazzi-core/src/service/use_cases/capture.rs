@@ -1,23 +1,15 @@
 //! Photo capture submission, image processing, and atomic Bingo win + Gold Medal award.
 
-use std::collections::HashMap;
-
 use async_trait::async_trait;
 use error_stack::{IntoReport, Report, ResultExt};
 use tracing::{instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    application::{ExecutionContext, uow::UnitOfWork, uow::Versioned},
-    domain::{
-        AbbestellToken, ActiveGame, BenachrichtigungArt, Benutzer, BenutzerId, BoardCoordinates,
-        BoardTileId, Capture, CaptureId, Game, GameId, NeueBenachrichtigung, NewCapture,
-        VisibilityMode,
-    },
-    ports::{Mail, RepositoryError},
-    service::{
-        CaptureUploaded, UseCase, use_cases::benachrichtigung::create_notification_idempotent,
-    },
+    application::{ExecutionContext, uow::Versioned},
+    domain::{BoardCoordinates, BoardTileId, Capture, CaptureId, Game, GameId, NewCapture},
+    ports::RepositoryError,
+    service::{CaptureUpdated, GameFinished, UseCase},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -134,10 +126,8 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 .map_err(IntoReport::into_report)
                 .change_context(CaptureUseCaseError::Persistence)?;
 
-            let mut winner_opt = None;
             if winning_line.is_some() {
                 let completed = active_game
-                    .clone()
                     .complete(&board, now)
                     .change_context(CaptureUseCaseError::Conflict)?;
                 let mut updated_game = Versioned::new(game_version, Game::Completed(completed));
@@ -159,22 +149,7 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                     .await
                     .map_err(IntoReport::into_report)
                     .change_context(CaptureUseCaseError::Persistence)?;
-                winner_opt = Some(winner.into_data());
             }
-
-            let mails = create_capture_and_completion_notifications(
-                &uow,
-                &active_game,
-                capture.id(),
-                user_id,
-                tile.target_user_id(),
-                tile.prompt_text().as_str(),
-                winning_line.is_some(),
-                winner_opt.as_ref(),
-                now,
-                ctx.signing(),
-            )
-            .await?;
 
             // Upload media right before committing so a rollback only needs to clean up on commit failure.
             ctx.object_store()
@@ -186,32 +161,31 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 .await
                 .change_context(CaptureUseCaseError::Persistence)?;
 
-            ctx.events().submit(CaptureUploaded {
+            ctx.events().submit(CaptureUpdated {
                 game_id: self.game_id,
                 capture_id,
                 uploader_id: user_id,
+                target_id: tile.target_user_id(),
+                occurred_at: now,
             });
+            if winning_line.is_some() {
+                ctx.events().submit(GameFinished {
+                    game_id: self.game_id,
+                    winner_id: user_id,
+                    finished_at: now,
+                });
+            }
 
-            Ok::<_, Report<CaptureUseCaseError>>((
-                SubmitCaptureOutcome {
-                    capture: capture.into_data(),
-                    winning_line,
-                },
-                mails,
-            ))
+            Ok::<_, Report<CaptureUseCaseError>>(SubmitCaptureOutcome {
+                capture: capture.into_data(),
+                winning_line,
+            })
         }
         .await;
 
         let committed = uow.finish(result, CaptureUseCaseError::Persistence).await;
         match committed {
-            Ok((outcome, mails)) => {
-                for mail in mails {
-                    if let Err(err) = ctx.mail_sender().send(mail).await {
-                        warn!(fehler = %err, "Benachrichtigungsmail konnte nicht zugestellt werden");
-                    }
-                }
-                Ok(outcome)
-            }
+            Ok(outcome) => Ok(outcome),
             Err(err) => {
                 for key in [&full_key, &thumb_key] {
                     if let Err(cleanup_err) = ctx.object_store().ensure_deleted(key).await {
@@ -221,159 +195,5 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 Err(err)
             }
         }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn create_capture_and_completion_notifications(
-    uow: &UnitOfWork<'_>,
-    game: &ActiveGame,
-    capture_id: CaptureId,
-    catcher_id: BenutzerId,
-    target_id: BenutzerId,
-    prompt_text: &str,
-    game_completed: bool,
-    winner_override: Option<&Benutzer>,
-    now: chrono::DateTime<chrono::Utc>,
-    signing: &dyn crate::ports::Signing,
-) -> Result<Vec<Mail>, Report<CaptureUseCaseError>> {
-    let notify_capture = game.visibility_mode() != VisibilityMode::Undercover
-        && target_id != catcher_id
-        && game.player_watching(target_id).unwrap_or(false);
-
-    let completion_recipients: Vec<BenutzerId> = if game_completed {
-        game.players()
-            .iter()
-            .filter(|p| p.user_id != catcher_id && p.watching)
-            .map(|p| p.user_id)
-            .collect()
-    } else {
-        Vec::new()
-    };
-
-    if !notify_capture && completion_recipients.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let player_ids = game.sorted_player_ids();
-    let users = uow
-        .benutzer()
-        .find_by_ids(&player_ids)
-        .await
-        .map_err(IntoReport::into_report)
-        .change_context(CaptureUseCaseError::Persistence)?;
-    let mut user_map: HashMap<BenutzerId, Benutzer> = users
-        .into_iter()
-        .map(|b| {
-            let b = b.into_data();
-            (b.id(), b)
-        })
-        .collect();
-    if let Some(winner) = winner_override {
-        user_map.insert(winner.id(), winner.clone());
-    }
-
-    let mut mails = Vec::new();
-
-    if notify_capture {
-        create_notification_idempotent(
-            uow,
-            NeueBenachrichtigung::aufnahme_hochgeladen(
-                target_id,
-                game.id(),
-                capture_id,
-                catcher_id,
-                target_id,
-                now,
-            ),
-        )
-        .await
-        .map_err(IntoReport::into_report)
-        .change_context(CaptureUseCaseError::Persistence)?;
-
-        if let (Some(target_user), Some(catcher_user)) =
-            (user_map.get(&target_id), user_map.get(&catcher_id))
-        {
-            let wants_mail =
-                wants_email(uow, target_id, BenachrichtigungArt::AufnahmeHochgeladen).await?;
-            if wants_mail {
-                let is_blurred_teaser = game.visibility_mode() == VisibilityMode::BlurredTeaser;
-                let token = AbbestellToken::erzeugen(
-                    target_id,
-                    BenachrichtigungArt::AufnahmeHochgeladen,
-                    now,
-                    signing,
-                );
-                mails.push(Mail::aufnahme_hochgeladen(
-                    target_user.email_address().clone(),
-                    game.id(),
-                    game.title().as_str(),
-                    capture_id,
-                    catcher_user.display_name().as_str(),
-                    if is_blurred_teaser {
-                        None
-                    } else {
-                        Some(target_user.display_name().as_str().to_owned())
-                    },
-                    if is_blurred_teaser {
-                        None
-                    } else {
-                        Some(prompt_text.to_owned())
-                    },
-                    is_blurred_teaser,
-                    token,
-                ));
-            }
-        }
-    }
-
-    if game_completed {
-        let winner_name = user_map
-            .get(&catcher_id)
-            .map(|u| u.display_name().as_str().to_owned())
-            .unwrap_or_else(|| "Spieler".to_owned());
-
-        for uid in completion_recipients {
-            create_notification_idempotent(
-                uow,
-                NeueBenachrichtigung::spiel_beendet(uid, game.id(), catcher_id, now),
-            )
-            .await
-            .map_err(IntoReport::into_report)
-            .change_context(CaptureUseCaseError::Persistence)?;
-
-            let Some(user) = user_map.get(&uid) else {
-                continue;
-            };
-            if wants_email(uow, uid, BenachrichtigungArt::SpielBeendet).await? {
-                let token =
-                    AbbestellToken::erzeugen(uid, BenachrichtigungArt::SpielBeendet, now, signing);
-                mails.push(Mail::spiel_beendet(
-                    user.email_address().clone(),
-                    game.id(),
-                    game.title().as_str(),
-                    winner_name.clone(),
-                    token,
-                ));
-            }
-        }
-    }
-
-    Ok(mails)
-}
-
-async fn wants_email(
-    uow: &UnitOfWork<'_>,
-    user_id: BenutzerId,
-    art: BenachrichtigungArt,
-) -> Result<bool, Report<CaptureUseCaseError>> {
-    match uow
-        .benachrichtigungs_einstellungen()
-        .find_by_benutzer(user_id)
-        .await
-    {
-        Ok(prefs) => Ok(prefs.email_erlaubt(art)),
-        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => Ok(true),
-        Err(err) => Err(err).change_context(CaptureUseCaseError::Persistence),
     }
 }

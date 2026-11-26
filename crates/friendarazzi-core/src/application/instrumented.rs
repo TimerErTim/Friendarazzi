@@ -9,12 +9,11 @@ use crate::ResultReport;
 use crate::application::instrumented_repos::RepoStorage;
 use crate::application::uow::UnitOfWorkImpl;
 use crate::ports::{
-    BenachrichtigungRepository, BenachrichtigungsEinstellungenRepository, BenutzerRepository,
-    BoardRepository, CaptureRepository, ClientKey, DeckRepository, EmailBestätigungRepository,
-    EventQueue, EventQueueError, GameRepository, KontoRepository, Mail, MailError, MailSender,
-    ObjectStore, ObjectStoreError, ObjectStream, PasswortWiederherstellungRepository, PdfDokument,
-    PdfRenderError, PdfRenderer, RepositoryResult, RngSource, SessionRepository, Throttle,
-    ThrottleAction, ThrottleError,
+    BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository, ClientKey,
+    DeckRepository, EmailBestätigungRepository, EventQueue, EventQueueError, GameRepository,
+    KontoRepository, Mail, MailError, MailSender, ObjectStore, ObjectStoreError, ObjectStream,
+    PasswortWiederherstellungRepository, PdfDokument, PdfRenderError, PdfRenderer,
+    RepositoryResult, RngSource, SessionRepository, Throttle, ThrottleAction, ThrottleError,
 };
 use crate::service::Event;
 
@@ -208,10 +207,6 @@ impl UnitOfWorkImpl for InstrumentedUnitOfWork {
 
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
         &self.storage.benachrichtigungen
-    }
-
-    fn benachrichtigungs_einstellungen(&self) -> &dyn BenachrichtigungsEinstellungenRepository {
-        &self.storage.benachrichtigungs_einstellungen
     }
 }
 

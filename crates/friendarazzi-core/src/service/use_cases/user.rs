@@ -137,12 +137,6 @@ impl UseCase<()> for BenutzerLöschen {
                 .map_err(IntoReport::into_report)
                 .change_context(BenutzerLöschenFehler::BenutzerLöschen)?;
 
-            uow.benachrichtigungs_einstellungen()
-                .delete_by_benutzer(benutzer_id)
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(BenutzerLöschenFehler::BenutzerLöschen)?;
-
             uow.benutzer()
                 .delete(benutzer)
                 .await

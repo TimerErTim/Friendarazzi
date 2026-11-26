@@ -1,15 +1,14 @@
 //! In-app notification read-state, preference updates, game watch toggles, and token unsubscribe.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use error_stack::{IntoReport, Report, ResultExt};
 use tracing::{info, instrument};
 
 use crate::{
-    application::{ExecutionContext, uow::UnitOfWork, uow::Versioned},
+    application::{ExecutionContext, uow::UnitOfWork},
     domain::{
         AbbestellToken, BenachrichtigungArt, BenachrichtigungId, BenachrichtigungsEinstellungen,
-        BenutzerId, Game, GameId, NeueBenachrichtigung, NeueBenachrichtigungsEinstellungen,
+        BenutzerId, Game, GameId, NeueBenachrichtigung,
     },
     ports::RepositoryError,
     service::{UseCase, map_game_error},
@@ -29,39 +28,12 @@ pub enum BenachrichtigungUseCaseError {
     Persistence,
 }
 
-pub(crate) async fn load_or_init_preferences(
-    uow: &UnitOfWork<'_>,
-    benutzer_id: BenutzerId,
-    fallback_now: DateTime<Utc>,
-) -> Result<(Versioned<BenachrichtigungsEinstellungen>, bool), Report<BenachrichtigungUseCaseError>>
-{
-    match uow
-        .benachrichtigungs_einstellungen()
-        .find_by_benutzer(benutzer_id)
-        .await
-    {
-        Ok(existing) => Ok((existing, true)),
-        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => Ok((
-            Versioned::init(BenachrichtigungsEinstellungen::standard(
-                benutzer_id,
-                fallback_now,
-            )),
-            false,
-        )),
-        Err(err) => Err(err).change_context(BenachrichtigungUseCaseError::Persistence),
-    }
-}
-
 pub(crate) async fn load_default_watch_for_user(
     uow: &UnitOfWork<'_>,
     benutzer_id: BenutzerId,
 ) -> Result<bool, Report<RepositoryError>> {
-    match uow
-        .benachrichtigungs_einstellungen()
-        .find_by_benutzer(benutzer_id)
-        .await
-    {
-        Ok(prefs) => Ok(prefs.standard_spiel_beobachten().aktiv),
+    match uow.benutzer().find_by_id(benutzer_id).await {
+        Ok(benutzer) => Ok(benutzer.default_watch_games()),
         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => Ok(true),
         Err(err) => Err(err),
     }
@@ -211,8 +183,17 @@ impl UseCase<BenachrichtigungsEinstellungen> for BenachrichtigungsEinstellungenA
             .change_context(BenachrichtigungUseCaseError::Persistence)?;
 
         let result = async {
-            let (mut prefs, exists) = load_or_init_preferences(&uow, user_id, now).await?;
+            let mut benutzer = match uow.benutzer().find_by_id(user_id).await {
+                Ok(b) => b,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(BenachrichtigungUseCaseError::NotFound));
+                }
+                Err(err) => {
+                    return Err(err).change_context(BenachrichtigungUseCaseError::Persistence);
+                }
+            };
 
+            let prefs = benutzer.notification_preferences_mut();
             if let Some(v) = self.default_watch_games {
                 prefs.setze_standard_spiel_beobachten(v, now);
             }
@@ -226,29 +207,13 @@ impl UseCase<BenachrichtigungsEinstellungen> for BenachrichtigungsEinstellungenA
                 prefs.setze_email(BenachrichtigungArt::SpielBeendet, v, now);
             }
 
-            let saved = if exists {
-                uow.benachrichtigungs_einstellungen()
-                    .update(&mut prefs)
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(BenachrichtigungUseCaseError::Persistence)?;
-                prefs.into_data()
-            } else {
-                uow.benachrichtigungs_einstellungen()
-                    .create(NeueBenachrichtigungsEinstellungen {
-                        benutzer_id: user_id,
-                        standard_spiel_beobachten: prefs.standard_spiel_beobachten(),
-                        email_spiel_gestartet: prefs.email_spiel_gestartet(),
-                        email_aufnahme_hochgeladen: prefs.email_aufnahme_hochgeladen(),
-                        email_spiel_beendet: prefs.email_spiel_beendet(),
-                    })
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(BenachrichtigungUseCaseError::Persistence)?
-                    .into_data()
-            };
+            uow.benutzer()
+                .update(&mut benutzer)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(BenachrichtigungUseCaseError::Persistence)?;
 
-            Ok::<_, Report<BenachrichtigungUseCaseError>>(saved)
+            Ok::<_, Report<BenachrichtigungUseCaseError>>(benutzer.notification_preferences())
         }
         .await;
 
@@ -279,38 +244,24 @@ impl UseCase<BenachrichtigungArt> for BenachrichtigungAbbestellenMitToken {
 
         let result = async {
             // Confirm the user still exists; return the generic InvalidToken so deleted accounts cannot be enumerated.
-            match uow.benutzer().find_by_id(benutzer_id).await {
-                Ok(_) => {}
+            let mut benutzer = match uow.benutzer().find_by_id(benutzer_id).await {
+                Ok(b) => b,
                 Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
                     return Err(Report::new(BenachrichtigungUseCaseError::InvalidToken));
                 }
                 Err(err) => {
                     return Err(err).change_context(BenachrichtigungUseCaseError::Persistence);
                 }
-            }
+            };
 
-            let (mut prefs, exists) = load_or_init_preferences(&uow, benutzer_id, now).await?;
-            prefs.setze_email(art, false, now);
-
-            if exists {
-                uow.benachrichtigungs_einstellungen()
-                    .update(&mut prefs)
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(BenachrichtigungUseCaseError::Persistence)?;
-            } else {
-                uow.benachrichtigungs_einstellungen()
-                    .create(NeueBenachrichtigungsEinstellungen {
-                        benutzer_id,
-                        standard_spiel_beobachten: prefs.standard_spiel_beobachten(),
-                        email_spiel_gestartet: prefs.email_spiel_gestartet(),
-                        email_aufnahme_hochgeladen: prefs.email_aufnahme_hochgeladen(),
-                        email_spiel_beendet: prefs.email_spiel_beendet(),
-                    })
-                    .await
-                    .map_err(IntoReport::into_report)
-                    .change_context(BenachrichtigungUseCaseError::Persistence)?;
-            }
+            benutzer
+                .notification_preferences_mut()
+                .setze_email(art, false, now);
+            uow.benutzer()
+                .update(&mut benutzer)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(BenachrichtigungUseCaseError::Persistence)?;
 
             Ok::<_, Report<BenachrichtigungUseCaseError>>(art)
         }

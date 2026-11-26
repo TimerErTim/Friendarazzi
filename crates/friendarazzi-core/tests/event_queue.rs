@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chrono::Utc;
 use error_stack::Report;
 use friendarazzi_core::{
     App,
@@ -7,16 +8,18 @@ use friendarazzi_core::{
     application::{AuthContext, IdentityProviderConfiguration},
     domain::{BenutzerId, CaptureId, GameId},
     ports::RepositoryError,
-    service::{CaptureUploaded, Event, handle_event},
+    service::{CaptureUpdated, Event, handle_event},
 };
 use friendarazzi_fakes::{FakeUnitOfWorkProvider, RecordingEventQueue};
 use uuid::Uuid;
 
-fn sample_event() -> CaptureUploaded {
-    CaptureUploaded {
+fn sample_event() -> CaptureUpdated {
+    CaptureUpdated {
         game_id: GameId(Uuid::new_v4()),
         capture_id: CaptureId(Uuid::new_v4()),
         uploader_id: BenutzerId(Uuid::new_v4()),
+        target_id: BenutzerId(Uuid::new_v4()),
+        occurred_at: Utc::now(),
     }
 }
 

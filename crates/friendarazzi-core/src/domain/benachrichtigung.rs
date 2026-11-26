@@ -285,58 +285,33 @@ impl PreferenceToggle {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NeueBenachrichtigungsEinstellungen {
-    pub benutzer_id: BenutzerId,
+/// Per-user notification preferences: default game watch state + per-event email opt-out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BenachrichtigungsEinstellungen {
     pub standard_spiel_beobachten: PreferenceToggle,
     pub email_spiel_gestartet: PreferenceToggle,
     pub email_aufnahme_hochgeladen: PreferenceToggle,
     pub email_spiel_beendet: PreferenceToggle,
 }
 
-impl NeueBenachrichtigungsEinstellungen {
-    pub fn standard(benutzer_id: BenutzerId, jetzt: DateTime<Utc>) -> Self {
-        let toggle = PreferenceToggle::neu(true, jetzt);
-        Self {
-            benutzer_id,
-            standard_spiel_beobachten: toggle,
-            email_spiel_gestartet: toggle,
-            email_aufnahme_hochgeladen: toggle,
-            email_spiel_beendet: toggle,
-        }
-    }
-}
-
-/// Per-user notification preferences: default game watch state + per-event email opt-out.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BenachrichtigungsEinstellungen {
-    benutzer_id: BenutzerId,
-    standard_spiel_beobachten: PreferenceToggle,
-    email_spiel_gestartet: PreferenceToggle,
-    email_aufnahme_hochgeladen: PreferenceToggle,
-    email_spiel_beendet: PreferenceToggle,
-}
-
 impl BenachrichtigungsEinstellungen {
-    pub fn neu(input: NeueBenachrichtigungsEinstellungen) -> Self {
+    pub fn from_parts(
+        standard_spiel_beobachten: PreferenceToggle,
+        email_spiel_gestartet: PreferenceToggle,
+        email_aufnahme_hochgeladen: PreferenceToggle,
+        email_spiel_beendet: PreferenceToggle,
+    ) -> Self {
         Self {
-            benutzer_id: input.benutzer_id,
-            standard_spiel_beobachten: input.standard_spiel_beobachten,
-            email_spiel_gestartet: input.email_spiel_gestartet,
-            email_aufnahme_hochgeladen: input.email_aufnahme_hochgeladen,
-            email_spiel_beendet: input.email_spiel_beendet,
+            standard_spiel_beobachten,
+            email_spiel_gestartet,
+            email_aufnahme_hochgeladen,
+            email_spiel_beendet,
         }
     }
 
-    pub fn standard(benutzer_id: BenutzerId, jetzt: DateTime<Utc>) -> Self {
-        Self::neu(NeueBenachrichtigungsEinstellungen::standard(
-            benutzer_id,
-            jetzt,
-        ))
-    }
-
-    pub fn benutzer_id(&self) -> BenutzerId {
-        self.benutzer_id
+    pub fn standard(jetzt: DateTime<Utc>) -> Self {
+        let toggle = PreferenceToggle::neu(true, jetzt);
+        Self::from_parts(toggle, toggle, toggle, toggle)
     }
 
     pub fn standard_spiel_beobachten(&self) -> PreferenceToggle {
@@ -557,8 +532,7 @@ mod tests {
 
     #[test_log::test]
     fn einstellungen_update_tracks_only_changed_toggle() {
-        let uid = BenutzerId(Uuid::new_v4());
-        let mut prefs = BenachrichtigungsEinstellungen::standard(uid, jetzt());
+        let mut prefs = BenachrichtigungsEinstellungen::standard(jetzt());
         assert!(prefs.standard_spiel_beobachten().aktiv);
         assert!(prefs.email_erlaubt(BenachrichtigungArt::SpielGestartet));
         assert!(prefs.email_erlaubt(BenachrichtigungArt::AufnahmeHochgeladen));

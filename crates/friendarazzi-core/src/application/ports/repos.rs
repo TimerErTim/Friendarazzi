@@ -8,10 +8,9 @@ use crate::domain::konto::{
     PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Benachrichtigung, BenachrichtigungId, BenachrichtigungsEinstellungen, Benutzer, BenutzerId,
-    Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId, InviteCode,
-    NeueBenachrichtigung, NeueBenachrichtigungsEinstellungen, NeuerBenutzer, NewBoard, NewCapture,
-    NewGame, StarterDeck,
+    Benachrichtigung, BenachrichtigungId, Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId,
+    EmailAdresse, Game, GameId, InviteCode, NeueBenachrichtigung, NeuerBenutzer, NewBoard,
+    NewCapture, NewGame, StarterDeck,
 };
 
 pub type RepositoryResult<T> = ResultReport<T, RepositoryError>;
@@ -232,29 +231,4 @@ pub trait BenachrichtigungRepository: Send + Sync {
     async fn delete(&self, benachrichtigung: Versioned<Benachrichtigung>) -> RepositoryResult<()>;
 
     async fn delete_by_benutzer(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
-}
-
-#[async_trait]
-pub trait BenachrichtigungsEinstellungenRepository: Send + Sync {
-    async fn create(
-        &self,
-        einstellungen: NeueBenachrichtigungsEinstellungen,
-    ) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
-
-    async fn find_by_benutzer(
-        &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
-
-    async fn update(
-        &self,
-        einstellungen: &mut Versioned<BenachrichtigungsEinstellungen>,
-    ) -> RepositoryResult<()>;
-
-    async fn delete(
-        &self,
-        einstellungen: Versioned<BenachrichtigungsEinstellungen>,
-    ) -> RepositoryResult<()>;
-
-    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
 }

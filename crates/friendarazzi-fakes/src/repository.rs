@@ -10,10 +10,9 @@ use friendarazzi_core::{
     ResultReport,
     application::uow::Versioned,
     domain::{
-        Benachrichtigung, BenachrichtigungId, BenachrichtigungsEinstellungen, Benutzer, BenutzerId,
-        Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId, InviteCode, Konto, KontoId,
-        NeueBenachrichtigung, NeueBenachrichtigungsEinstellungen, NeuerBenutzer, NewBoard,
-        NewCapture, NewGame, StarterDeck, builtin_starter_decks,
+        Benachrichtigung, BenachrichtigungId, Benutzer, BenutzerId, Board, BoardId, Capture,
+        CaptureId, EmailAdresse, Game, GameId, InviteCode, Konto, KontoId, NeueBenachrichtigung,
+        NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck, builtin_starter_decks,
         konto::{
             BestätigungId, EmailBestätigung, NeueBestätigung, NeuePasswortWiederherstellung,
             NeueSession, NeuesKonto, PasswortWiederherstellung, PasswortWiederherstellungId,
@@ -21,10 +20,10 @@ use friendarazzi_core::{
         },
     },
     ports::{
-        BenachrichtigungRepository, BenachrichtigungsEinstellungenRepository, BenutzerRepository,
-        BoardRepository, CaptureRepository, DeckRepository, EmailBestätigungRepository,
-        GameRepository, KontoRepository, Mail, MailError, MailSender,
-        PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
+        BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
+        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository, Mail,
+        MailError, MailSender, PasswortWiederherstellungRepository, RepositoryError,
+        RepositoryResult, SessionRepository,
     },
 };
 
@@ -41,8 +40,6 @@ pub struct FakeDatastore {
     pub wiederherstellungen:
         Mutex<FxHashMap<PasswortWiederherstellungId, Versioned<PasswortWiederherstellung>>>,
     pub benachrichtigungen: Mutex<FxHashMap<BenachrichtigungId, Versioned<Benachrichtigung>>>,
-    pub benachrichtigungs_einstellungen:
-        Mutex<FxHashMap<BenutzerId, Versioned<BenachrichtigungsEinstellungen>>>,
 }
 
 impl Clone for FakeDatastore {
@@ -58,9 +55,6 @@ impl Clone for FakeDatastore {
             bestätigungen: Mutex::new(self.bestätigungen().clone()),
             wiederherstellungen: Mutex::new(self.wiederherstellungen().clone()),
             benachrichtigungen: Mutex::new(self.benachrichtigungen().clone()),
-            benachrichtigungs_einstellungen: Mutex::new(
-                self.benachrichtigungs_einstellungen().clone(),
-            ),
         }
     }
 }
@@ -84,7 +78,6 @@ impl FakeDatastore {
             bestätigungen: Mutex::new(FxHashMap::default()),
             wiederherstellungen: Mutex::new(FxHashMap::default()),
             benachrichtigungen: Mutex::new(FxHashMap::default()),
-            benachrichtigungs_einstellungen: Mutex::new(FxHashMap::default()),
         }
     }
 
@@ -135,12 +128,6 @@ impl FakeDatastore {
         self.benachrichtigungen.lock().unwrap()
     }
 
-    pub fn benachrichtigungs_einstellungen(
-        &self,
-    ) -> MutexGuard<'_, FxHashMap<BenutzerId, Versioned<BenachrichtigungsEinstellungen>>> {
-        self.benachrichtigungs_einstellungen.lock().unwrap()
-    }
-
     pub fn replace_with(&self, other: &FakeDatastore) {
         *self.games() = other.games().clone();
         *self.boards() = other.boards().clone();
@@ -152,7 +139,6 @@ impl FakeDatastore {
         *self.bestätigungen() = other.bestätigungen().clone();
         *self.wiederherstellungen() = other.wiederherstellungen().clone();
         *self.benachrichtigungen() = other.benachrichtigungen().clone();
-        *self.benachrichtigungs_einstellungen() = other.benachrichtigungs_einstellungen().clone();
     }
 
     /// 3-way merge of `tx` against `reference` into `target`.
@@ -183,7 +169,6 @@ impl FakeDatastore {
         let mut target_bestätigungen = lock_map(&target.bestätigungen)?;
         let mut target_wiederherstellungen = lock_map(&target.wiederherstellungen)?;
         let mut target_benachrichtigungen = lock_map(&target.benachrichtigungen)?;
-        let mut target_einstellungen = lock_map(&target.benachrichtigungs_einstellungen)?;
 
         let merged_games = Self::merge_single_aggregate(
             &target_games,
@@ -230,11 +215,6 @@ impl FakeDatastore {
             &*lock_map(&reference.benachrichtigungen)?,
             &*lock_map(&tx.benachrichtigungen)?,
         )?;
-        let merged_einstellungen = Self::merge_single_aggregate(
-            &target_einstellungen,
-            &*lock_map(&reference.benachrichtigungs_einstellungen)?,
-            &*lock_map(&tx.benachrichtigungs_einstellungen)?,
-        )?;
 
         *target_games = merged_games.clone();
         *target_boards = merged_boards.clone();
@@ -245,7 +225,6 @@ impl FakeDatastore {
         *target_bestätigungen = merged_bestätigungen.clone();
         *target_wiederherstellungen = merged_wiederherstellungen.clone();
         *target_benachrichtigungen = merged_benachrichtigungen.clone();
-        *target_einstellungen = merged_einstellungen.clone();
 
         Ok(FakeDatastore {
             games: Mutex::new(merged_games),
@@ -258,7 +237,6 @@ impl FakeDatastore {
             bestätigungen: Mutex::new(merged_bestätigungen),
             wiederherstellungen: Mutex::new(merged_wiederherstellungen),
             benachrichtigungen: Mutex::new(merged_benachrichtigungen),
-            benachrichtigungs_einstellungen: Mutex::new(merged_einstellungen),
         })
     }
 
@@ -1046,88 +1024,6 @@ impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
         self.datastore
             .benachrichtigungen()
             .retain(|_, n| n.empfänger_id() != empfänger_id);
-        Ok(())
-    }
-}
-
-pub struct FakeBenachrichtigungsEinstellungenRepository {
-    datastore: Arc<FakeDatastore>,
-}
-
-impl FakeBenachrichtigungsEinstellungenRepository {
-    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
-        Self { datastore }
-    }
-}
-
-#[async_trait]
-impl BenachrichtigungsEinstellungenRepository for FakeBenachrichtigungsEinstellungenRepository {
-    async fn create(
-        &self,
-        neu: NeueBenachrichtigungsEinstellungen,
-    ) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>> {
-        let mut map = self.datastore.benachrichtigungs_einstellungen();
-        if map.contains_key(&neu.benutzer_id) {
-            return Err(Report::new(RepositoryError::Conflict));
-        }
-        let bid = neu.benutzer_id;
-        let entity = Versioned::init(BenachrichtigungsEinstellungen::neu(neu));
-        map.insert(bid, entity.clone());
-        Ok(entity)
-    }
-
-    async fn find_by_benutzer(
-        &self,
-        benutzer_id: BenutzerId,
-    ) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>> {
-        self.datastore
-            .benachrichtigungs_einstellungen()
-            .get(&benutzer_id)
-            .cloned()
-            .ok_or_else(|| Report::new(RepositoryError::NotFound))
-    }
-
-    async fn update(
-        &self,
-        einstellungen: &mut Versioned<BenachrichtigungsEinstellungen>,
-    ) -> RepositoryResult<()> {
-        let mut map = self.datastore.benachrichtigungs_einstellungen();
-        let Some(existing) = map.get(&einstellungen.benutzer_id()) else {
-            return Err(Report::new(RepositoryError::NotFound));
-        };
-        if existing.v() != einstellungen.v() {
-            return Err(Report::new(RepositoryError::VersionMismatch {
-                expected: einstellungen.v(),
-                actual: Some(existing.v()),
-            }));
-        }
-        einstellungen.increment();
-        map.insert(einstellungen.benutzer_id(), einstellungen.clone());
-        Ok(())
-    }
-
-    async fn delete(
-        &self,
-        einstellungen: Versioned<BenachrichtigungsEinstellungen>,
-    ) -> RepositoryResult<()> {
-        let mut map = self.datastore.benachrichtigungs_einstellungen();
-        let Some(existing) = map.get(&einstellungen.benutzer_id()) else {
-            return Err(Report::new(RepositoryError::NotFound));
-        };
-        if existing.v() != einstellungen.v() {
-            return Err(Report::new(RepositoryError::VersionMismatch {
-                expected: einstellungen.v(),
-                actual: Some(existing.v()),
-            }));
-        }
-        map.remove(&einstellungen.benutzer_id());
-        Ok(())
-    }
-
-    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()> {
-        self.datastore
-            .benachrichtigungs_einstellungen()
-            .remove(&benutzer_id);
         Ok(())
     }
 }

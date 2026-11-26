@@ -394,6 +394,7 @@ impl Mail {
             };
 
         let safe_link = escape_html(&link);
+        let brand_header = render_brand_header(frontend_basis_url);
         let safe_headline = headline;
         let safe_footnote = escape_html(&footnote_html);
         let unsubscribe_block = unsub_url
@@ -425,12 +426,8 @@ impl Mail {
                         <td style=\"padding:18px 24px;background-color:#ffffff;border-bottom:3px solid #0d0d0d;\">\
                           <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\
                             <tr>\
-                              <td>\
-                                <span style=\"display:inline-block;padding:4px 8px;background-color:#ffe600;border:2px solid #0d0d0d;font-weight:900;font-size:16px;letter-spacing:-0.02em;color:#0d0d0d;\">Friend</span>\
-                                <span style=\"display:inline-block;padding:4px 8px;background-color:#00e5ff;border:2px solid #0d0d0d;border-left:none;font-weight:900;font-size:16px;letter-spacing:-0.02em;color:#0d0d0d;\">araz</span>\
-                                <span style=\"display:inline-block;padding:4px 8px;background-color:#ff3b9a;border:2px solid #0d0d0d;border-left:none;font-weight:900;font-size:16px;letter-spacing:-0.02em;color:#0d0d0d;\">zi</span>\
-                              </td>\
-                              <td align=\"right\">\
+                              <td valign=\"middle\">{brand_header}</td>\
+                              <td align=\"right\" valign=\"middle\">\
                                 <span style=\"display:inline-block;padding:4px 10px;background-color:{badge_bg};border:2px solid #0d0d0d;border-radius:4px;font-size:11px;font-weight:800;letter-spacing:0.06em;color:#0d0d0d;\">{badge_label}</span>\
                               </td>\
                             </tr>\
@@ -469,6 +466,61 @@ impl Mail {
             safe_title = escape_html(&self.betreff()),
         )
     }
+}
+
+/// Mirrors `<Wordmark size="sm" showMark />` from the web frontend using pure HTML/CSS so mail
+/// clients render the 3x3 Bingo-Lens mark and alternating letter fills without embedded images.
+fn render_brand_header(frontend_basis_url: &str) -> String {
+    const WORDMARK_LETTERS: &[(char, &str)] = &[
+        ('F', "#ffe600"),
+        ('r', "#00e5ff"),
+        ('i', "#00e5ff"),
+        ('e', "#ff3b9a"),
+        ('n', "#ff3b9a"),
+        ('d', "#ffe600"),
+        ('a', "#ffe600"),
+        ('r', "#00e5ff"),
+        ('a', "#ff3b9a"),
+        ('z', "#ffe600"),
+        ('z', "#00e5ff"),
+        ('i', "#00e5ff"),
+    ];
+    let safe_base = escape_html(frontend_basis_url.trim_end_matches('/'));
+    let letters_html: String = WORDMARK_LETTERS
+        .iter()
+        .map(|(ch, color)| format!("<span style=\"color:{color};\">{ch}</span>"))
+        .collect();
+
+    format!(
+        "<a href=\"{safe_base}\" style=\"text-decoration:none;display:inline-block;\">\
+           <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" style=\"border-collapse:collapse;\">\
+             <tr>\
+               <td valign=\"middle\" style=\"padding-right:10px;\">\
+                 <table role=\"presentation\" width=\"28\" height=\"28\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:28px;height:28px;border-collapse:separate;border-spacing:0;border:2px solid #0d0d0d;border-radius:4px;box-shadow:2px 2px 0 #0d0d0d;overflow:hidden;\">\
+                   <tr>\
+                     <td width=\"9\" height=\"9\" style=\"width:9px;height:9px;background-color:#ffe600;border-right:1.5px solid #0d0d0d;border-bottom:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                     <td width=\"10\" height=\"9\" style=\"width:10px;height:9px;background-color:#ff3b9a;border-right:1.5px solid #0d0d0d;border-bottom:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                     <td width=\"9\" height=\"9\" style=\"width:9px;height:9px;background-color:#00e5ff;border-bottom:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                   </tr>\
+                   <tr>\
+                     <td width=\"9\" height=\"10\" style=\"width:9px;height:10px;background-color:#ff3b9a;border-right:1.5px solid #0d0d0d;border-bottom:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                     <td width=\"10\" height=\"10\" align=\"center\" valign=\"middle\" style=\"width:10px;height:10px;background-color:#ffe600;border-right:1.5px solid #0d0d0d;border-bottom:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\"><span style=\"display:inline-block;width:6px;height:6px;background-color:#00e5ff;border:1.5px solid #0d0d0d;border-radius:999px;\"></span></td>\
+                     <td width=\"9\" height=\"10\" style=\"width:9px;height:10px;background-color:#ff3b9a;border-bottom:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                   </tr>\
+                   <tr>\
+                     <td width=\"9\" height=\"9\" style=\"width:9px;height:9px;background-color:#00e5ff;border-right:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                     <td width=\"10\" height=\"9\" style=\"width:10px;height:9px;background-color:#ffe600;border-right:1.5px solid #0d0d0d;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                     <td width=\"9\" height=\"9\" style=\"width:9px;height:9px;background-color:#00e5ff;font-size:1px;line-height:1px;\">&nbsp;</td>\
+                   </tr>\
+                 </table>\
+               </td>\
+               <td valign=\"middle\">\
+                 <span style=\"display:inline-block;font-family:'Archivo Black','Arial Black','Segoe UI Black',Impact,sans-serif;font-size:21px;font-weight:900;line-height:1;letter-spacing:-0.02em;paint-order:stroke fill;-webkit-text-stroke:2px #0d0d0d;text-shadow:2px 2px 0 #0d0d0d,-1px -1px 0 #0d0d0d,1px -1px 0 #0d0d0d,-1px 1px 0 #0d0d0d,1px 1px 0 #0d0d0d;\">{letters_html}</span>\
+               </td>\
+             </tr>\
+           </table>\
+         </a>"
+    )
 }
 
 fn escape_html(raw: &str) -> String {
@@ -572,6 +624,10 @@ mod tests {
         assert!(html.contains("https://friendarazzi.app/games?id=00000000-0000-0000-0000-000000000000&amp;capture=00000000-0000-0000-0000-000000000000"));
         assert!(html.contains("https://friendarazzi.app/abbestellen?token=unsub-tok"));
         assert!(!html.contains("<img"));
+        assert!(html.contains("<span style=\"color:#ffe600;\">F</span>"));
+        assert!(html.contains("<span style=\"color:#ff3b9a;\">e</span>"));
+        assert!(html.contains("<span style=\"color:#00e5ff;\">i</span>"));
+        assert!(!html.contains(">Friend<"));
 
         let win_mail = Mail::spiel_beendet(adresse(), gid, "Freitag", "Lisa", "unsub-win");
         assert!(win_mail.betreff().contains("Lisa"));

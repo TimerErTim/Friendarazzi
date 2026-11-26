@@ -17,8 +17,8 @@ use poem::http::StatusCode;
 use serde_json::json;
 
 use crate::{
-    E2eHarness, FRONTEND_BASIS_URL, enroll_and_start_game, neuer_benutzer, test_konfiguration,
-    test_signing_key,
+    E2eHarness, FRONTEND_BASIS_URL, PASSWORT, enroll_and_start_game, mailpit, neuer_benutzer,
+    test_konfiguration, test_signing_key,
 };
 
 struct FailingMailSender;
@@ -485,4 +485,259 @@ async fn e2e_failing_mail_relay_does_not_fail_capture_or_game_completion() {
         .await
         .expect("failing mail relay must never fail capture or game completion");
     }
+}
+
+fn assert_html_has_website_brand_header_and_no_embedded_img(html: &str) {
+    assert!(!html.contains("<img"), "email HTML must not embed images");
+    assert!(
+        html.contains("box-shadow:2px 2px 0 #0d0d0d")
+            && html.contains("<span style=\"color:#ffe600;\">F</span>")
+            && html.contains("<span style=\"color:#ff3b9a;\">e</span>")
+            && html.contains("<span style=\"color:#00e5ff;\">i</span>"),
+        "expected 3x3 BrandMark and alternating Wordmark letters in HTML: {html}"
+    );
+    assert!(!html.contains(">Friend<"));
+}
+
+async fn register_via_mailpit(
+    harness: &E2eHarness,
+    email: &str,
+) -> (String, String, mailpit::MailpitNachricht) {
+    let (st, _) = harness
+        .client
+        .post_json("/api/registrierung/start", json!({ "eMailAdresse": email }))
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    let msg = mailpit::letzte_nachricht_an(email).await;
+    let token = mailpit::token_aus(&msg.text);
+    let (st, body, _) = harness
+        .client
+        .post_json_cookie(
+            "/api/registrierung/abschluss",
+            json!({ "token": token, "passwort": PASSWORT }),
+            None,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{body}");
+
+    let access = body["accessToken"].as_str().unwrap().to_owned();
+    let (st, benutzer) = harness.client.get_json_auth("/api/benutzer", &access).await;
+    assert_eq!(st, StatusCode::OK);
+    let benutzer_id = benutzer["id"].as_str().unwrap().to_owned();
+    (access, benutzer_id, msg)
+}
+
+#[test_log::test(tokio::test)]
+async fn e2e_mailpit_delivers_html_and_text_emails_across_registration_and_notifications() {
+    mailpit::leeren().await;
+    let harness = E2eHarness::mit_smtp().await;
+
+    // Registration mails arrive via SMTP with both text and website-branded HTML.
+    let (t_alice, _id_alice, reg_alice) =
+        register_via_mailpit(&harness, "mp-alice@example.at").await;
+    assert_eq!(reg_alice.subject, "Bestätige deine E-Mail-Adresse");
+    assert!(
+        reg_alice
+            .text
+            .contains(&format!("{FRONTEND_BASIS_URL}/registrierung?token="))
+    );
+    assert!(
+        reg_alice
+            .html
+            .contains(&format!("{FRONTEND_BASIS_URL}/registrierung?token="))
+    );
+    assert_html_has_website_brand_header_and_no_embedded_img(&reg_alice.html);
+    assert!(
+        reg_alice
+            .header_first("Content-Type")
+            .is_some_and(|v| v.contains("multipart/alternative"))
+    );
+
+    let (t_bob, id_bob, _) = register_via_mailpit(&harness, "mp-bob@example.at").await;
+    let (t_carol, _id_carol, _) = register_via_mailpit(&harness, "mp-carol@example.at").await;
+
+    // Carol opts out of GameStarted email; Bob keeps defaults enabled.
+    let (st, _) = harness
+        .client
+        .put_json_auth(
+            "/api/notifications/preferences",
+            json!({ "emailGameStarted": false }),
+            &t_carol,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    // Clear Mailpit before game lifecycle notifications.
+    mailpit::leeren().await;
+
+    let (game_id, _) = enroll_and_start_game(
+        &harness,
+        &t_alice,
+        &[&t_bob, &t_carol],
+        "Mailpit Hunt",
+        3,
+        "LiveFeed",
+    )
+    .await;
+
+    // GameStarted: Bob and Alice receive multipart HTML + text email; Carol does not.
+    assert!(
+        mailpit::nachrichten_an("mp-carol@example.at")
+            .await
+            .is_empty()
+    );
+    let bob_started = mailpit::letzte_nachricht_an("mp-bob@example.at").await;
+    assert!(bob_started.subject.contains("Mailpit Hunt"));
+    let game_link = format!("{FRONTEND_BASIS_URL}/games?id={game_id}");
+    assert!(bob_started.text.contains(&game_link));
+    assert!(bob_started.html.contains(&game_link));
+    assert!(bob_started.html.contains("SPIELSTART"));
+    assert_html_has_website_brand_header_and_no_embedded_img(&bob_started.html);
+    assert!(
+        bob_started
+            .header_first("List-Unsubscribe")
+            .is_some_and(|h| h.contains("/abbestellen?token="))
+    );
+    assert_eq!(
+        bob_started.header_first("List-Unsubscribe-Post"),
+        Some("List-Unsubscribe=One-Click")
+    );
+
+    // Alice captures Bob and completes a row -> Bob gets CapturePosted (with deep link) and Carol gets GameCompleted.
+    let (st, alice_detail) = harness
+        .client
+        .get_json_auth(&format!("/api/games/{game_id}"), &t_alice)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let tiles = alice_detail["myBoard"]["tiles"].as_array().unwrap();
+    let bob_tile = tiles
+        .iter()
+        .find(|t| t["targetUser"]["id"] == id_bob)
+        .unwrap();
+    let bob_prompt = bob_tile["promptText"].as_str().unwrap().to_owned();
+    let bob_row = bob_tile["row"].as_u64().unwrap();
+    let row_tiles: Vec<_> = tiles
+        .iter()
+        .filter(|t| t["row"].as_u64().unwrap() == bob_row)
+        .collect();
+
+    let png = png_bytes_for_test(200, 200);
+    let mut bob_capture_id = String::new();
+    for tile in row_tiles {
+        let tid = tile["id"].as_str().unwrap();
+        let (st, cap_out) = harness
+            .client
+            .post_multipart_file_auth(
+                &format!("/api/games/{game_id}/tiles/{tid}/capture"),
+                "file",
+                "proof.png",
+                "image/png",
+                png.clone(),
+                &t_alice,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK, "{cap_out}");
+        if tid == bob_tile["id"].as_str().unwrap() {
+            bob_capture_id = cap_out["capture"]["id"].as_str().unwrap().to_owned();
+        }
+    }
+
+    let bob_msgs = mailpit::nachrichten_an("mp-bob@example.at").await;
+    let capture_link_suffix = format!("/games?id={game_id}&capture={bob_capture_id}");
+    let bob_capture_mail = bob_msgs
+        .iter()
+        .find(|m| m.text.contains(&capture_link_suffix))
+        .expect("Bob received capture notification email via Mailpit");
+    assert!(bob_capture_mail.subject.contains("mp-alice"));
+    assert!(bob_capture_mail.subject.contains("mp-bob"));
+    assert!(bob_capture_mail.subject.contains("Mailpit Hunt"));
+    assert!(bob_capture_mail.text.contains("mp-alice"));
+    assert!(bob_capture_mail.text.contains("mp-bob"));
+    assert!(bob_capture_mail.text.contains(&bob_prompt));
+    assert!(bob_capture_mail.html.contains(&bob_prompt));
+    assert!(
+        bob_capture_mail
+            .html
+            .contains(&format!("/games?id={game_id}&amp;capture={bob_capture_id}"))
+    );
+    assert_html_has_website_brand_header_and_no_embedded_img(&bob_capture_mail.html);
+
+    let carol_msgs = mailpit::nachrichten_an("mp-carol@example.at").await;
+    let carol_win = carol_msgs
+        .iter()
+        .find(|m| m.subject.contains("Bingo!"))
+        .expect("Carol received GameCompleted win email via Mailpit");
+    assert!(carol_win.subject.contains("mp-alice"));
+    assert!(carol_win.subject.contains("Mailpit Hunt"));
+    assert!(carol_win.text.contains(&game_link));
+    assert!(carol_win.html.contains(&game_link));
+    assert!(carol_win.html.contains("BINGO-SIEG"));
+    assert_html_has_website_brand_header_and_no_embedded_img(&carol_win.html);
+
+    // One-click unsubscribe token extracted from List-Unsubscribe header in Mailpit works logged out.
+    let unsub_header = bob_capture_mail
+        .header_first("List-Unsubscribe")
+        .expect("List-Unsubscribe header");
+    let unsub_token = unsub_header
+        .trim_matches(|c| c == '<' || c == '>')
+        .split("token=")
+        .nth(1)
+        .unwrap()
+        .to_owned();
+    let (st, unsub_out) = harness
+        .client
+        .post_json(
+            "/api/notifications/unsubscribe",
+            json!({ "token": unsub_token }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{unsub_out}");
+    assert_eq!(unsub_out["kind"], "CapturePosted");
+
+    // BlurredTeaser mode also delivers HTML + text via Mailpit without leaking target or prompt.
+    let (blur_game_id, _) = enroll_and_start_game(
+        &harness,
+        &t_alice,
+        &[&t_bob, &t_carol],
+        "Mailpit Blur",
+        3,
+        "BlurredTeaser",
+    )
+    .await;
+    let (st, blur_detail) = harness
+        .client
+        .get_json_auth(&format!("/api/games/{blur_game_id}"), &t_alice)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    let blur_carol_tile = blur_detail["myBoard"]["tiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["targetUser"]["id"] == _id_carol)
+        .unwrap();
+    let blur_tid = blur_carol_tile["id"].as_str().unwrap();
+    let blur_prompt = blur_carol_tile["promptText"].as_str().unwrap();
+
+    mailpit::leeren().await;
+    let (st, blur_cap_out) = harness
+        .client
+        .post_multipart_file_auth(
+            &format!("/api/games/{blur_game_id}/tiles/{blur_tid}/capture"),
+            "file",
+            "blur.png",
+            "image/png",
+            png,
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{blur_cap_out}");
+
+    let carol_teaser = mailpit::letzte_nachricht_an("mp-carol@example.at").await;
+    assert!(carol_teaser.subject.contains("Teaser"));
+    assert!(!carol_teaser.text.contains(blur_prompt));
+    assert!(!carol_teaser.html.contains(blur_prompt));
+    assert!(!carol_teaser.html.contains("mp-carol"));
+    assert!(carol_teaser.html.contains("TEASER-FOTO"));
+    assert_html_has_website_brand_header_and_no_embedded_img(&carol_teaser.html);
 }

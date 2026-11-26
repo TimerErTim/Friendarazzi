@@ -403,19 +403,22 @@ async fn e2e_failing_mail_relay_does_not_fail_capture_or_game_completion() {
     )
     .await
     .unwrap();
-    app.execute(
-        auth_a,
-        friendarazzi_core::service::StartDrafting { game_id: game.id() },
-    )
-    .await
-    .unwrap();
+    let started_draft = app
+        .execute(
+            auth_a,
+            friendarazzi_core::service::StartDrafting { game_id: game.id() },
+        )
+        .await
+        .unwrap();
+    let player_ids = started_draft.sorted_player_ids();
 
     let quotas_and_save = |auth, uid| {
         let app = &app;
         let gid = game.id();
+        let player_ids = &player_ids;
         async move {
             let qs =
-                friendarazzi_core::domain::target_quotas_for_author(&[a, b, c], uid, 9).unwrap();
+                friendarazzi_core::domain::target_quotas_for_author(player_ids, uid, 9).unwrap();
             let mut prompts = Vec::new();
             for (target, count) in qs {
                 for idx in 0..count {

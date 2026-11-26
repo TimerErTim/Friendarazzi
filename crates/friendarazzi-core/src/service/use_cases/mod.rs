@@ -1,5 +1,6 @@
 //! Use cases, grouped by journey.
 
+mod benachrichtigung;
 mod capture;
 mod game;
 mod login;
@@ -9,6 +10,7 @@ mod registration;
 mod session;
 mod user;
 
+pub use benachrichtigung::*;
 pub use capture::*;
 pub use game::*;
 pub use login::*;

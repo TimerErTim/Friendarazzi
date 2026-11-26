@@ -2,13 +2,14 @@ use error_stack::Report;
 use friendarazzi_core::ThreadSafeError;
 use friendarazzi_core::ports::{ObjectStoreError, RepositoryError};
 use friendarazzi_core::service::{
-    AbmeldungFehler, AnmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError, ErneuerungFehler,
-    GameUseCaseError, PasswortVergessenFehler, PasswortWiederherstellenFehler, ProfileUseCaseError,
-    RegistrierungAbschliessenFehler, RegistrierungStartenFehler, SessionPrüfenFehler,
+    AbmeldungFehler, AnmeldungFehler, BenachrichtigungUseCaseError, BenutzerLöschenFehler,
+    CaptureUseCaseError, ErneuerungFehler, GameUseCaseError, PasswortVergessenFehler,
+    PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
+    RegistrierungStartenFehler, SessionPrüfenFehler,
 };
 use http::StatusCode;
 
-use crate::api::errors::{GameReadError, MediaReadError, ProfileReadError};
+use crate::api::errors::{GameReadError, MediaReadError, NotificationReadError, ProfileReadError};
 
 use super::ValidationError;
 
@@ -41,9 +42,11 @@ fn nested_http_status<C: ThreadSafeError>(error: &Report<C>) -> Option<StatusCod
     mapped::<C, GameUseCaseError>(error)
         .or_else(|| mapped::<C, CaptureUseCaseError>(error))
         .or_else(|| mapped::<C, ProfileUseCaseError>(error))
+        .or_else(|| mapped::<C, BenachrichtigungUseCaseError>(error))
         .or_else(|| mapped::<C, GameReadError>(error))
         .or_else(|| mapped::<C, ProfileReadError>(error))
         .or_else(|| mapped::<C, MediaReadError>(error))
+        .or_else(|| mapped::<C, NotificationReadError>(error))
         .or_else(|| mapped::<C, AnmeldungFehler>(error))
         .or_else(|| mapped::<C, ErneuerungFehler>(error))
         .or_else(|| mapped::<C, AbmeldungFehler>(error))
@@ -148,6 +151,19 @@ http_status!(MediaReadError {
     Forbidden => StatusCode::FORBIDDEN,
     NotFound => StatusCode::NOT_FOUND,
     Storage => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(BenachrichtigungUseCaseError {
+    Unauthorized => StatusCode::UNAUTHORIZED,
+    Forbidden => StatusCode::FORBIDDEN,
+    NotFound => StatusCode::NOT_FOUND,
+    InvalidToken => StatusCode::BAD_REQUEST,
+    Persistence => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(NotificationReadError {
+    Unauthorized => StatusCode::UNAUTHORIZED,
+    Persistence => StatusCode::INTERNAL_SERVER_ERROR,
 });
 
 http_status!(AnmeldungFehler {

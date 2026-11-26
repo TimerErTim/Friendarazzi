@@ -8,9 +8,10 @@ use std::fmt::Debug;
 
 use crate::application::ThreadSafeError;
 use crate::ports::{
-    BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
-    EmailBestätigungRepository, GameRepository, KontoRepository,
-    PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
+    BenachrichtigungRepository, BenachrichtigungsEinstellungenRepository, BenutzerRepository,
+    BoardRepository, CaptureRepository, DeckRepository, EmailBestätigungRepository, GameRepository,
+    KontoRepository, PasswortWiederherstellungRepository, RepositoryError, RepositoryResult,
+    SessionRepository,
 };
 
 /// Active unit of work. `commit` / `rollback` consume it.
@@ -125,6 +126,14 @@ impl UnitOfWork<'_> {
         self.as_impl().wiederherstellungen()
     }
 
+    pub fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
+        self.as_impl().benachrichtigungen()
+    }
+
+    pub fn benachrichtigungs_einstellungen(&self) -> &dyn BenachrichtigungsEinstellungenRepository {
+        self.as_impl().benachrichtigungs_einstellungen()
+    }
+
     fn take_impl(&mut self) -> Box<dyn UnitOfWorkImpl + '_> {
         self.implementation
             .take()
@@ -189,6 +198,14 @@ impl UnitOfWorkImpl for LockedUnitOfWorkImpl<'_> {
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository {
         self.inner.wiederherstellungen()
     }
+
+    fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
+        self.inner.benachrichtigungen()
+    }
+
+    fn benachrichtigungs_einstellungen(&self) -> &dyn BenachrichtigungsEinstellungenRepository {
+        self.inner.benachrichtigungs_einstellungen()
+    }
 }
 
 /// UoW Provider
@@ -207,6 +224,8 @@ pub trait UnitOfWorkImpl: Send + Sync {
     fn sessions(&self) -> &dyn SessionRepository;
     fn bestätigungen(&self) -> &dyn EmailBestätigungRepository;
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository;
+    fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository;
+    fn benachrichtigungs_einstellungen(&self) -> &dyn BenachrichtigungsEinstellungenRepository;
 }
 
 #[async_trait]

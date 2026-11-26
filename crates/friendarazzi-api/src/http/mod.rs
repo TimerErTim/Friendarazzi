@@ -4,7 +4,7 @@ use error_stack::ResultExt;
 use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
-    domain::{BenutzerId, BoardTileId, GameId},
+    domain::{BenachrichtigungId, BenutzerId, BoardTileId, GameId},
     service::{
         AbmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError,
         PasswortWiederherstellenFehler, ProfileUseCaseError,
@@ -36,12 +36,14 @@ use crate::{
             AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, JoinGameRequest,
             PasswortVergessenRequest, PasswortWiederherstellenRequest,
             RegistrierungAbschlussRequest, RegistrierungStartRequest, SaveDraftPromptsRequest,
-            UpdateGameSettingsRequest, UpdateProfileRequest,
+            SetGameWatchRequest, UnsubscribeNotificationRequest, UpdateGameSettingsRequest,
+            UpdateNotificationPreferencesRequest, UpdateProfileRequest,
         },
     },
     schema::{
         AuthenticatedBenutzer, BuildVersion, CaptureOutcome, GameDetail, GameSummary, MailHealth,
-        Ok, StarterDeck, UserGallery, UserProfile,
+        NotificationPreferences, NotificationsInbox, Ok, StarterDeck, UnsubscribeOutcome,
+        UserGallery, UserProfile,
     },
 };
 
@@ -54,6 +56,8 @@ pub enum ApiTag {
     Captures,
     /// Player profiles, Gold Medals, and photo galleries.
     Profiles,
+    /// In-app notifications and email opt-out preferences.
+    Notifications,
     /// Curated Quick-Start starter decks.
     Decks,
     /// Registration, sign-in, session, password recovery, and account settings.
@@ -344,6 +348,26 @@ impl FriendarazziApiSpec {
             .unwrap_or(AuthContext::Anonymous);
         self.app_api
             .game_unlock_prompts(auth, GameId(game_id.0))
+            .await
+            .into()
+    }
+
+    /// Watch or unwatch a game's notifications.
+    ///
+    /// Sets whether the authenticated participant receives in-app and email notifications for a game.
+    #[oai(path = "/games/:game_id/watch", method = "put", tag = "ApiTag::Games")]
+    async fn game_set_watch(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+        body: Json<SetGameWatchRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_set_watch(auth, GameId(game_id.0), body.0)
             .await
             .into()
     }
@@ -684,6 +708,127 @@ impl FriendarazziApiSpec {
         let ergebnis: ResultReport<(), BenutzerLöschenFehler> =
             self.app_api.benutzer_löschen(auth, body.0).await;
         EndSessionResponse::from(ergebnis.map(|()| Ok { ok: true }))
+    }
+
+    // ------------------------------------------------------------------ notifications
+
+    /// List in-app notifications.
+    ///
+    /// Returns the authenticated caller's inbox newest first together with the unread count.
+    #[oai(path = "/notifications", method = "get", tag = "ApiTag::Notifications")]
+    async fn notifications_list(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+    ) -> TypicalJsonResponse<NotificationsInbox> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api.notifications_list(auth).await.into()
+    }
+
+    /// Mark a notification as read.
+    ///
+    /// Marks one notification in the authenticated caller's inbox as read idempotently.
+    #[oai(
+        path = "/notifications/:notification_id/read",
+        method = "post",
+        tag = "ApiTag::Notifications"
+    )]
+    async fn notification_mark_read(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        notification_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<Ok> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .notification_mark_read(auth, BenachrichtigungId(notification_id.0))
+            .await
+            .map(|()| Ok { ok: true })
+            .into()
+    }
+
+    /// Mark all notifications as read.
+    ///
+    /// Marks every unread notification in the authenticated caller's inbox as read.
+    #[oai(
+        path = "/notifications/read-all",
+        method = "post",
+        tag = "ApiTag::Notifications"
+    )]
+    async fn notifications_mark_all_read(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+    ) -> TypicalJsonResponse<Ok> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .notifications_mark_all_read(auth)
+            .await
+            .map(|()| Ok { ok: true })
+            .into()
+    }
+
+    /// Read notification preferences.
+    ///
+    /// Returns the caller's account-wide game watch default and per-event email opt-out settings.
+    #[oai(
+        path = "/notifications/preferences",
+        method = "get",
+        tag = "ApiTag::Notifications"
+    )]
+    async fn notification_preferences_get(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+    ) -> TypicalJsonResponse<NotificationPreferences> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api.notification_preferences_get(auth).await.into()
+    }
+
+    /// Update notification preferences.
+    ///
+    /// Updates the caller's default game watch preference and per-event email opt-out toggles.
+    #[oai(
+        path = "/notifications/preferences",
+        method = "put",
+        tag = "ApiTag::Notifications"
+    )]
+    async fn notification_preferences_update(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        body: Json<UpdateNotificationPreferencesRequest>,
+    ) -> TypicalJsonResponse<NotificationPreferences> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .notification_preferences_update(auth, body.0)
+            .await
+            .into()
+    }
+
+    /// Unsubscribe via email token.
+    ///
+    /// Applies a signed expiring unsubscribe token for one notification email type without login.
+    #[oai(
+        path = "/notifications/unsubscribe",
+        method = "post",
+        tag = "ApiTag::Notifications"
+    )]
+    async fn notification_unsubscribe(
+        &self,
+        body: Json<UnsubscribeNotificationRequest>,
+    ) -> UncachedJsonResponse<UnsubscribeOutcome> {
+        UncachedJsonResponse::from(self.app_api.notification_unsubscribe(body.0).await)
     }
 }
 

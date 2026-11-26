@@ -1,5 +1,6 @@
 #![doc = include_str!("README.md")]
 
+pub mod benachrichtigung;
 pub mod benutzer;
 pub mod board;
 pub mod capture;
@@ -10,6 +11,11 @@ pub mod kontakt;
 pub mod konto;
 pub mod media;
 
+pub use benachrichtigung::{
+    AbbestellToken, Benachrichtigung, BenachrichtigungArt, BenachrichtigungFehler,
+    BenachrichtigungId, BenachrichtigungsEinstellungen, NeueBenachrichtigung,
+    NeueBenachrichtigungsEinstellungen, PreferenceToggle, UNSUBSCRIBE_TOKEN_LIFETIME,
+};
 pub use benutzer::{Benutzer, BenutzerId, NeuerBenutzer, ProfileError, RANK_TIERS};
 pub use board::{
     Board, BoardCoordinates, BoardError, BoardId, BoardTile, BoardTileAssignment, BoardTileId,

@@ -1,13 +1,13 @@
-//! The adapter's envelope is asserted without a relay: recipient, subject, and body are
-//! what AC-19 depends on, and a transport that reaches a live Mailpit would make this
-//! crate's test suite depend on a daemon.
+//! The adapter's envelope and MIME parts are asserted without a relay: recipient, subject,
+//! plain-text + HTML parts, and `List-Unsubscribe` headers are checked directly.
 
 use friendarazzi_core::{
-    domain::EmailAdresse,
+    domain::{CaptureId, EmailAdresse, GameId},
     ports::{Mail, MailError},
 };
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender};
 use lettre::message::header::Subject;
+use uuid::Uuid;
 
 fn absender() -> EmailAdresse {
     EmailAdresse::normalisiert("noreply@friendarazzi.app").expect("static address is valid")
@@ -20,7 +20,7 @@ fn sender() -> SmtpMailSender {
 }
 
 #[test_log::test(tokio::test)]
-async fn die_nachricht_trägt_empfänger_betreff_und_klartext_rumpf() {
+async fn die_nachricht_trägt_empfänger_betreff_klartext_und_html() {
     let sender = sender();
     let mail = Mail::email_bestätigung(
         EmailAdresse::normalisiert("anna@muster.at").expect("address is valid"),
@@ -29,8 +29,6 @@ async fn die_nachricht_trägt_empfänger_betreff_und_klartext_rumpf() {
 
     let nachricht = sender.baue_nachricht(&mail).expect("the message builds");
 
-    // The SMTP envelope is what the relay actually routes on, so assert it directly
-    // rather than the `To:` header a client later renders.
     let empfänger: Vec<String> = nachricht
         .envelope()
         .to()
@@ -48,16 +46,48 @@ async fn die_nachricht_trägt_empfänger_betreff_und_klartext_rumpf() {
         Subject::from("Bestätige deine E-Mail-Adresse".to_owned())
     );
 
-    // Plain text: the link must survive without an HTML renderer rewriting it. The body
-    // arrives quoted-printable encoded, so decode before comparing.
-    let roh = nachricht.formatted();
-    let roh = String::from_utf8_lossy(&roh);
-    assert!(roh.contains("Content-Type: text/plain"), "kein HTML: {roh}");
+    let roh = String::from_utf8_lossy(&nachricht.formatted()).into_owned();
+    assert!(roh.contains("Content-Type: multipart/alternative"), "{roh}");
+    assert!(roh.contains("Content-Type: text/plain"), "{roh}");
+    assert!(roh.contains("Content-Type: text/html"), "{roh}");
     let rumpf = entfalte_quoted_printable(&roh);
     assert!(
         rumpf.contains("https://friendarazzi.app/registrierung?token=abc"),
         "der Link steht unversehrt im Rumpf: {rumpf}"
     );
+    assert!(!roh.contains("List-Unsubscribe:"));
+}
+
+#[test_log::test(tokio::test)]
+async fn benachrichtigungs_mail_trägt_list_unsubscribe_header_und_html_details() {
+    let sender = sender();
+    let gid = GameId(Uuid::nil());
+    let cid = CaptureId(Uuid::nil());
+    let mail = Mail::aufnahme_hochgeladen(
+        EmailAdresse::normalisiert("anna@muster.at").expect("address is valid"),
+        gid,
+        "Sommerfest",
+        cid,
+        "Max",
+        Some("Anna".to_owned()),
+        Some("Lacht laut".to_owned()),
+        false,
+        "unsub-123",
+    );
+
+    let nachricht = sender.baue_nachricht(&mail).expect("the message builds");
+    let roh = String::from_utf8_lossy(&nachricht.formatted()).into_owned();
+    assert!(
+        roh.contains("List-Unsubscribe: <https://friendarazzi.app/abbestellen?token=unsub-123>"),
+        "{roh}"
+    );
+    assert!(
+        roh.contains("List-Unsubscribe-Post: List-Unsubscribe=One-Click"),
+        "{roh}"
+    );
+    let rumpf = entfalte_quoted_printable(&roh);
+    assert!(rumpf.contains("Lacht laut"));
+    assert!(rumpf.contains("NEUER SCHNAPPSCHUSS"));
 }
 
 /// A message that cannot even be built is a delivery failure, never a panic and never a

@@ -138,6 +138,8 @@ pub struct GameSummary {
     pub visibility_mode: VisibilityMode,
     /// Current lifecycle state.
     pub status: GameStatus,
+    /// Whether the caller is subscribed to notifications for this game.
+    pub watching: bool,
     /// Playable tile count per player.
     pub playable_tile_count: u32,
     /// Number of joined players.
@@ -187,6 +189,8 @@ pub struct GameDetail {
     pub visibility_mode: VisibilityMode,
     /// Current lifecycle state.
     pub status: GameStatus,
+    /// Whether the caller is subscribed to notifications for this game.
+    pub watching: bool,
     /// Playable tile count per player.
     pub playable_tile_count: u32,
     /// Shared countdown deadline once all players are ready during Drafting.

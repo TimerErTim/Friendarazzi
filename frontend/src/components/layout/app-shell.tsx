@@ -2,6 +2,7 @@
 
 import {
   Award,
+  Bell,
   CircleAlert,
   LogIn,
   LogOut,
@@ -12,7 +13,11 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/api/auth-provider";
-import { useAuthMutations, useBenutzerQuery } from "@/api/hooks";
+import {
+  useAuthMutations,
+  useBenutzerQuery,
+  useNotificationsQuery,
+} from "@/api/hooks";
 import { Wordmark } from "@/components/brand/wordmark";
 import { PlayerAvatar } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
@@ -32,7 +37,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const phase = useAuth();
   const benutzer = useBenutzerQuery();
+  const notifications = useNotificationsQuery();
   const auth = useAuthMutations();
+  const unreadCount = notifications.data?.unreadCount ?? 0;
   const normalizedPath = pathname.replace(/\/$/, "") || "/";
   const onAuthRoute = ["/anmeldung", "/registrierung", "/passwort"].includes(
     normalizedPath,
@@ -123,6 +130,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {isAuthenticated && benutzer.data ? (
               <>
                 <Link
+                  href={paths.benachrichtigungen}
+                  aria-label={
+                    unreadCount > 0
+                      ? `Benachrichtigungen (${unreadCount} ungelesen)`
+                      : "Benachrichtigungen"
+                  }
+                  title="Benachrichtigungen"
+                  className={cn(
+                    "brutal-shadow-sm relative inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-sm border-2 border-strong px-2.5 py-1 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                    isNavItemActive(pathname, paths.benachrichtigungen, true)
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-surface text-ink hover:bg-surface-muted",
+                  )}
+                >
+                  <Bell className="size-4" aria-hidden="true" />
+                  {unreadCount > 0 ? (
+                    <span className="inline-flex min-w-5 items-center justify-center rounded-sm border border-strong bg-pink px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-pink-foreground tabular-nums">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  ) : null}
+                </Link>
+                <Link
                   href={paths.profil}
                   className="brutal-shadow-sm hidden min-h-11 items-center gap-1.5 rounded-sm border-2 border-strong bg-primary px-3 py-1 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:inline-flex"
                   title="Goldmedaillen"
@@ -167,6 +196,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuItem asChild>
                       <Link href={paths.profil}>
                         <UserRound aria-hidden="true" /> Mein Profil
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href={paths.benachrichtigungen}>
+                        <Bell aria-hidden="true" /> Benachrichtigungen
+                        {unreadCount > 0 ? ` (${unreadCount})` : ""}
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>

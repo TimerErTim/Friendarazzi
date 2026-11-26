@@ -8,8 +8,10 @@ use crate::domain::konto::{
     PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId,
-    InviteCode, NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck,
+    Benachrichtigung, BenachrichtigungId, BenachrichtigungsEinstellungen, Benutzer, BenutzerId,
+    Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId, InviteCode,
+    NeueBenachrichtigung, NeueBenachrichtigungsEinstellungen, NeuerBenutzer, NewBoard, NewCapture,
+    NewGame, StarterDeck,
 };
 
 pub type RepositoryResult<T> = ResultReport<T, RepositoryError>;
@@ -203,4 +205,56 @@ pub trait PasswortWiederherstellungRepository: Send + Sync {
     ) -> RepositoryResult<()>;
 
     async fn delete_by_konto(&self, konto_id: KontoId) -> RepositoryResult<()>;
+}
+
+#[async_trait]
+pub trait BenachrichtigungRepository: Send + Sync {
+    async fn create(
+        &self,
+        benachrichtigung: NeueBenachrichtigung,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>>;
+
+    async fn find_by_id(
+        &self,
+        id: BenachrichtigungId,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>>;
+
+    async fn find_by_empfänger(
+        &self,
+        empfänger_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<Benachrichtigung>>>;
+
+    async fn update(
+        &self,
+        benachrichtigung: &mut Versioned<Benachrichtigung>,
+    ) -> RepositoryResult<()>;
+
+    async fn delete(&self, benachrichtigung: Versioned<Benachrichtigung>) -> RepositoryResult<()>;
+
+    async fn delete_by_benutzer(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
+}
+
+#[async_trait]
+pub trait BenachrichtigungsEinstellungenRepository: Send + Sync {
+    async fn create(
+        &self,
+        einstellungen: NeueBenachrichtigungsEinstellungen,
+    ) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
+
+    async fn find_by_benutzer(
+        &self,
+        benutzer_id: BenutzerId,
+    ) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
+
+    async fn update(
+        &self,
+        einstellungen: &mut Versioned<BenachrichtigungsEinstellungen>,
+    ) -> RepositoryResult<()>;
+
+    async fn delete(
+        &self,
+        einstellungen: Versioned<BenachrichtigungsEinstellungen>,
+    ) -> RepositoryResult<()>;
+
+    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
 }

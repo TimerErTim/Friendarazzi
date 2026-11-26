@@ -52,10 +52,16 @@ export const paths = {
   profil: "/profil",
   users: "/users",
   optionen: "/optionen",
+  benachrichtigungen: "/benachrichtigungen",
+  abbestellen: "/abbestellen",
 } as const;
 
 export function gameHref(gameId: string): string {
   return `${paths.games}?id=${encodeURIComponent(gameId)}`;
+}
+
+export function captureHref(gameId: string, captureId: string): string {
+  return `${paths.games}?id=${encodeURIComponent(gameId)}&capture=${encodeURIComponent(captureId)}`;
 }
 
 export function joinHref(inviteCode: string): string {
@@ -160,6 +166,8 @@ const routeLabels: Record<string, string> = {
   passwort: "Passwort wiederherstellen",
   profil: "Mein Profil",
   optionen: "Optionen",
+  benachrichtigungen: "Benachrichtigungen",
+  abbestellen: "E-Mail abbestellen",
 };
 
 export function breadcrumbsForPathname(

@@ -9,6 +9,8 @@ export {
   useGamesQuery,
   useHealthQuery,
   useMediaObjectUrl,
+  useNotificationPreferencesQuery,
+  useNotificationsQuery,
   useUserGalleryQuery,
   useUserProfileQuery,
 } from "./queries";

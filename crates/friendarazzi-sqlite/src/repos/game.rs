@@ -93,7 +93,7 @@ async fn load_players(
 ) -> RepositoryResult<(Vec<GamePlayer>, HashSet<BenutzerId>)> {
     let mut rows = tx
         .query(
-            r#"SELECT user_id, joined_at, draft_locked FROM "game_player" WHERE game_id = ?1 ORDER BY joined_at ASC, user_id ASC"#,
+            r#"SELECT user_id, joined_at, draft_locked, watching FROM "game_player" WHERE game_id = ?1 ORDER BY joined_at ASC, user_id ASC"#,
             [game_id.0.to_string()],
         )
         .await
@@ -109,6 +109,7 @@ async fn load_players(
         let uid_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
         let joined_raw: String = row.get(1).contextualize(RepositoryError::Data)?;
         let locked_raw: i64 = row.get(2).contextualize(RepositoryError::Data)?;
+        let watching_raw: i64 = row.get(3).contextualize(RepositoryError::Data)?;
         let user_id = BenutzerId(parse_uuid(&uid_raw)?);
         if locked_raw != 0 {
             draft_locked.insert(user_id);
@@ -116,6 +117,7 @@ async fn load_players(
         players.push(GamePlayer {
             user_id,
             joined_at: parse_datetime(&joined_raw)?,
+            watching: watching_raw != 0,
         });
     }
     Ok((players, draft_locked))
@@ -341,11 +343,12 @@ impl GameRepository for SQLiteGameRepository {
 
         for player in domain.players() {
             tx.execute(
-                r#"INSERT INTO "game_player" (game_id, user_id, joined_at, draft_locked) VALUES (?1, ?2, ?3, 0)"#,
+                r#"INSERT INTO "game_player" (game_id, user_id, joined_at, draft_locked, watching) VALUES (?1, ?2, ?3, 0, ?4)"#,
                 (
                     id.0.to_string(),
                     player.user_id.0.to_string(),
                     format_datetime(player.joined_at),
+                    i64::from(player.watching),
                 ),
             )
             .await
@@ -477,14 +480,15 @@ impl GameRepository for SQLiteGameRepository {
         for player in game.players() {
             let is_locked = draft_locked.is_some_and(|set| set.contains(&player.user_id));
             tx.execute(
-                r#"INSERT INTO "game_player" (game_id, user_id, joined_at, draft_locked)
-                   VALUES (?1, ?2, ?3, ?4)
-                   ON CONFLICT (game_id, user_id) DO UPDATE SET draft_locked = excluded.draft_locked"#,
+                r#"INSERT INTO "game_player" (game_id, user_id, joined_at, draft_locked, watching)
+                   VALUES (?1, ?2, ?3, ?4, ?5)
+                   ON CONFLICT (game_id, user_id) DO UPDATE SET draft_locked = excluded.draft_locked, watching = excluded.watching"#,
                 (
                     game.id().0.to_string(),
                     player.user_id.0.to_string(),
                     format_datetime(player.joined_at),
                     i64::from(is_locked),
+                    i64::from(player.watching),
                 ),
             )
             .await

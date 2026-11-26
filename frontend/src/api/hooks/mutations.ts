@@ -4,7 +4,9 @@ import type {
   CreateGameInput,
   DraftPromptRequestItem,
   GameDetail,
+  NotificationsInbox,
   UpdateGameSettingsInput,
+  UpdateNotificationPreferencesInput,
   UpdateProfileInput,
 } from "../friendarazzi-api";
 import { useFriendarazziApi } from "../provider";
@@ -72,6 +74,118 @@ export function useFriendarazziMutations() {
       ...SITE_HANDLED,
       onSuccess: syncGameDetail,
     }),
+    setGameWatch: useMutation({
+      mutationFn: (vars: { gameId: string; watching: boolean }) =>
+        api.gameSetWatch(vars.gameId, vars.watching),
+      ...SITE_HANDLED,
+      onMutate: async (vars) => {
+        const key = friendarazziKeys.games.detail(vars.gameId);
+        await queryClient.cancelQueries({ queryKey: key });
+        const previous = queryClient.getQueryData<GameDetail>(key);
+        if (previous) {
+          queryClient.setQueryData<GameDetail>(key, {
+            ...previous,
+            watching: vars.watching,
+          });
+        }
+        return { previous };
+      },
+      onError: (_err, vars, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(
+            friendarazziKeys.games.detail(vars.gameId),
+            context.previous,
+          );
+        }
+      },
+      onSuccess: syncGameDetail,
+    }),
+    markNotificationRead: useMutation({
+      mutationFn: (notificationId: string) =>
+        api.notificationMarkRead(notificationId),
+      ...SITE_HANDLED,
+      onMutate: async (notificationId) => {
+        const key = friendarazziKeys.notifications.inbox();
+        await queryClient.cancelQueries({ queryKey: key });
+        const previous = queryClient.getQueryData<NotificationsInbox>(key);
+        if (previous) {
+          let decremented = 0;
+          const nowIso = new Date().toISOString();
+          const notifications = previous.notifications.map((item) => {
+            if (item.id === notificationId && !item.readAt) {
+              decremented = 1;
+              return { ...item, readAt: nowIso };
+            }
+            return item;
+          });
+          queryClient.setQueryData<NotificationsInbox>(key, {
+            unreadCount: Math.max(0, previous.unreadCount - decremented),
+            notifications,
+          });
+        }
+        return { previous };
+      },
+      onError: (_err, _vars, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(
+            friendarazziKeys.notifications.inbox(),
+            context.previous,
+          );
+        }
+      },
+      onSettled: () => {
+        void queryClient.invalidateQueries({
+          queryKey: friendarazziKeys.notifications.inbox(),
+        });
+      },
+    }),
+    markAllNotificationsRead: useMutation({
+      mutationFn: () => api.notificationsMarkAllRead(),
+      ...SITE_HANDLED,
+      onMutate: async () => {
+        const key = friendarazziKeys.notifications.inbox();
+        await queryClient.cancelQueries({ queryKey: key });
+        const previous = queryClient.getQueryData<NotificationsInbox>(key);
+        if (previous) {
+          const nowIso = new Date().toISOString();
+          queryClient.setQueryData<NotificationsInbox>(key, {
+            unreadCount: 0,
+            notifications: previous.notifications.map((item) =>
+              item.readAt ? item : { ...item, readAt: nowIso },
+            ),
+          });
+        }
+        return { previous };
+      },
+      onError: (_err, _vars, context) => {
+        if (context?.previous) {
+          queryClient.setQueryData(
+            friendarazziKeys.notifications.inbox(),
+            context.previous,
+          );
+        }
+      },
+      onSettled: () => {
+        void queryClient.invalidateQueries({
+          queryKey: friendarazziKeys.notifications.inbox(),
+        });
+      },
+    }),
+    updateNotificationPreferences: useMutation({
+      mutationFn: (input: UpdateNotificationPreferencesInput) =>
+        api.notificationPreferencesUpdate(input),
+      ...SITE_HANDLED,
+      onSuccess: (updated) => {
+        queryClient.setQueryData(
+          friendarazziKeys.notifications.preferences(),
+          updated,
+        );
+      },
+    }),
+    unsubscribeNotification: useMutation({
+      mutationFn: (token: string) => api.notificationUnsubscribe(token),
+      ...SITE_HANDLED,
+    }),
     submitCapture: useMutation({
       mutationFn: (vars: { gameId: string; tileId: string; file: File }) =>
         api.captureSubmit(vars.gameId, vars.tileId, vars.file),
@@ -130,6 +244,9 @@ export function useAuthMutations() {
     queryClient.removeQueries({ queryKey: friendarazziKeys.benutzer() });
     queryClient.removeQueries({ queryKey: friendarazziKeys.games.all() });
     queryClient.removeQueries({ queryKey: friendarazziKeys.profiles.all() });
+    queryClient.removeQueries({
+      queryKey: friendarazziKeys.notifications.all(),
+    });
   };
 
   return {

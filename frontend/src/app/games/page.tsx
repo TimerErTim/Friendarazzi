@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ChevronDown, Plus } from "lucide-react";
+import { ArrowRight, Bell, BellOff, ChevronDown, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -8,7 +8,11 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
 import { GameStatus } from "@/api/friendarazzi-api";
-import { useGameDetailQuery, useGamesQuery } from "@/api/hooks";
+import {
+  useFriendarazziMutations,
+  useGameDetailQuery,
+  useGamesQuery,
+} from "@/api/hooks";
 import {
   ActivePlayPhase,
   CompletedPhase,
@@ -68,8 +72,10 @@ export default function GamePage() {
   const phase = useAuth();
   const router = useRouter();
   const id = useQueryParam("id");
+  const captureParam = useQueryParam("capture");
   const gamesList = useGamesQuery();
   const detail = useGameDetailQuery(id);
+  const mutations = useFriendarazziMutations();
   const flushPendingSaveRef = useRef<FlushPendingSaveFn | null>(null);
   const [isSwitching, setIsSwitching] = useState(false);
   const [lastGameHintId, setLastGameHintId] = useState<string | null>(null);
@@ -249,63 +255,99 @@ export default function GamePage() {
             </p>
           </div>
 
-          {runningGames.length > 1 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={isSwitching}
-                  className="shrink-0 gap-1.5"
-                >
-                  <span>Runden ({runningGames.length})</span>
-                  {hasOtherActionNeeded ? (
-                    <>
-                      <span
-                        aria-hidden="true"
-                        className="size-2 rounded-full border border-strong bg-primary"
-                      />
-                      <span className="sr-only">
-                        (Aktion in anderem Spiel nötig)
-                      </span>
-                    </>
-                  ) : null}
-                  <ChevronDown className="size-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>Parallele Spiele</DropdownMenuLabel>
-                {runningGames.map((item) => {
-                  const isCurrent = item.id === game.id;
-                  return (
-                    <DropdownMenuItem
-                      key={item.id}
-                      disabled={isCurrent || isSwitching}
-                      onSelect={() => void handleSwitchGame(item.id)}
-                      className="justify-between gap-2"
-                    >
-                      <span className="truncate font-bold">{item.title}</span>
-                      <span className="shrink-0 font-mono text-[11px] text-secondary">
-                        {isCurrent
-                          ? "Aktiv"
-                          : item.needsAction
-                            ? "Aktion"
-                            : shortStatusLabel(item.status)}
-                      </span>
-                    </DropdownMenuItem>
-                  );
-                })}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href={paths.home}>
-                    <Plus className="size-4" aria-hidden="true" />
-                    Alle Lobbys
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant={game.watching ? "secondary" : "ghost"}
+              size="sm"
+              aria-pressed={game.watching}
+              aria-label={
+                game.watching
+                  ? "Benachrichtigungen für dieses Spiel stummschalten"
+                  : "Benachrichtigungen für dieses Spiel aktivieren"
+              }
+              title={
+                game.watching
+                  ? "Benachrichtigungen aktiv (klicken zum Stummschalten)"
+                  : "Benachrichtigungen stumm (klicken zum Aktivieren)"
+              }
+              disabled={mutations.setGameWatch.isPending}
+              onClick={() =>
+                mutations.setGameWatch.mutate({
+                  gameId: game.id,
+                  watching: !game.watching,
+                })
+              }
+              className="shrink-0 gap-1.5"
+            >
+              {game.watching ? (
+                <Bell className="size-4" aria-hidden="true" />
+              ) : (
+                <BellOff className="size-4" aria-hidden="true" />
+              )}
+              <span className="hidden sm:inline">
+                {game.watching ? "Beobachtet" : "Stumm"}
+              </span>
+            </Button>
+
+            {runningGames.length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={isSwitching}
+                    className="shrink-0 gap-1.5"
+                  >
+                    <span>Runden ({runningGames.length})</span>
+                    {hasOtherActionNeeded ? (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className="size-2 rounded-full border border-strong bg-primary"
+                        />
+                        <span className="sr-only">
+                          (Aktion in anderem Spiel nötig)
+                        </span>
+                      </>
+                    ) : null}
+                    <ChevronDown className="size-4" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel>Parallele Spiele</DropdownMenuLabel>
+                  {runningGames.map((item) => {
+                    const isCurrent = item.id === game.id;
+                    return (
+                      <DropdownMenuItem
+                        key={item.id}
+                        disabled={isCurrent || isSwitching}
+                        onSelect={() => void handleSwitchGame(item.id)}
+                        className="justify-between gap-2"
+                      >
+                        <span className="truncate font-bold">{item.title}</span>
+                        <span className="shrink-0 font-mono text-[11px] text-secondary">
+                          {isCurrent
+                            ? "Aktiv"
+                            : item.needsAction
+                              ? "Aktion"
+                              : shortStatusLabel(item.status)}
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href={paths.home}>
+                      <Plus className="size-4" aria-hidden="true" />
+                      Alle Lobbys
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
         </div>
 
         <ol aria-label="Spielphasen" className="grid grid-cols-4 gap-1.5">
@@ -364,9 +406,19 @@ export default function GamePage() {
           }}
         />
       ) : game.status === GameStatus.Active ? (
-        <ActivePlayPhase key={game.id} game={game} />
+        <ActivePlayPhase
+          key={game.id}
+          game={game}
+          initialCaptureId={captureParam || null}
+          onConsumeInitialCapture={() => router.replace(gameHref(game.id))}
+        />
       ) : (
-        <CompletedPhase key={game.id} game={game} />
+        <CompletedPhase
+          key={game.id}
+          game={game}
+          initialCaptureId={captureParam || null}
+          onConsumeInitialCapture={() => router.replace(gameHref(game.id))}
+        />
       )}
     </div>
   );

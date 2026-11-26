@@ -9,12 +9,18 @@ use uuid::Uuid;
 use crate::{
     application::{ExecutionContext, uow::UnitOfWork, uow::Versioned},
     domain::{
-        ActiveGame, BenutzerId, DraftStartOutcome, Game, GameError, GameId, GridSize, InviteCode,
-        MIN_PLAYERS, NewBoard, NewGame, NonEmptyString, PromptSource, PromptSubmission,
-        PromptSubmissionId, VisibilityMode,
+        AbbestellToken, ActiveGame, BenachrichtigungArt, Benutzer, BenutzerId, DraftStartOutcome,
+        Game, GameError, GameId, GridSize, InviteCode, MIN_PLAYERS, NeueBenachrichtigung, NewBoard,
+        NewGame, NonEmptyString, PromptSource, PromptSubmission, PromptSubmissionId,
+        VisibilityMode,
     },
-    ports::RepositoryError,
-    service::UseCase,
+    ports::{Mail, RepositoryError},
+    service::{
+        UseCase,
+        use_cases::benachrichtigung::{
+            create_notification_idempotent, load_default_watch_for_user,
+        },
+    },
 };
 
 const MAX_INVITE_CODE_ATTEMPTS: usize = 8;
@@ -130,11 +136,17 @@ impl UseCase<Game> for CreateGame {
                 }
             };
 
+            let host_watching = load_default_watch_for_user(&uow, host_id)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
             let game = uow
                 .games()
                 .create(NewGame {
                     invite_code,
                     host_user_id: host_id,
+                    host_watching,
                     title: self.title,
                     grid_size: self.grid_size,
                     visibility_mode: self.visibility_mode,
@@ -191,7 +203,12 @@ impl UseCase<Game> for JoinGame {
                 return Err(Report::new(GameUseCaseError::Conflict));
             };
 
-            lobby.join_player(user_id, now);
+            let watching = load_default_watch_for_user(&uow, user_id)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
+            lobby.join_player(user_id, now, watching);
             let mut updated = Versioned::new(version, Game::Lobby(lobby));
             uow.games()
                 .update(&mut updated)
@@ -587,9 +604,77 @@ pub struct StartReadyGamesOutcome {
 }
 
 enum StartCandidateOutcome {
-    Started,
+    Started { mails: Vec<Mail> },
     Rescheduled(DateTime<Utc>),
     Skipped,
+}
+
+async fn collect_game_started_notifications(
+    uow: &UnitOfWork<'_>,
+    active: &ActiveGame,
+    now: DateTime<Utc>,
+    signing: &dyn crate::ports::Signing,
+) -> Result<Vec<Mail>, Report<GameUseCaseError>> {
+    let watching_ids: Vec<BenutzerId> = active
+        .players()
+        .iter()
+        .filter(|p| p.watching)
+        .map(|p| p.user_id)
+        .collect();
+    if watching_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    for &uid in &watching_ids {
+        create_notification_idempotent(
+            uow,
+            NeueBenachrichtigung::spiel_gestartet(uid, active.id(), now),
+        )
+        .await
+        .map_err(IntoReport::into_report)
+        .change_context(GameUseCaseError::Persistence)?;
+    }
+
+    let users = uow
+        .benutzer()
+        .find_by_ids(&watching_ids)
+        .await
+        .map_err(IntoReport::into_report)
+        .change_context(GameUseCaseError::Persistence)?;
+    let user_map: std::collections::HashMap<BenutzerId, Benutzer> = users
+        .into_iter()
+        .map(|b| {
+            let b = b.into_data();
+            (b.id(), b)
+        })
+        .collect();
+
+    let mut mails = Vec::new();
+    for uid in watching_ids {
+        let Some(user) = user_map.get(&uid) else {
+            continue;
+        };
+        let send_email = match uow
+            .benachrichtigungs_einstellungen()
+            .find_by_benutzer(uid)
+            .await
+        {
+            Ok(prefs) => prefs.email_erlaubt(BenachrichtigungArt::SpielGestartet),
+            Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => true,
+            Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+        };
+        if send_email {
+            let token =
+                AbbestellToken::erzeugen(uid, BenachrichtigungArt::SpielGestartet, now, signing);
+            mails.push(Mail::spiel_gestartet(
+                user.email_address().clone(),
+                active.id(),
+                active.title().as_str(),
+                token,
+            ));
+        }
+    }
+    Ok(mails)
 }
 
 /// Finalize all `Drafting` games whose countdown (`draft_closes_at <= now`) has expired,
@@ -685,8 +770,11 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
                         game: active,
                         boards,
                     } => {
+                        let mails =
+                            collect_game_started_notifications(&uow, &active, now, ctx.signing())
+                                .await?;
                         persist_started_game(&uow, version, active, boards).await?;
-                        Ok(StartCandidateOutcome::Started)
+                        Ok(StartCandidateOutcome::Started { mails })
                     }
                     _ => Ok(StartCandidateOutcome::Skipped),
                 }
@@ -694,7 +782,14 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
             .await;
 
             match uow.finish_with(step_result, map_update_repo_err).await {
-                Ok(StartCandidateOutcome::Started) => started_games.push(game_id),
+                Ok(StartCandidateOutcome::Started { mails }) => {
+                    for mail in mails {
+                        if let Err(err) = ctx.mail_sender().send(mail).await {
+                            warn!(fehler = %err, "Benachrichtigungsmail zum Spielstart konnte nicht zugestellt werden");
+                        }
+                    }
+                    started_games.push(game_id);
+                }
                 Ok(StartCandidateOutcome::Rescheduled(at)) => {
                     next_draft_closes_at = Some(match next_draft_closes_at {
                         Some(existing) if existing <= at => existing,

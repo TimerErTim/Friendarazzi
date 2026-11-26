@@ -4,14 +4,16 @@ use async_trait::async_trait;
 use error_stack::Report;
 use friendarazzi_core::{
     ports::{
-        BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
-        EmailBestätigungRepository, GameRepository, KontoRepository,
-        PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
+        BenachrichtigungRepository, BenachrichtigungsEinstellungenRepository, BenutzerRepository,
+        BoardRepository, CaptureRepository, DeckRepository, EmailBestätigungRepository,
+        GameRepository, KontoRepository, PasswortWiederherstellungRepository, RepositoryResult,
+        SessionRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
 };
 
 use crate::repository::{
+    FakeBenachrichtigungRepository, FakeBenachrichtigungsEinstellungenRepository,
     FakeBenutzerRepository, FakeBoardRepository, FakeCaptureRepository, FakeDatastore,
     FakeDeckRepository, FakeEmailBestätigungRepository, FakeGameRepository, FakeKontoRepository,
     FakePasswortWiederherstellungRepository, FakeSessionRepository,
@@ -66,6 +68,8 @@ pub struct FakeUnitOfWork {
     sessions: FakeSessionRepository,
     bestätigungen: FakeEmailBestätigungRepository,
     wiederherstellungen: FakePasswortWiederherstellungRepository,
+    benachrichtigungen: FakeBenachrichtigungRepository,
+    benachrichtigungs_einstellungen: FakeBenachrichtigungsEinstellungenRepository,
 }
 
 impl FakeUnitOfWork {
@@ -87,6 +91,10 @@ impl FakeUnitOfWork {
                 Arc::clone(&transaction_datastore),
             ),
             wiederherstellungen: FakePasswortWiederherstellungRepository::new(
+                transaction_datastore.clone(),
+            ),
+            benachrichtigungen: FakeBenachrichtigungRepository::new(transaction_datastore.clone()),
+            benachrichtigungs_einstellungen: FakeBenachrichtigungsEinstellungenRepository::new(
                 transaction_datastore.clone(),
             ),
             snapshotted_datastore,
@@ -158,6 +166,14 @@ impl UnitOfWorkImpl for FakeUnitOfWork {
 
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository {
         &self.wiederherstellungen
+    }
+
+    fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
+        &self.benachrichtigungen
+    }
+
+    fn benachrichtigungs_einstellungen(&self) -> &dyn BenachrichtigungsEinstellungenRepository {
+        &self.benachrichtigungs_einstellungen
     }
 }
 

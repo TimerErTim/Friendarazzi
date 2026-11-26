@@ -13,13 +13,15 @@ use crate::domain::konto::{
     PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
 };
 use crate::domain::{
-    Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId,
-    InviteCode, NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck,
+    Benachrichtigung, BenachrichtigungId, BenachrichtigungsEinstellungen, Benutzer, BenutzerId,
+    Board, BoardId, Capture, CaptureId, EmailAdresse, Game, GameId, InviteCode,
+    NeueBenachrichtigung, NeueBenachrichtigungsEinstellungen, NeuerBenutzer, NewBoard, NewCapture,
+    NewGame, StarterDeck,
 };
 use crate::ports::{
-    BenutzerRepository, BoardRepository, CaptureRepository, DeckRepository,
-    EmailBestätigungRepository, GameRepository, KontoRepository,
-    PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
+    BenachrichtigungRepository, BenachrichtigungsEinstellungenRepository, BenutzerRepository,
+    BoardRepository, CaptureRepository, DeckRepository, EmailBestätigungRepository, GameRepository,
+    KontoRepository, PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
 };
 
 macro_rules! impl_instrumented_repo {
@@ -237,6 +239,44 @@ impl_instrumented_repo!(
     ]
 );
 
+impl_instrumented_repo!(
+    InstrumentedBenachrichtigungRepository,
+    BenachrichtigungRepository,
+    benachrichtigungen,
+    methods: [
+        #[instrument(skip(self, benachrichtigung), level = "debug", err(Debug))]
+        fn create(&self, benachrichtigung: NeueBenachrichtigung) -> RepositoryResult<Versioned<Benachrichtigung>>;
+        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
+        fn find_by_id(&self, id: BenachrichtigungId) -> RepositoryResult<Versioned<Benachrichtigung>>;
+        #[instrument(skip(self, empfänger_id), fields(empfänger_id = ?empfänger_id), level = "trace", err(Debug))]
+        fn find_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Benachrichtigung>>>;
+        #[instrument(skip(self, benachrichtigung), level = "debug", err(Debug))]
+        fn update(&self, benachrichtigung: &mut Versioned<Benachrichtigung>) -> RepositoryResult<()>;
+        #[instrument(skip(self, benachrichtigung), level = "debug", err(Debug))]
+        fn delete(&self, benachrichtigung: Versioned<Benachrichtigung>) -> RepositoryResult<()>;
+        #[instrument(skip(self, empfänger_id), fields(empfänger_id = ?empfänger_id), level = "debug", err(Debug))]
+        fn delete_by_benutzer(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
+    ]
+);
+
+impl_instrumented_repo!(
+    InstrumentedBenachrichtigungsEinstellungenRepository,
+    BenachrichtigungsEinstellungenRepository,
+    benachrichtigungs_einstellungen,
+    methods: [
+        #[instrument(skip(self, einstellungen), level = "debug", err(Debug))]
+        fn create(&self, einstellungen: NeueBenachrichtigungsEinstellungen) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
+        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
+        fn find_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<Versioned<BenachrichtigungsEinstellungen>>;
+        #[instrument(skip(self, einstellungen), level = "debug", err(Debug))]
+        fn update(&self, einstellungen: &mut Versioned<BenachrichtigungsEinstellungen>) -> RepositoryResult<()>;
+        #[instrument(skip(self, einstellungen), level = "debug", err(Debug))]
+        fn delete(&self, einstellungen: Versioned<BenachrichtigungsEinstellungen>) -> RepositoryResult<()>;
+        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "debug", err(Debug))]
+        fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
+    ]
+);
+
 /// Pinned bundle: instrumented repos hold pointers into `uow` (field order keeps drop safe).
 pub(crate) struct RepoStorage {
     pub(crate) games: InstrumentedGameRepository,
@@ -248,6 +288,9 @@ pub(crate) struct RepoStorage {
     pub(crate) sessions: InstrumentedSessionRepository,
     pub(crate) bestätigungen: InstrumentedEmailBestätigungRepository,
     pub(crate) wiederherstellungen: InstrumentedPasswortWiederherstellungRepository,
+    pub(crate) benachrichtigungen: InstrumentedBenachrichtigungRepository,
+    pub(crate) benachrichtigungs_einstellungen:
+        InstrumentedBenachrichtigungsEinstellungenRepository,
     pub(crate) uow: Box<dyn UnitOfWorkImpl>,
 }
 
@@ -263,6 +306,9 @@ impl RepoStorage {
             sessions: InstrumentedSessionRepository::disabled(),
             bestätigungen: InstrumentedEmailBestätigungRepository::disabled(),
             wiederherstellungen: InstrumentedPasswortWiederherstellungRepository::disabled(),
+            benachrichtigungen: InstrumentedBenachrichtigungRepository::disabled(),
+            benachrichtigungs_einstellungen:
+                InstrumentedBenachrichtigungsEinstellungenRepository::disabled(),
             uow,
         });
 
@@ -279,6 +325,9 @@ impl RepoStorage {
             this.bestätigungen = InstrumentedEmailBestätigungRepository::new(uow_ptr);
             this.wiederherstellungen =
                 InstrumentedPasswortWiederherstellungRepository::new(uow_ptr);
+            this.benachrichtigungen = InstrumentedBenachrichtigungRepository::new(uow_ptr);
+            this.benachrichtigungs_einstellungen =
+                InstrumentedBenachrichtigungsEinstellungenRepository::new(uow_ptr);
         }
 
         pinned

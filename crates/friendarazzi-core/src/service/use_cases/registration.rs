@@ -9,7 +9,7 @@ use tracing::instrument;
 use crate::{
     application::ExecutionContext,
     domain::{
-        EmailAdresse, NeuerBenutzer,
+        EmailAdresse, NeueBenachrichtigungsEinstellungen, NeuerBenutzer,
         konto::{
             KlartextPasswort, NeueBestätigung, NeuesKonto, RefreshToken, SecretToken, hash_password,
         },
@@ -268,6 +268,15 @@ impl UseCase<SessionAusgestellt> for RegistrierungAbschließen {
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(RegistrierungAbschliessenFehler::KontoAnlegen)?;
+
+            uow.benachrichtigungs_einstellungen()
+                .create(NeueBenachrichtigungsEinstellungen::standard(
+                    benutzer.id(),
+                    jetzt,
+                ))
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(RegistrierungAbschliessenFehler::BenutzerAnlegen)?;
 
             uow.bestätigungen()
                 .delete_by_email(&email)

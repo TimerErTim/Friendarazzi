@@ -93,6 +93,29 @@ export function useUserGalleryQuery(userId: string | null) {
   });
 }
 
+export function useNotificationsQuery() {
+  const { api } = useFriendarazziApi();
+  const phase = useAuth();
+  return useQuery({
+    queryKey: friendarazziKeys.notifications.inbox(),
+    queryFn: () => api.notificationsList(),
+    enabled: phase.status === "authenticated",
+    refetchInterval: 10_000,
+    retry: false,
+  });
+}
+
+export function useNotificationPreferencesQuery() {
+  const { api } = useFriendarazziApi();
+  const phase = useAuth();
+  return useQuery({
+    queryKey: friendarazziKeys.notifications.preferences(),
+    queryFn: () => api.notificationPreferencesGet(),
+    enabled: phase.status === "authenticated",
+    retry: false,
+  });
+}
+
 /** Fetch an authenticated media blob and return a managed object URL. */
 export function useMediaObjectUrl(storageKey: string | null | undefined) {
   const { api } = useFriendarazziApi();

@@ -1,5 +1,6 @@
 //! OpenAPI schemas.
 
+mod benachrichtigung;
 mod board;
 mod capture;
 mod deck;
@@ -9,6 +10,7 @@ mod kontakt;
 mod konto;
 mod profile;
 
+pub use benachrichtigung::*;
 pub use board::*;
 pub use capture::*;
 pub use deck::*;

@@ -249,12 +249,14 @@ impl_instrumented_repo!(
         fn find_by_id(&self, id: BenachrichtigungId) -> RepositoryResult<Versioned<Benachrichtigung>>;
         #[instrument(skip(self, empfänger_id), fields(empfänger_id = ?empfänger_id), level = "trace", err(Debug))]
         fn find_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Benachrichtigung>>>;
+        #[instrument(skip(self, token), level = "trace", err(Debug))]
+        fn find_by_abbestell_token(&self, token: &str) -> RepositoryResult<Versioned<Benachrichtigung>>;
         #[instrument(skip(self, benachrichtigung), level = "debug", err(Debug))]
         fn update(&self, benachrichtigung: &mut Versioned<Benachrichtigung>) -> RepositoryResult<()>;
         #[instrument(skip(self, benachrichtigung), level = "debug", err(Debug))]
         fn delete(&self, benachrichtigung: Versioned<Benachrichtigung>) -> RepositoryResult<()>;
         #[instrument(skip(self, empfänger_id), fields(empfänger_id = ?empfänger_id), level = "debug", err(Debug))]
-        fn delete_by_benutzer(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
+        fn delete_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
     ]
 );
 

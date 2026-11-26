@@ -6,10 +6,13 @@ use std::time::Duration as StdDuration;
 use chrono::{DateTime, Utc};
 use friendarazzi_core::{
     App,
+    adapters::InMemorySigning,
     application::{AuthContext, IdentityProviderConfiguration},
-    domain::{BenutzerId, CaptureId, GameId},
+    domain::{BenachrichtigungArt, BenutzerId, CaptureId, GameId, NeueBenachrichtigung},
     ports::{Clock, EventQueue, RepositoryError},
-    service::{CaptureUpdated, Event, GameFinished, GameStarted},
+    service::{
+        BenachrichtigungAbbestellenMitToken, CaptureUploaded, Event, GameFinished, GameStarted,
+    },
 };
 use friendarazzi_fakes::FixedClock;
 use friendarazzi_sqlite::SQLiteInstance;
@@ -38,8 +41,8 @@ fn build_app_on_db(
         .build()
 }
 
-fn sample_event() -> CaptureUpdated {
-    CaptureUpdated {
+fn sample_event() -> CaptureUploaded {
+    CaptureUploaded {
         game_id: GameId(Uuid::new_v4()),
         capture_id: CaptureId(Uuid::new_v4()),
         uploader_id: BenutzerId(Uuid::new_v4()),
@@ -196,4 +199,102 @@ async fn sqlite_event_queue_recovers_stale_processing_and_shuts_down_gracefully(
     assert_eq!(report.failed, 0);
     assert_eq!(queue.pending_count().await.unwrap(), 0);
     assert_eq!(queue.failed_count().await.unwrap(), 0);
+}
+
+#[test_log::test(tokio::test)]
+async fn unsubscribe_token_survives_process_restart_with_fresh_random_signing_key() {
+    let dir = TempDir::new("friendarazzi-unsub-restart-test").unwrap();
+    let db_path = dir.path().join("friendarazzi.db");
+    let clock = Arc::new(FixedClock::new(test_time()));
+
+    let sqlite1 = Arc::new(SQLiteInstance::local(&db_path).await.unwrap());
+    sqlite1.migrate_repos_to_latest().await.unwrap();
+    let mut queue1 = SqliteEventQueue::new(Arc::clone(&sqlite1));
+    queue1.migrate_to_latest().await.unwrap();
+    let app1 = App::builder()
+        .uow_provider(Box::new(Arc::clone(&sqlite1)))
+        .konto(IdentityProviderConfiguration::neu(
+            "friendarazzi.app",
+            "friendarazzi-api",
+        ))
+        .signing(Arc::new(InMemorySigning::random()))
+        .clock(clock.clone() as Arc<dyn Clock>)
+        .event_queue(Arc::new(queue1))
+        .build();
+
+    let (user_id, token) = app1
+        .execute_fn::<_, _, RepositoryError>(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await?;
+            let user = uow
+                .benutzer()
+                .create(friendarazzi_core::domain::NeuerBenutzer::registrierung(
+                    friendarazzi_core::domain::EmailAdresse::normalisiert("restart@example.at")
+                        .unwrap(),
+                    test_time(),
+                ))
+                .await?;
+            let game = uow
+                .games()
+                .create(friendarazzi_core::domain::NewGame {
+                    invite_code: friendarazzi_core::domain::InviteCode::new("RESTART1").unwrap(),
+                    host_user_id: user.id(),
+                    host_watching: true,
+                    title: friendarazzi_core::domain::NonEmptyString::neu("Restart Test").unwrap(),
+                    grid_size: friendarazzi_core::domain::GridSize::Three,
+                    visibility_mode: friendarazzi_core::domain::VisibilityMode::LiveFeed,
+                    created_at: test_time(),
+                })
+                .await?;
+            let notif = uow
+                .benachrichtigungen()
+                .create(NeueBenachrichtigung::spiel_gestartet(
+                    user.id(),
+                    game.id(),
+                    test_time(),
+                ))
+                .await?;
+            uow.commit().await?;
+            Ok((user.id(), notif.abbestell_token().as_str().to_owned()))
+        })
+        .await
+        .unwrap();
+
+    // Simulate process restart with no signingKeyPath configured (fresh throwaway random key).
+    drop(app1);
+    drop(sqlite1);
+
+    let sqlite2 = Arc::new(SQLiteInstance::local(&db_path).await.unwrap());
+    sqlite2.migrate_repos_to_latest().await.unwrap();
+    let mut queue2 = SqliteEventQueue::new(Arc::clone(&sqlite2));
+    queue2.migrate_to_latest().await.unwrap();
+    let app2 = App::builder()
+        .uow_provider(Box::new(Arc::clone(&sqlite2)))
+        .konto(IdentityProviderConfiguration::neu(
+            "friendarazzi.app",
+            "friendarazzi-api",
+        ))
+        .signing(Arc::new(InMemorySigning::random()))
+        .clock(clock as Arc<dyn Clock>)
+        .event_queue(Arc::new(queue2))
+        .build();
+
+    let kind = app2
+        .execute(
+            AuthContext::Anonymous,
+            BenachrichtigungAbbestellenMitToken { token },
+        )
+        .await
+        .unwrap();
+    assert_eq!(kind, BenachrichtigungArt::SpielGestartet);
+
+    let still_allowed = app2
+        .execute_fn::<_, _, RepositoryError>(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await?;
+            let user = uow.benutzer().find_by_id(user_id).await?;
+            uow.rollback().await?;
+            Ok(user.allows_email(BenachrichtigungArt::SpielGestartet))
+        })
+        .await
+        .unwrap();
+    assert!(!still_allowed);
 }

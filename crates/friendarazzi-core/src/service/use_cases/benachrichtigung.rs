@@ -5,9 +5,9 @@ use error_stack::{IntoReport, Report, ResultExt};
 use tracing::{info, instrument};
 
 use crate::{
-    application::{ExecutionContext, uow::UnitOfWork},
+    application::{ExecutionContext, uow::UnitOfWork, uow::Versioned},
     domain::{
-        AbbestellToken, BenachrichtigungArt, BenachrichtigungId, BenachrichtigungsEinstellungen,
+        Benachrichtigung, BenachrichtigungArt, BenachrichtigungId, BenachrichtigungsEinstellungen,
         BenutzerId, Game, GameId, NeueBenachrichtigung,
     },
     ports::RepositoryError,
@@ -39,13 +39,25 @@ pub(crate) async fn load_default_watch_for_user(
     }
 }
 
+/// Persist `neu` once; returns `(row, created)` so retries never resend emails for existing rows.
 pub(crate) async fn create_notification_idempotent(
     uow: &UnitOfWork<'_>,
     neu: NeueBenachrichtigung,
-) -> Result<(), Report<RepositoryError>> {
+) -> Result<(Versioned<Benachrichtigung>, bool), Report<RepositoryError>> {
+    let empfänger_id = neu.empfänger_id;
+    let dedupe_key = neu.dedupe_key.clone();
     match uow.benachrichtigungen().create(neu).await {
-        Ok(_) => Ok(()),
-        Err(err) if matches!(err.current_context(), RepositoryError::Conflict) => Ok(()),
+        Ok(created) => Ok((created, true)),
+        Err(err) if matches!(err.current_context(), RepositoryError::Conflict) => {
+            let existing = uow
+                .benachrichtigungen()
+                .find_by_empfänger(empfänger_id)
+                .await?
+                .into_iter()
+                .find(|n| n.dedupe_key() == &dedupe_key)
+                .ok_or_else(|| Report::new(RepositoryError::NotFound))?;
+            Ok((existing, false))
+        }
         Err(err) => Err(err),
     }
 }
@@ -233,17 +245,37 @@ impl UseCase<BenachrichtigungArt> for BenachrichtigungAbbestellenMitToken {
 
     #[instrument(skip_all, err(Debug))]
     async fn perform(self, ctx: ExecutionContext<'_>) -> Result<BenachrichtigungArt, Self::Error> {
-        let now = ctx.clock().now();
-        let (benutzer_id, art) = AbbestellToken::prüfen(&self.token, ctx.signing(), now)
-            .change_context(BenachrichtigungUseCaseError::InvalidToken)?;
+        let token = self.token.trim();
+        if token.is_empty() {
+            return Err(Report::new(BenachrichtigungUseCaseError::InvalidToken));
+        }
 
+        let now = ctx.clock().now();
         let uow = ctx
             .enter()
             .await
             .change_context(BenachrichtigungUseCaseError::Persistence)?;
 
         let result = async {
-            // Confirm the user still exists; return the generic InvalidToken so deleted accounts cannot be enumerated.
+            let notif = match uow
+                .benachrichtigungen()
+                .find_by_abbestell_token(token)
+                .await
+            {
+                Ok(n) => n,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(BenachrichtigungUseCaseError::InvalidToken));
+                }
+                Err(err) => {
+                    return Err(err).change_context(BenachrichtigungUseCaseError::Persistence);
+                }
+            };
+            if notif.abbestell_token_abgelaufen(now) {
+                return Err(Report::new(BenachrichtigungUseCaseError::InvalidToken));
+            }
+
+            let benutzer_id = notif.empfänger_id();
+            let art = notif.art();
             let mut benutzer = match uow.benutzer().find_by_id(benutzer_id).await {
                 Ok(b) => b,
                 Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
@@ -263,11 +295,11 @@ impl UseCase<BenachrichtigungArt> for BenachrichtigungAbbestellenMitToken {
                 .map_err(IntoReport::into_report)
                 .change_context(BenachrichtigungUseCaseError::Persistence)?;
 
-            Ok::<_, Report<BenachrichtigungUseCaseError>>(art)
+            Ok::<_, Report<BenachrichtigungUseCaseError>>((benutzer_id, art))
         }
         .await;
 
-        let art = uow
+        let (benutzer_id, art) = uow
             .finish(result, BenachrichtigungUseCaseError::Persistence)
             .await?;
         info!(

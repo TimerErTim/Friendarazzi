@@ -11,6 +11,7 @@ mod v0001_konto;
 mod v0002_mvp;
 mod v0003_ready_grace_period;
 mod v0004_benachrichtigungen;
+mod v0005_benachrichtigung_abbestell_token;
 
 type Registry = MigrationRegistry<dyn UpMigration<libsql::Transaction, libsql::Error>>;
 
@@ -21,6 +22,7 @@ pub static MIGRATIONS: LazyLock<Registry> = LazyLock::new(|| {
     registry.add(v0002_mvp::Migration);
     registry.add(v0003_ready_grace_period::Migration);
     registry.add(v0004_benachrichtigungen::Migration);
+    registry.add(v0005_benachrichtigung_abbestell_token::Migration);
     registry
 });
 

@@ -1,4 +1,4 @@
-//! In-app notifications, per-user notification preferences, and signed unsubscribe tokens.
+//! In-app notifications, per-user notification preferences, and persisted unsubscribe tokens.
 
 use std::str::FromStr;
 
@@ -9,14 +9,12 @@ use uuid::Uuid;
 
 use crate::{
     ResultReport,
-    domain::{BenutzerId, CaptureId, GameId, NonEmptyString, konto::Signature},
-    ports::Signing,
+    domain::{BenutzerId, CaptureId, GameId, NonEmptyString, konto::SecretToken},
 };
 
 const CONSTRUCTING: &str = "while constructing benachrichtigung";
-const UNSUBSCRIBE_DOMAIN_PREFIX: &str = "friendarazzi:unsubscribe:v1";
 
-/// Unsubscribe tokens stay valid for 30 days after the email was sent.
+/// Unsubscribe tokens stay valid for 30 days after the notification email was created.
 pub const UNSUBSCRIBE_TOKEN_LIFETIME: Duration = Duration::days(30);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -80,6 +78,7 @@ pub struct NeueBenachrichtigung {
     pub actor_id: Option<BenutzerId>,
     pub target_id: Option<BenutzerId>,
     pub dedupe_key: NonEmptyString,
+    pub abbestell_token: NonEmptyString,
     pub erstellt_am: DateTime<Utc>,
 }
 
@@ -100,6 +99,7 @@ impl NeueBenachrichtigung {
             actor_id: None,
             target_id: None,
             dedupe_key,
+            abbestell_token: AbbestellToken::neu(),
             erstellt_am,
         }
     }
@@ -124,6 +124,7 @@ impl NeueBenachrichtigung {
             actor_id: Some(catcher_id),
             target_id: Some(target_id),
             dedupe_key,
+            abbestell_token: AbbestellToken::neu(),
             erstellt_am,
         }
     }
@@ -145,6 +146,7 @@ impl NeueBenachrichtigung {
             actor_id: Some(winner_id),
             target_id: None,
             dedupe_key,
+            abbestell_token: AbbestellToken::neu(),
             erstellt_am,
         }
     }
@@ -161,6 +163,7 @@ pub struct Benachrichtigung {
     actor_id: Option<BenutzerId>,
     target_id: Option<BenutzerId>,
     dedupe_key: NonEmptyString,
+    abbestell_token: NonEmptyString,
     erstellt_am: DateTime<Utc>,
     gelesen_am: Option<DateTime<Utc>>,
 }
@@ -176,6 +179,7 @@ impl Benachrichtigung {
             actor_id: neu.actor_id,
             target_id: neu.target_id,
             dedupe_key: neu.dedupe_key,
+            abbestell_token: neu.abbestell_token,
             erstellt_am: neu.erstellt_am,
             gelesen_am: None,
         }
@@ -191,12 +195,16 @@ impl Benachrichtigung {
         actor_id: Option<BenutzerId>,
         target_id: Option<BenutzerId>,
         dedupe_key: String,
+        abbestell_token: String,
         erstellt_am: DateTime<Utc>,
         gelesen_am: Option<DateTime<Utc>>,
     ) -> ResultReport<Self, BenachrichtigungFehler> {
         let art = art.parse().map_err(Report::new).attach(CONSTRUCTING)?;
         let dedupe_key = NonEmptyString::neu(dedupe_key)
             .change_context(BenachrichtigungFehler::UngültigerDedupeSchlüssel)
+            .attach(CONSTRUCTING)?;
+        let abbestell_token = NonEmptyString::neu(abbestell_token)
+            .change_context(BenachrichtigungFehler::UngültigesAbbestellToken)
             .attach(CONSTRUCTING)?;
         Ok(Self {
             id,
@@ -207,6 +215,7 @@ impl Benachrichtigung {
             actor_id,
             target_id,
             dedupe_key,
+            abbestell_token,
             erstellt_am,
             gelesen_am,
         })
@@ -244,6 +253,10 @@ impl Benachrichtigung {
         &self.dedupe_key
     }
 
+    pub fn abbestell_token(&self) -> &NonEmptyString {
+        &self.abbestell_token
+    }
+
     pub fn erstellt_am(&self) -> DateTime<Utc> {
         self.erstellt_am
     }
@@ -254,6 +267,10 @@ impl Benachrichtigung {
 
     pub fn ist_ungelesen(&self) -> bool {
         self.gelesen_am.is_none()
+    }
+
+    pub fn abbestell_token_abgelaufen(&self, jetzt: DateTime<Utc>) -> bool {
+        jetzt >= self.erstellt_am + UNSUBSCRIBE_TOKEN_LIFETIME
     }
 
     /// Mark the notification read if still unread; idempotent so first read time survives.
@@ -353,86 +370,22 @@ impl BenachrichtigungsEinstellungen {
     }
 }
 
-/// Signed, expiring one-click email unsubscribe token scoped to one user and one event kind.
+/// CSPRNG token persisted on [`Benachrichtigung`] for one-click email unsubscribe links.
 pub struct AbbestellToken;
 
 impl AbbestellToken {
-    pub fn erzeugen(
-        benutzer_id: BenutzerId,
-        art: BenachrichtigungArt,
-        jetzt: DateTime<Utc>,
-        signing: &dyn Signing,
-    ) -> String {
-        let exp = (jetzt + UNSUBSCRIBE_TOKEN_LIFETIME).timestamp();
-        let payload = format!(
-            "{UNSUBSCRIBE_DOMAIN_PREFIX}:{}:{}:{exp}",
-            benutzer_id.0,
-            art.as_str()
-        );
-        let signature = signing.sign(payload.as_bytes());
-        format!(
-            "{}.{}",
-            hex::encode(payload.as_bytes()),
-            hex::encode(signature.as_bytes())
-        )
-    }
-
-    pub fn prüfen(
-        raw: &str,
-        signing: &dyn Signing,
-        jetzt: DateTime<Utc>,
-    ) -> ResultReport<(BenutzerId, BenachrichtigungArt), BenachrichtigungFehler> {
-        let (payload_hex, sig_hex) = raw
-            .trim()
-            .split_once('.')
-            .ok_or_else(|| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-
-        let sig_bytes = hex::decode(sig_hex)
-            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-        let signature = Signature::from_bytes(&sig_bytes)
-            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-        let payload_bytes = hex::decode(payload_hex)
-            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-
-        signing
-            .verify(&payload_bytes, &signature)
-            .change_context(BenachrichtigungFehler::UngültigesAbbestellToken)?;
-
-        let payload = std::str::from_utf8(&payload_bytes)
-            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-
-        let parts: Vec<&str> = payload.split(':').collect();
-        if parts.len() != 6
-            || format!("{}:{}:{}", parts[0], parts[1], parts[2]) != UNSUBSCRIBE_DOMAIN_PREFIX
-        {
-            return Err(Report::new(
-                BenachrichtigungFehler::UngültigesAbbestellToken,
-            ));
-        }
-
-        let user_uuid = Uuid::parse_str(parts[3])
-            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-        let art: BenachrichtigungArt = parts[4]
-            .parse()
-            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-        let exp_ts: i64 = parts[5]
-            .parse()
-            .map_err(|_| Report::new(BenachrichtigungFehler::UngültigesAbbestellToken))?;
-
-        if jetzt.timestamp() >= exp_ts {
-            return Err(Report::new(
-                BenachrichtigungFehler::UngültigesAbbestellToken,
-            ));
-        }
-
-        Ok((BenutzerId(user_uuid), art))
+    pub fn neu() -> NonEmptyString {
+        let raw = SecretToken::random()
+            .expect("CSPRNG available")
+            .base64url()
+            .to_string();
+        NonEmptyString::neu(raw).expect("base64url SecretToken is non-empty")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::InMemorySigning;
 
     fn jetzt() -> DateTime<Utc> {
         DateTime::from_timestamp(1_700_000_000, 0).unwrap()
@@ -458,6 +411,8 @@ mod tests {
             ),
         );
         assert!(notif.ist_ungelesen());
+        assert!(!notif.abbestell_token_abgelaufen(jetzt() + Duration::days(29)));
+        assert!(notif.abbestell_token_abgelaufen(jetzt() + UNSUBSCRIBE_TOKEN_LIFETIME));
 
         let read_time = jetzt() + Duration::minutes(5);
         notif.als_gelesen_markieren(read_time);
@@ -477,6 +432,7 @@ mod tests {
             notif.actor_id(),
             notif.target_id(),
             notif.dedupe_key().as_str().to_owned(),
+            notif.abbestell_token().as_str().to_owned(),
             notif.erstellt_am(),
             notif.gelesen_am(),
         )
@@ -485,47 +441,27 @@ mod tests {
     }
 
     #[test_log::test]
-    fn abbestell_token_roundtrip_and_rejects_tamper_expiry_wrong_key() {
-        let signing = InMemorySigning::from_secret_bytes(&[7u8; 32]);
-        let other = InMemorySigning::from_secret_bytes(&[9u8; 32]);
-        let uid = BenutzerId(Uuid::new_v4());
+    fn abbestell_token_is_unique_and_from_parts_rejects_empty() {
+        let first = AbbestellToken::neu();
+        let second = AbbestellToken::neu();
+        assert_ne!(first, second);
 
-        let token = AbbestellToken::erzeugen(
-            uid,
-            BenachrichtigungArt::AufnahmeHochgeladen,
+        let err = Benachrichtigung::from_parts(
+            BenachrichtigungId(Uuid::new_v4()),
+            BenutzerId(Uuid::new_v4()),
+            BenachrichtigungArt::SpielGestartet.as_str(),
+            GameId(Uuid::new_v4()),
+            None,
+            None,
+            None,
+            "dedupe".to_owned(),
+            "   ".to_owned(),
             jetzt(),
-            &signing,
-        );
-
-        let (parsed_uid, parsed_art) =
-            AbbestellToken::prüfen(&token, &signing, jetzt() + Duration::days(1)).unwrap();
-        assert_eq!(parsed_uid, uid);
-        assert_eq!(parsed_art, BenachrichtigungArt::AufnahmeHochgeladen);
-
-        // Wrong key fails
+            None,
+        )
+        .unwrap_err();
         assert!(matches!(
-            AbbestellToken::prüfen(&token, &other, jetzt())
-                .unwrap_err()
-                .current_context(),
-            BenachrichtigungFehler::UngültigesAbbestellToken
-        ));
-
-        // Expired fails
-        assert!(matches!(
-            AbbestellToken::prüfen(&token, &signing, jetzt() + UNSUBSCRIBE_TOKEN_LIFETIME)
-                .unwrap_err()
-                .current_context(),
-            BenachrichtigungFehler::UngültigesAbbestellToken
-        ));
-
-        // Tampered payload fails
-        let mut bytes = token.into_bytes();
-        bytes[0] = if bytes[0] == b'a' { b'b' } else { b'a' };
-        let tampered = String::from_utf8(bytes).unwrap();
-        assert!(matches!(
-            AbbestellToken::prüfen(&tampered, &signing, jetzt())
-                .unwrap_err()
-                .current_context(),
+            err.current_context(),
             BenachrichtigungFehler::UngültigesAbbestellToken
         ));
     }

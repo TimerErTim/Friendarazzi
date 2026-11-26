@@ -223,6 +223,11 @@ pub trait BenachrichtigungRepository: Send + Sync {
         empfänger_id: BenutzerId,
     ) -> RepositoryResult<Vec<Versioned<Benachrichtigung>>>;
 
+    async fn find_by_abbestell_token(
+        &self,
+        token: &str,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>>;
+
     async fn update(
         &self,
         benachrichtigung: &mut Versioned<Benachrichtigung>,
@@ -230,5 +235,5 @@ pub trait BenachrichtigungRepository: Send + Sync {
 
     async fn delete(&self, benachrichtigung: Versioned<Benachrichtigung>) -> RepositoryResult<()>;
 
-    async fn delete_by_benutzer(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
+    async fn delete_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
 }

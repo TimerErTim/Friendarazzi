@@ -22,7 +22,7 @@ use crate::{
     },
 };
 
-const SELECT_NOTIF: &str = r#"SELECT id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, erstellt_am, gelesen_am, _version FROM "benachrichtigung""#;
+const SELECT_NOTIF: &str = r#"SELECT id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, abbestell_token, erstellt_am, gelesen_am, _version FROM "benachrichtigung""#;
 
 fn notif_from_row(row: &Row) -> RepositoryResult<Versioned<Benachrichtigung>> {
     let id_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
@@ -33,9 +33,10 @@ fn notif_from_row(row: &Row) -> RepositoryResult<Versioned<Benachrichtigung>> {
     let actor_raw: Option<String> = row.get(5).contextualize(RepositoryError::Data)?;
     let target_raw: Option<String> = row.get(6).contextualize(RepositoryError::Data)?;
     let dedupe_key: String = row.get(7).contextualize(RepositoryError::Data)?;
-    let erstellt_raw: String = row.get(8).contextualize(RepositoryError::Data)?;
-    let gelesen_raw: Option<String> = row.get(9).contextualize(RepositoryError::Data)?;
-    let version = parse_version(row, 10)?;
+    let abbestell_token: Option<String> = row.get(8).contextualize(RepositoryError::Data)?;
+    let erstellt_raw: String = row.get(9).contextualize(RepositoryError::Data)?;
+    let gelesen_raw: Option<String> = row.get(10).contextualize(RepositoryError::Data)?;
+    let version = parse_version(row, 11)?;
 
     let notif = Benachrichtigung::from_parts(
         BenachrichtigungId(parse_uuid(&id_raw)?),
@@ -55,6 +56,7 @@ fn notif_from_row(row: &Row) -> RepositoryResult<Versioned<Benachrichtigung>> {
             .transpose()?
             .map(BenutzerId),
         dedupe_key,
+        abbestell_token.unwrap_or_default(),
         parse_datetime(&erstellt_raw)?,
         gelesen_raw.map(|s| parse_datetime(&s)).transpose()?,
     )
@@ -81,8 +83,8 @@ impl BenachrichtigungRepository for SQLiteBenachrichtigungRepository {
 
         tx.execute(
             r#"INSERT INTO "benachrichtigung"
-               (id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, erstellt_am, gelesen_am, _version)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0)"#,
+               (id, empfaenger_id, art, game_id, capture_id, actor_id, target_id, dedupe_key, abbestell_token, erstellt_am, gelesen_am, _version)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0)"#,
             (
                 id.0.to_string(),
                 domain.empfänger_id().0.to_string(),
@@ -92,6 +94,7 @@ impl BenachrichtigungRepository for SQLiteBenachrichtigungRepository {
                 domain.actor_id().map(|u| u.0.to_string()),
                 domain.target_id().map(|u| u.0.to_string()),
                 domain.dedupe_key().as_str(),
+                domain.abbestell_token().as_str(),
                 format_datetime(domain.erstellt_am()),
                 domain.gelesen_am().map(format_datetime),
             ),
@@ -156,6 +159,32 @@ impl BenachrichtigungRepository for SQLiteBenachrichtigungRepository {
         Ok(out)
     }
 
+    async fn find_by_abbestell_token(
+        &self,
+        token: &str,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>> {
+        let mut guard = self.tx.lock().await;
+        let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
+
+        let mut rows = tx
+            .query(
+                &format!(r#"{SELECT_NOTIF} WHERE abbestell_token = ?1"#),
+                [token],
+            )
+            .await
+            .contextualize_with(libsql_error_to_persistence_error)?;
+
+        let Some(row) = rows
+            .next()
+            .await
+            .contextualize_with(libsql_error_to_persistence_error)?
+        else {
+            return Err(RepositoryError::NotFound.into());
+        };
+
+        notif_from_row(&row)
+    }
+
     async fn update(
         &self,
         benachrichtigung: &mut Versioned<Benachrichtigung>,
@@ -197,7 +226,7 @@ impl BenachrichtigungRepository for SQLiteBenachrichtigungRepository {
         .await
     }
 
-    async fn delete_by_benutzer(&self, empfänger_id: BenutzerId) -> RepositoryResult<()> {
+    async fn delete_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<()> {
         let mut guard = self.tx.lock().await;
         let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
 

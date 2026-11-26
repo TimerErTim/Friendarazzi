@@ -11,8 +11,8 @@ use friendarazzi_core::{
     adapters::InMemoryThrottle,
     application::AuthContext,
     domain::{
-        AbbestellToken, BenachrichtigungArt, GridSize, NonEmptyString, VisibilityMode,
-        konto::KlartextPasswort,
+        BenachrichtigungArt, CaptureId, GridSize, NeueBenachrichtigung, NonEmptyString,
+        VisibilityMode, konto::KlartextPasswort,
     },
     ports::{Mail, MailError, MailSender, RepositoryError},
     service::{
@@ -278,46 +278,6 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
     assert!(!prefs.email_spiel_gestartet().aktiv);
     assert!(prefs.email_aufnahme_hochgeladen().aktiv);
 
-    // Carol unsubscribes from capture emails via signed token; expired token fails.
-    let valid_token = AbbestellToken::erzeugen(
-        carol_id,
-        BenachrichtigungArt::AufnahmeHochgeladen,
-        harness.jetzt(),
-        harness.app().signing.as_ref(),
-    );
-    let unsub_art = harness
-        .app()
-        .execute(
-            AuthContext::Anonymous,
-            BenachrichtigungAbbestellenMitToken {
-                token: valid_token.clone(),
-            },
-        )
-        .await
-        .unwrap();
-    assert_eq!(unsub_art, BenachrichtigungArt::AufnahmeHochgeladen);
-
-    let expired_token = AbbestellToken::erzeugen(
-        carol_id,
-        BenachrichtigungArt::SpielBeendet,
-        harness.jetzt() - Duration::days(31),
-        harness.app().signing.as_ref(),
-    );
-    let err = harness
-        .app()
-        .execute(
-            AuthContext::Anonymous,
-            BenachrichtigungAbbestellenMitToken {
-                token: expired_token,
-            },
-        )
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        err.current_context(),
-        BenachrichtigungUseCaseError::InvalidToken
-    ));
-
     // Create & join game: Bob's initial watching state follows his account default (false)!
     let created = harness
         .app()
@@ -332,6 +292,69 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
         .await
         .unwrap();
     assert_eq!(created.player_watching(user_id_of(alice)), Some(true));
+
+    // Carol unsubscribes from capture emails via persisted notification token; expired notification fails.
+    let created_game_id = created.id();
+    let now = harness.jetzt();
+    let (valid_token, expired_token) = harness
+        .app()
+        .execute_fn(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let valid = uow
+                .benachrichtigungen()
+                .create(NeueBenachrichtigung::aufnahme_hochgeladen(
+                    carol_id,
+                    created_game_id,
+                    CaptureId(uuid::Uuid::new_v4()),
+                    user_id_of(alice),
+                    carol_id,
+                    now,
+                ))
+                .await
+                .unwrap();
+            let expired = uow
+                .benachrichtigungen()
+                .create(NeueBenachrichtigung::spiel_beendet(
+                    carol_id,
+                    created_game_id,
+                    user_id_of(alice),
+                    now - Duration::days(31),
+                ))
+                .await
+                .unwrap();
+            uow.commit().await.unwrap();
+            Ok::<_, Report<RepositoryError>>((
+                valid.abbestell_token().as_str().to_owned(),
+                expired.abbestell_token().as_str().to_owned(),
+            ))
+        })
+        .await
+        .unwrap();
+
+    let unsub_art = harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            BenachrichtigungAbbestellenMitToken { token: valid_token },
+        )
+        .await
+        .unwrap();
+    assert_eq!(unsub_art, BenachrichtigungArt::AufnahmeHochgeladen);
+
+    let err = harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            BenachrichtigungAbbestellenMitToken {
+                token: expired_token,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        BenachrichtigungUseCaseError::InvalidToken
+    ));
 
     let joined_bob = harness
         .app()

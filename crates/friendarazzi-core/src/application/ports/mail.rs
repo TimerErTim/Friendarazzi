@@ -1,6 +1,9 @@
 use crate::application::ResultReport;
 use crate::domain::{CaptureId, EmailAdresse, GameId};
 
+// TODO: replace the inline HTML rendering in `Mail::html` with Tera template resources (`*.html`)
+// stored next to the source files, embedded into the binary, and populated from `MailArt` fields.
+
 /// What a transaction or notification mail is about.
 ///
 /// The use case names the *kind* and carries domain identifiers/tokens; it never builds a

@@ -7,7 +7,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use error_stack::ResultExt;
 use friendarazzi_core::domain::{BenutzerId, CaptureId, GameId};
 use friendarazzi_core::ports::{EventQueue, EventQueueError};
-use friendarazzi_core::service::{CaptureUpdated, Event, GameFinished, GameStarted};
+use friendarazzi_core::service::{CaptureUploaded, Event, GameFinished, GameStarted};
 use friendarazzi_core::{ErrorReportExt, ResultReport};
 use molting::{AppliableMigration, MigrationTarget};
 use serde::{Deserialize, Serialize};
@@ -35,7 +35,7 @@ enum PersistedEvent {
         game_id: Uuid,
         started_at: DateTime<Utc>,
     },
-    CaptureUpdated {
+    CaptureUploaded {
         game_id: Uuid,
         capture_id: Uuid,
         uploader_id: Uuid,
@@ -56,7 +56,7 @@ impl From<&Event> for PersistedEvent {
                 game_id: ev.game_id.0,
                 started_at: ev.started_at,
             },
-            Event::CaptureUpdated(ev) => Self::CaptureUpdated {
+            Event::CaptureUploaded(ev) => Self::CaptureUploaded {
                 game_id: ev.game_id.0,
                 capture_id: ev.capture_id.0,
                 uploader_id: ev.uploader_id.0,
@@ -82,13 +82,13 @@ impl From<PersistedEvent> for Event {
                 game_id: GameId(game_id),
                 started_at,
             })),
-            PersistedEvent::CaptureUpdated {
+            PersistedEvent::CaptureUploaded {
                 game_id,
                 capture_id,
                 uploader_id,
                 target_id,
                 occurred_at,
-            } => Event::CaptureUpdated(Box::new(CaptureUpdated {
+            } => Event::CaptureUploaded(Box::new(CaptureUploaded {
                 game_id: GameId(game_id),
                 capture_id: CaptureId(capture_id),
                 uploader_id: BenutzerId(uploader_id),

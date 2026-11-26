@@ -946,7 +946,9 @@ impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
     ) -> RepositoryResult<Versioned<Benachrichtigung>> {
         let mut map = self.datastore.benachrichtigungen();
         if map.values().any(|existing| {
-            existing.empfänger_id() == neu.empfänger_id && existing.dedupe_key() == &neu.dedupe_key
+            (existing.empfänger_id() == neu.empfänger_id
+                && existing.dedupe_key() == &neu.dedupe_key)
+                || existing.abbestell_token() == &neu.abbestell_token
         }) {
             return Err(Report::new(RepositoryError::Conflict));
         }
@@ -986,6 +988,18 @@ impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
         Ok(list)
     }
 
+    async fn find_by_abbestell_token(
+        &self,
+        token: &str,
+    ) -> RepositoryResult<Versioned<Benachrichtigung>> {
+        self.datastore
+            .benachrichtigungen()
+            .values()
+            .find(|n| n.abbestell_token().as_str() == token)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
     async fn update(
         &self,
         benachrichtigung: &mut Versioned<Benachrichtigung>,
@@ -1020,7 +1034,7 @@ impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
         Ok(())
     }
 
-    async fn delete_by_benutzer(&self, empfänger_id: BenutzerId) -> RepositoryResult<()> {
+    async fn delete_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<()> {
         self.datastore
             .benachrichtigungen()
             .retain(|_, n| n.empfänger_id() != empfänger_id);

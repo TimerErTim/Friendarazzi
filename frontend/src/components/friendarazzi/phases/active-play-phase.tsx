@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { newestCapturesFirst } from "@/lib/capture-feed";
 import { cn } from "@/lib/cn";
 import { normalizeImageForUpload } from "@/lib/media-capture";
 
@@ -101,9 +102,10 @@ export function ActivePlayPhase({
     totalCount > 0 ? Math.round((capturedCount / totalCount) * 100) : 0;
 
   const isUploading = isPreparingUpload || mutations.submitCapture.isPending;
+  const newestFirstFeed = newestCapturesFirst(game.feed);
   const visibleFeed = showAllFeed
-    ? game.feed
-    : game.feed.slice(0, INITIAL_FEED_ITEMS);
+    ? newestFirstFeed
+    : newestFirstFeed.slice(0, INITIAL_FEED_ITEMS);
   const hiddenFeedCount = Math.max(0, game.feed.length - visibleFeed.length);
 
   async function submitTilePhoto() {
@@ -250,7 +252,10 @@ export function ActivePlayPhase({
                         {item.catcher.displayName}
                       </span>
                       <span className="font-mono text-secondary tabular-nums">
-                        {new Date(item.capturedAt).toLocaleTimeString("de-AT", {
+                        {new Date(item.capturedAt).toLocaleString("de-AT", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
                         })}

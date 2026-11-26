@@ -10,11 +10,12 @@ use crate::application::instrumented_repos::RepoStorage;
 use crate::application::uow::UnitOfWorkImpl;
 use crate::ports::{
     BenutzerRepository, BoardRepository, CaptureRepository, ClientKey, DeckRepository,
-    EmailBestätigungRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
-    ObjectStore, ObjectStoreError, ObjectStream, PasswortWiederherstellungRepository, PdfDokument,
-    PdfRenderError, PdfRenderer, RepositoryResult, RngSource, SessionRepository, Throttle,
-    ThrottleAction, ThrottleError,
+    EmailBestätigungRepository, EventQueue, EventQueueError, GameRepository, KontoRepository, Mail,
+    MailError, MailSender, ObjectStore, ObjectStoreError, ObjectStream,
+    PasswortWiederherstellungRepository, PdfDokument, PdfRenderError, PdfRenderer,
+    RepositoryResult, RngSource, SessionRepository, Throttle, ThrottleAction, ThrottleError,
 };
+use crate::service::Event;
 
 #[derive(Clone)]
 pub struct InstrumentedObjectStore {
@@ -220,5 +221,24 @@ impl RngSource for InstrumentedRngSource {
     fn rng(&self) -> Box<dyn Rng + '_> {
         trace!("rng requested");
         self.inner.rng()
+    }
+}
+
+#[derive(Clone)]
+pub struct InstrumentedEventQueue {
+    inner: Arc<dyn EventQueue>,
+}
+
+impl InstrumentedEventQueue {
+    pub fn new(inner: Arc<dyn EventQueue>) -> Arc<dyn EventQueue> {
+        Arc::new(Self { inner })
+    }
+}
+
+#[async_trait]
+impl EventQueue for InstrumentedEventQueue {
+    #[instrument(skip(self, events), fields(count = events.len()), level = "debug", err(Debug))]
+    async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
+        self.inner.enqueue(events).await
     }
 }

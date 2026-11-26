@@ -138,8 +138,24 @@ pub struct GameSummary {
     pub visibility_mode: VisibilityMode,
     /// Current lifecycle state.
     pub status: GameStatus,
+    /// Playable tile count per player.
+    pub playable_tile_count: u32,
     /// Number of joined players.
     pub player_count: u32,
+    /// Caller's captured tile count during Active/Completed play (own board only).
+    pub my_captured_tiles: Option<u32>,
+    /// Caller's saved prompt count during Drafting.
+    pub my_draft_filled: Option<u32>,
+    /// Whether the caller has locked prompts during Drafting.
+    pub my_draft_locked: Option<bool>,
+    /// Number of players locked in during Drafting.
+    pub ready_player_count: Option<u32>,
+    /// Whether the caller currently has a pending action (e.g. start drafting or lock prompts).
+    pub needs_action: bool,
+    /// Shared countdown deadline once all players are ready during Drafting.
+    pub draft_closes_at: Option<DateTime<Utc>>,
+    /// Server clock timestamp when this summary was generated.
+    pub server_now: DateTime<Utc>,
     /// Winner badge if completed.
     pub winner: Option<PlayerBadge>,
     /// Timestamp when active play started.
@@ -173,6 +189,10 @@ pub struct GameDetail {
     pub status: GameStatus,
     /// Playable tile count per player.
     pub playable_tile_count: u32,
+    /// Shared countdown deadline once all players are ready during Drafting.
+    pub draft_closes_at: Option<DateTime<Utc>>,
+    /// Server clock timestamp when this detail was generated.
+    pub server_now: DateTime<Utc>,
     /// Timestamp when active play started.
     pub started_at: Option<DateTime<Utc>>,
     /// Timestamp when Bingo was achieved.

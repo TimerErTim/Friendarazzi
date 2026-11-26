@@ -9,6 +9,7 @@ use crate::SQLiteConnection;
 
 mod v0001_konto;
 mod v0002_mvp;
+mod v0003_ready_grace_period;
 
 type Registry = MigrationRegistry<dyn UpMigration<libsql::Transaction, libsql::Error>>;
 
@@ -17,6 +18,7 @@ pub static MIGRATIONS: LazyLock<Registry> = LazyLock::new(|| {
     let mut registry: Registry = MigrationRegistry::new();
     registry.add(v0001_konto::Migration);
     registry.add(v0002_mvp::Migration);
+    registry.add(v0003_ready_grace_period::Migration);
     registry
 });
 

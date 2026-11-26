@@ -78,6 +78,8 @@ impl_instrumented_repo!(
         fn find_by_invite_code(&self, code: &InviteCode) -> RepositoryResult<Versioned<Game>>;
         #[instrument(skip(self, user_id), fields(user_id = ?user_id), level = "trace", err(Debug))]
         fn find_by_participating_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Game>>>;
+        #[instrument(skip(self), level = "trace", err(Debug))]
+        fn find_drafting_with_countdown(&self) -> RepositoryResult<Vec<Versioned<Game>>>;
         #[instrument(skip(self, game), level = "debug", err(Debug))]
         fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()>;
     ]

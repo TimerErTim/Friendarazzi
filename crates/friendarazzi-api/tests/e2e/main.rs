@@ -609,5 +609,22 @@ pub async fn enroll_and_start_game(
         assert_eq!(st, StatusCode::OK);
     }
 
+    harness.vorspulen(Duration::seconds(60));
+    harness
+        .client
+        .app()
+        .execute(
+            friendarazzi_core::application::AuthContext::Anonymous,
+            friendarazzi_core::service::StartReadyGames,
+        )
+        .await
+        .unwrap();
+    let (st, detail) = harness
+        .client
+        .get_json_auth(&format!("/api/games/{game_id}"), host_token)
+        .await;
+    assert_eq!(st, StatusCode::OK, "{detail}");
+    assert_eq!(detail["status"], "Active");
+
     (game_id, invite_code)
 }

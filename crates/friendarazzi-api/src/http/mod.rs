@@ -302,9 +302,9 @@ impl FriendarazziApiSpec {
             .into()
     }
 
-    /// Lock in the caller's draft prompts and start active play when all players are locked.
+    /// Mark the caller ready during drafting and start the shared 60-second countdown once all players lock.
     ///
-    /// Validates equal-distribution quotas and generates conflict-free Bingo boards once everyone locks.
+    /// Validates equal-distribution quotas and begins the 60-second pre-game grace period once every player is ready.
     #[oai(
         path = "/games/:game_id/prompts/lock",
         method = "post",
@@ -321,6 +321,29 @@ impl FriendarazziApiSpec {
             .unwrap_or(AuthContext::Anonymous);
         self.app_api
             .game_lock_prompts(auth, GameId(game_id.0))
+            .await
+            .into()
+    }
+
+    /// Withdraw the caller's readiness lock before play starts and cancel any pending countdown.
+    ///
+    /// Preserves the caller's saved prompts so they can edit again before locking back in.
+    #[oai(
+        path = "/games/:game_id/prompts/unlock",
+        method = "post",
+        tag = "ApiTag::Games"
+    )]
+    async fn game_unlock_prompts(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_unlock_prompts(auth, GameId(game_id.0))
             .await
             .into()
     }

@@ -1,16 +1,17 @@
 //! Game lobby, joining, settings, drafting, and board assembly use cases.
 
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use error_stack::{IntoReport, Report, ResultExt};
-use tracing::{error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::{
-    application::{ExecutionContext, uow::Versioned},
+    application::{ExecutionContext, uow::UnitOfWork, uow::Versioned},
     domain::{
-        BenutzerId, DraftLockOutcome, Game, GameError, GameId, GridSize, InviteCode, MIN_PLAYERS,
-        NewGame, NonEmptyString, PromptSource, PromptSubmission, PromptSubmissionId,
-        VisibilityMode,
+        ActiveGame, BenutzerId, DraftStartOutcome, Game, GameError, GameId, GridSize, InviteCode,
+        MIN_PLAYERS, NewBoard, NewGame, NonEmptyString, PromptSource, PromptSubmission,
+        PromptSubmissionId, VisibilityMode,
     },
     ports::RepositoryError,
     service::UseCase,
@@ -36,7 +37,18 @@ pub enum GameUseCaseError {
     Persistence,
 }
 
-fn map_game_error(err: &GameError) -> GameUseCaseError {
+fn map_update_repo_err(err: &Report<RepositoryError>) -> GameUseCaseError {
+    if matches!(
+        err.current_context(),
+        RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
+    ) {
+        GameUseCaseError::Conflict
+    } else {
+        GameUseCaseError::Persistence
+    }
+}
+
+pub(crate) fn map_game_error(err: &GameError) -> GameUseCaseError {
     match err {
         GameError::EmptyTitle
         | GameError::InvalidInviteCode
@@ -310,13 +322,16 @@ impl UseCase<Game> for StartDrafting {
                 .update(&mut updated)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
 
             Ok::<_, Report<GameUseCaseError>>(updated.into_data())
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
     }
 }
 
@@ -343,6 +358,7 @@ impl UseCase<()> for SaveDraftPrompts {
             .auth()
             .require_benutzer_id()
             .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
         let uow = ctx
             .enter()
             .await
@@ -386,7 +402,7 @@ impl UseCase<()> for SaveDraftPrompts {
             }
 
             drafting
-                .save_author_prompts(user_id, submissions)
+                .save_author_prompts(user_id, submissions, now)
                 .map_err(|e| {
                     let mapped = map_game_error(e.current_context());
                     e.change_context(mapped)
@@ -397,13 +413,16 @@ impl UseCase<()> for SaveDraftPrompts {
                 .update(&mut updated)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
 
             Ok::<_, Report<GameUseCaseError>>(())
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
     }
 }
 
@@ -442,48 +461,264 @@ impl UseCase<Game> for LockDraftPrompts {
             }
 
             let version = game.v();
-            let Game::Drafting(drafting) = game.into_data() else {
+            let Game::Drafting(mut drafting) = game.into_data() else {
                 return Err(Report::new(GameUseCaseError::Conflict));
             };
 
-            let outcome = {
-                let mut rng = ctx.rng();
-                drafting
-                    .lock_author_prompts(user_id, now, &mut *rng)
-                    .map_err(|e| {
-                        let mapped = map_game_error(e.current_context());
-                        e.change_context(mapped)
-                    })?
-            };
+            drafting.lock_author_prompts(user_id, now).map_err(|e| {
+                let mapped = map_game_error(e.current_context());
+                e.change_context(mapped)
+            })?;
 
-            let next_game = match outcome {
-                DraftLockOutcome::StillDrafting(d) => Game::Drafting(d),
-                DraftLockOutcome::Started {
-                    game: active,
-                    boards,
-                } => {
-                    for new_board in boards {
-                        uow.boards()
-                            .create(new_board)
-                            .await
-                            .map_err(IntoReport::into_report)
-                            .change_context(GameUseCaseError::Persistence)?;
-                    }
-                    Game::Active(active)
-                }
-            };
-
-            let mut updated = Versioned::new(version, next_game);
+            let mut updated = Versioned::new(version, Game::Drafting(drafting));
             uow.games()
                 .update(&mut updated)
                 .await
                 .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
 
             Ok::<_, Report<GameUseCaseError>>(updated.into_data())
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct UnlockDraftPrompts {
+    pub game_id: GameId,
+}
+
+#[async_trait]
+impl UseCase<Game> for UnlockDraftPrompts {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(GameUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+
+            if !game.has_player(user_id) {
+                return Err(Report::new(GameUseCaseError::Forbidden));
+            }
+
+            let version = game.v();
+            let Game::Drafting(mut drafting) = game.into_data() else {
+                return Err(Report::new(GameUseCaseError::Conflict));
+            };
+
+            drafting.unlock_author_prompts(user_id, now).map_err(|e| {
+                let mapped = map_game_error(e.current_context());
+                e.change_context(mapped)
+            })?;
+
+            let mut updated = Versioned::new(version, Game::Drafting(drafting));
+            uow.games()
+                .update(&mut updated)
+                .await
+                .map_err(IntoReport::into_report)
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
+
+            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+        }
+        .await;
+
+        uow.finish_with(result, map_update_repo_err).await
+    }
+}
+
+pub(crate) async fn persist_started_game(
+    uow: &UnitOfWork<'_>,
+    version: u64,
+    active: ActiveGame,
+    boards: Vec<NewBoard>,
+) -> Result<Game, Report<GameUseCaseError>> {
+    for new_board in boards {
+        uow.boards()
+            .create(new_board)
+            .await
+            .map_err(IntoReport::into_report)
+            .map_err(|err| {
+                if matches!(err.current_context(), RepositoryError::Conflict) {
+                    err.change_context(GameUseCaseError::Conflict)
+                } else {
+                    err.change_context(GameUseCaseError::Persistence)
+                }
+            })?;
+    }
+    let mut updated = Versioned::new(version, Game::Active(active));
+    uow.games()
+        .update(&mut updated)
+        .await
+        .map_err(IntoReport::into_report)
+        .map_err(|err| {
+            let mapped = map_update_repo_err(&err);
+            err.change_context(mapped)
+        })?;
+    Ok(updated.into_data())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StartReadyGamesOutcome {
+    pub started_games: Vec<GameId>,
+    pub next_draft_closes_at: Option<DateTime<Utc>>,
+}
+
+enum StartCandidateOutcome {
+    Started,
+    Rescheduled(DateTime<Utc>),
+    Skipped,
+}
+
+/// Finalize all `Drafting` games whose countdown (`draft_closes_at <= now`) has expired,
+/// returning the started game IDs and the earliest remaining pending countdown deadline.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct StartReadyGames;
+
+#[async_trait]
+impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(
+        self,
+        ctx: ExecutionContext<'_>,
+    ) -> Result<StartReadyGamesOutcome, Self::Error> {
+        let now = ctx.clock().now();
+        let read_uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let scan_result = async {
+            let candidates = read_uow
+                .games()
+                .find_drafting_with_countdown()
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
+            let mut ready_ids = Vec::new();
+            let mut next_draft_closes_at: Option<DateTime<Utc>> = None;
+
+            for versioned in candidates {
+                let Game::Drafting(drafting) = versioned.into_data() else {
+                    continue;
+                };
+                if drafting.is_ready_to_start(now) {
+                    ready_ids.push(drafting.id());
+                } else if let Some(at) = drafting.draft_closes_at() {
+                    next_draft_closes_at = Some(match next_draft_closes_at {
+                        Some(existing) if existing <= at => existing,
+                        _ => at,
+                    });
+                }
+            }
+
+            Ok::<_, Report<GameUseCaseError>>((ready_ids, next_draft_closes_at))
+        }
+        .await;
+
+        let (ready_ids, mut next_draft_closes_at) = read_uow
+            .finish(scan_result, GameUseCaseError::Persistence)
+            .await?;
+
+        let mut started_games = Vec::new();
+
+        for game_id in ready_ids {
+            // Isolate each game's transition in its own UoW so a conflict rolls back only that game.
+            let uow = ctx
+                .enter()
+                .await
+                .change_context(GameUseCaseError::Persistence)?;
+
+            let step_result = async {
+                let versioned = match uow.games().find_by_id(game_id).await {
+                    Ok(g) => g,
+                    Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                        return Ok(StartCandidateOutcome::Skipped);
+                    }
+                    Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+                };
+
+                let version = versioned.v();
+                let Game::Drafting(drafting) = versioned.into_data() else {
+                    return Ok(StartCandidateOutcome::Skipped);
+                };
+                if !drafting.is_ready_to_start(now) {
+                    return Ok(match drafting.draft_closes_at() {
+                        Some(at) => StartCandidateOutcome::Rescheduled(at),
+                        None => StartCandidateOutcome::Skipped,
+                    });
+                }
+
+                let outcome = {
+                    let mut rng = ctx.rng();
+                    drafting.finalize_ready_start(now, &mut *rng).map_err(|e| {
+                        let mapped = map_game_error(e.current_context());
+                        e.change_context(mapped)
+                    })?
+                };
+                match outcome {
+                    DraftStartOutcome::Started {
+                        game: active,
+                        boards,
+                    } => {
+                        persist_started_game(&uow, version, active, boards).await?;
+                        Ok(StartCandidateOutcome::Started)
+                    }
+                    _ => Ok(StartCandidateOutcome::Skipped),
+                }
+            }
+            .await;
+
+            match uow.finish_with(step_result, map_update_repo_err).await {
+                Ok(StartCandidateOutcome::Started) => started_games.push(game_id),
+                Ok(StartCandidateOutcome::Rescheduled(at)) => {
+                    next_draft_closes_at = Some(match next_draft_closes_at {
+                        Some(existing) if existing <= at => existing,
+                        _ => at,
+                    });
+                }
+                Ok(StartCandidateOutcome::Skipped) => {}
+                Err(err) if matches!(err.current_context(), GameUseCaseError::Conflict) => {
+                    debug!(
+                        ?game_id,
+                        "ready game start raced with concurrent update; skipping"
+                    );
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        if !started_games.is_empty() {
+            info!(count = started_games.len(), "started ready games");
+        }
+
+        Ok(StartReadyGamesOutcome {
+            started_games,
+            next_draft_closes_at,
+        })
     }
 }

@@ -125,7 +125,7 @@ export function PlayerBadgeLink({
             {user.displayName}
           </span>
           {user.isHost ? (
-            <Badge variant="primary" className="gap-1">
+            <Badge variant="outline" className="gap-1">
               <Crown className="size-3" aria-hidden="true" /> Host
             </Badge>
           ) : null}

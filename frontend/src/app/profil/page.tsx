@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Upload } from "lucide-react";
+import { Award, Camera, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -79,39 +79,40 @@ export default function ProfilePage() {
         <>
           {/* Player Trading Card Hero */}
           <section className="brutal-shadow-lg overflow-hidden rounded-md border-[2.5px] border-strong bg-surface">
-            <div className="flex flex-wrap items-center justify-between gap-6 border-b-2 border-strong bg-primary p-6 text-primary-foreground">
-              <div className="flex items-center gap-4">
-                <PlayerAvatar user={profile} size="lg" linkToProfile={false} />
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="font-display text-2xl tracking-tight sm:text-3xl">
-                      {profile.displayName}
-                    </h1>
-                    <Badge variant="info">{profile.effectiveTitle}</Badge>
-                  </div>
-                  <p className="font-mono text-xs font-bold">
-                    Dein Friendarazzi-Paparazzi-Pass
-                  </p>
+            <div className="flex flex-wrap items-center gap-4 border-b-2 border-strong bg-primary p-6 text-primary-foreground">
+              <PlayerAvatar
+                user={profile}
+                size="lg"
+                linkToProfile={false}
+                showMedalBadge={false}
+              />
+              <div className="space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="font-display text-2xl tracking-tight sm:text-3xl">
+                    {profile.displayName}
+                  </h1>
+                  <Badge variant="info">{profile.effectiveTitle}</Badge>
                 </div>
+                <p className="font-mono text-xs font-bold">
+                  {profile.unlockedTitles.length}{" "}
+                  {profile.unlockedTitles.length === 1
+                    ? "Rang-Titel freigeschaltet"
+                    : "Rang-Titel freigeschaltet"}
+                </p>
               </div>
-
-              <label className="brutal-press inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border-2 border-control bg-surface px-4 text-sm font-bold text-ink hover:bg-surface-muted">
-                <Camera className="size-4" aria-hidden="true" />
-                {mutations.uploadAvatar.isPending
-                  ? "Lädt hoch …"
-                  : "Profilbild ändern"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="sr-only"
-                  disabled={mutations.uploadAvatar.isPending}
-                  onChange={(e) => void handleAvatarChange(e)}
-                />
-              </label>
             </div>
 
-            {/* 3 Stat Tiles */}
-            <div className="grid grid-cols-3 divide-x-2 divide-strong bg-surface">
+            {/* 4 Stat Tiles */}
+            <div className="grid grid-cols-2 divide-x-2 divide-y-2 divide-strong bg-surface sm:grid-cols-4 sm:divide-y-0">
+              <div className="bg-cyan-subtle p-4 text-center">
+                <p className="inline-flex items-center justify-center gap-1.5 font-display text-2xl text-ink tabular-nums">
+                  <Award className="size-5 text-warning" aria-hidden="true" />
+                  {profile.goldMedalCount}
+                </p>
+                <p className="font-mono text-[11px] font-bold text-ink uppercase">
+                  Goldmedaillen
+                </p>
+              </div>
               <div className="p-4 text-center">
                 <p className="font-display text-2xl text-ink tabular-nums">
                   {profile.gamesPlayed}
@@ -139,21 +140,11 @@ export default function ProfilePage() {
             </div>
           </section>
 
-          {mutations.uploadAvatar.isError ? (
-            <Alert variant="error">
-              {apiErrorMessage(mutations.uploadAvatar.error, {
-                fallback: "Profilbild konnte nicht hochgeladen werden.",
-              })}
-            </Alert>
-          ) : null}
-
-          {/* Galleries First, Settings in Tab */}
+          {/* Galleries & Grouped Profile Editor */}
           <Tabs defaultValue="moments">
             <TabsList>
               <TabsTrigger value="moments">Fotomomente</TabsTrigger>
-              <TabsTrigger value="settings">
-                Profil &amp; Titel anpassen
-              </TabsTrigger>
+              <TabsTrigger value="settings">Profil bearbeiten</TabsTrigger>
             </TabsList>
 
             <TabsContent value="moments" className="pt-2">
@@ -168,9 +159,47 @@ export default function ProfilePage() {
                 <CardHeader>
                   <CardTitle>Profil bearbeiten</CardTitle>
                 </CardHeader>
-                <CardContent className="pt-5">
+                <CardContent className="space-y-6 pt-5">
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-sm border-2 border-strong bg-surface-muted p-4">
+                    <div className="flex items-center gap-3">
+                      <PlayerAvatar
+                        user={profile}
+                        size="md"
+                        linkToProfile={false}
+                        showMedalBadge={false}
+                      />
+                      <div>
+                        <p className="text-sm font-bold text-ink">Profilbild</p>
+                        <p className="text-xs font-medium text-secondary">
+                          Wird in Lobbys, Brettern und Zeitachsen angezeigt.
+                        </p>
+                      </div>
+                    </div>
+                    <label className="brutal-press inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm border-2 border-control bg-surface px-4 text-sm font-bold text-ink hover:bg-canvas">
+                      <Camera className="size-4" aria-hidden="true" />
+                      {mutations.uploadAvatar.isPending
+                        ? "Lädt hoch …"
+                        : "Profilbild ändern"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        disabled={mutations.uploadAvatar.isPending}
+                        onChange={(e) => void handleAvatarChange(e)}
+                      />
+                    </label>
+                  </div>
+
+                  {mutations.uploadAvatar.isError ? (
+                    <Alert variant="error">
+                      {apiErrorMessage(mutations.uploadAvatar.error, {
+                        fallback: "Profilbild konnte nicht hochgeladen werden.",
+                      })}
+                    </Alert>
+                  ) : null}
+
                   <form
-                    className="space-y-4"
+                    className="space-y-4 border-t-2 border-subtle pt-5"
                     onSubmit={(e) => void saveProfile(e)}
                   >
                     <Field

@@ -9,7 +9,7 @@ use crate::{
     application::{ExecutionContext, uow::Versioned},
     domain::{BoardCoordinates, BoardTileId, Capture, CaptureId, Game, GameId, NewCapture},
     ports::RepositoryError,
-    service::UseCase,
+    service::{CaptureUploaded, UseCase},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -160,6 +160,12 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
                 .put(&thumb_key, &processed.blurred_webp)
                 .await
                 .change_context(CaptureUseCaseError::Persistence)?;
+
+            ctx.events().submit(CaptureUploaded {
+                game_id: self.game_id,
+                capture_id,
+                uploader_id: user_id,
+            });
 
             Ok::<_, Report<CaptureUseCaseError>>(SubmitCaptureOutcome {
                 capture: capture.into_data(),

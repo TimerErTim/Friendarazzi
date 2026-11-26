@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     application::instrumented::{
@@ -9,12 +9,44 @@ use crate::{
     ports::{
         Clock, MailSender, ObjectStore, PdfRenderer, RepositoryResult, RngSource, Signing, Throttle,
     },
+    service::Event,
 };
 use rand::Rng;
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use super::auth::AuthContext;
 use super::konfiguration::IdentityProviderConfiguration;
+
+/// Per-execution buffer that collects events submitted by use cases before [`App`](crate::App)
+/// dispatches them to [`EventQueue`](crate::ports::EventQueue) after execution succeeds.
+#[derive(Clone, Default)]
+pub struct EventCollector {
+    events: Arc<Mutex<Vec<Event>>>,
+}
+
+impl EventCollector {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stage an event to be enqueued after the current `App::execute` / `execute_fn`
+    /// completes successfully.
+    pub fn submit<T: Into<Event>>(&self, event: T) {
+        let event = event.into();
+        debug!(
+            event = std::any::type_name::<T>(),
+            "collected event for post-execution enqueuing"
+        );
+        self.events
+            .lock()
+            .expect("event stage mutex poisoned")
+            .push(event);
+    }
+
+    pub(crate) fn take(&self) -> Vec<Event> {
+        std::mem::take(&mut *self.events.lock().expect("event stage mutex poisoned"))
+    }
+}
 
 #[derive(Clone, Copy)]
 enum ExecutionSource<'a> {
@@ -35,6 +67,7 @@ pub struct ExecutionContext<'a> {
     pdf_renderer: Arc<dyn PdfRenderer>,
     throttle: Arc<dyn Throttle>,
     mail_sender: Arc<dyn MailSender>,
+    events: EventCollector,
     identity_provider_conf: IdentityProviderConfiguration,
 }
 
@@ -49,6 +82,7 @@ pub(crate) struct ContextPorts {
     pub(crate) pdf_renderer: Arc<dyn PdfRenderer>,
     pub(crate) throttle: Arc<dyn Throttle>,
     pub(crate) mail_sender: Arc<dyn MailSender>,
+    pub(crate) events: EventCollector,
     pub(crate) identity_provider_conf: IdentityProviderConfiguration,
 }
 
@@ -67,6 +101,7 @@ impl<'a> ExecutionContext<'a> {
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
             mail_sender: InstrumentedMailSender::new(ports.mail_sender),
+            events: ports.events,
             identity_provider_conf: ports.identity_provider_conf,
         }
     }
@@ -82,6 +117,7 @@ impl<'a> ExecutionContext<'a> {
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
             mail_sender: InstrumentedMailSender::new(ports.mail_sender),
+            events: ports.events,
             identity_provider_conf: ports.identity_provider_conf,
         }
     }
@@ -112,6 +148,11 @@ impl<'a> ExecutionContext<'a> {
         self.mail_sender.as_ref()
     }
 
+    /// Staged event submission handle for the current execution.
+    pub fn events(&self) -> &EventCollector {
+        &self.events
+    }
+
     /// Mailed link targets and token identity of this deployment.
     pub fn identity_provider_conf(&self) -> &IdentityProviderConfiguration {
         &self.identity_provider_conf
@@ -128,8 +169,8 @@ impl<'a> ExecutionContext<'a> {
         self.signing.as_ref()
     }
 
-    /// Nested context that joins `uow`'s transaction and copies this context's ports and
-    /// identity.
+    /// Nested context that joins `uow`'s transaction and copies this context's ports,
+    /// event stage, and identity.
     pub fn sub<'b>(&self, uow: &'b UnitOfWork<'b>) -> ExecutionContext<'b> {
         ExecutionContext::nested(
             uow.as_impl(),
@@ -142,6 +183,7 @@ impl<'a> ExecutionContext<'a> {
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),
                 mail_sender: Arc::clone(&self.mail_sender),
+                events: self.events.clone(),
                 identity_provider_conf: self.identity_provider_conf.clone(),
             },
         )

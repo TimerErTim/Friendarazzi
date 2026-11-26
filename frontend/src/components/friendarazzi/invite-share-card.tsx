@@ -4,7 +4,6 @@ import { Check, Copy, QrCode, Share2, Ticket, X } from "lucide-react";
 import QRCode from "qrcode";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { inviteUrl } from "@/lib/navigation";
@@ -221,12 +220,9 @@ export function InviteShareCard({ inviteCode }: { inviteCode: string }) {
               <path d={qrData.path} fill="#0d0d0d" />
             </svg>
           </div>
-          <div className="space-y-1">
-            <p className="text-xs font-bold text-ink">
-              Mit Smartphone-Kamera scannen oder Code eingeben:
-            </p>
-            <CodeTag tone="yellow">{inviteCode}</CodeTag>
-          </div>
+          <p className="font-mono text-xs font-bold text-secondary">
+            Mit Kamera scannen zum Beitreten
+          </p>
         </section>
       ) : null}
     </div>

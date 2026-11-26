@@ -47,6 +47,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { RadioGroup, RadioGroupOption } from "@/components/ui/radio-group";
 import { SearchInput } from "@/components/ui/search-input";
@@ -379,6 +384,19 @@ export function OverlaySection() {
             <TooltipContent>Abstand zwischen den Marken</TooltipContent>
           </Tooltip>
         </TooltipProvider>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="secondary">Details</Button>
+          </PopoverTrigger>
+          <PopoverContent align="start">
+            <p className="text-sm font-bold text-ink">Kompaktes Popover</p>
+            <p className="mt-1 text-xs text-secondary">
+              Zeigt sekundäre Listen wie Mitspieler auf Abruf, ohne Platz auf
+              dem Bildschirm zu blockieren.
+            </p>
+          </PopoverContent>
+        </Popover>
       </Example>
 
       <Example caption="Slider" className="block">

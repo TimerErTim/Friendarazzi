@@ -1,9 +1,9 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { ArrowRight, ChevronDown, Plus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
@@ -13,16 +13,33 @@ import {
   ActivePlayPhase,
   CompletedPhase,
   DraftingPhase,
+  type FlushPendingSaveFn,
   LobbyPhase,
+  visibilityLabel,
 } from "@/components/friendarazzi/game-phases";
 import { SetBreadcrumbLabel } from "@/components/layout/page-chrome";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { CalloutNote, CodeTag } from "@/components/ui/brutal-elements";
+import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
+import {
+  formatGameProgress,
+  gameNextActionLabel,
+  sortActiveGames,
+} from "@/lib/game-overview";
 import { authHrefWithRedirect, gameHref, paths } from "@/lib/navigation";
+import { useGameCountdown } from "@/lib/use-game-countdown";
 import { useQueryParam } from "@/lib/use-query-param";
 
 const LAST_GAME_KEY = "friendarazzi:last_game_id";
@@ -53,6 +70,9 @@ export default function GamePage() {
   const id = useQueryParam("id");
   const gamesList = useGamesQuery();
   const detail = useGameDetailQuery(id);
+  const flushPendingSaveRef = useRef<FlushPendingSaveFn | null>(null);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [lastGameHintId, setLastGameHintId] = useState<string | null>(null);
 
   useEffect(() => {
     if (phase.status === "anonymous") {
@@ -63,33 +83,39 @@ export default function GamePage() {
   }, [phase.status, id, router]);
 
   useEffect(() => {
-    if (!id || typeof window === "undefined") return;
+    if (typeof window === "undefined") return;
     try {
-      window.sessionStorage.setItem(LAST_GAME_KEY, id);
+      if (id) {
+        window.sessionStorage.setItem(LAST_GAME_KEY, id);
+        setLastGameHintId(id);
+      } else {
+        setLastGameHintId(window.sessionStorage.getItem(LAST_GAME_KEY));
+      }
     } catch {
       // Ignore storage errors
     }
   }, [id]);
 
+  // Auto-open only when the player has a single game; multiple games get an explicit overview.
   useEffect(() => {
-    if (id === "" && gamesList.data && gamesList.data.length > 0) {
-      let lastId: string | null = null;
-      if (typeof window !== "undefined") {
-        try {
-          lastId = window.sessionStorage.getItem(LAST_GAME_KEY);
-        } catch {
-          lastId = null;
-        }
-      }
-      const target =
-        (lastId ? gamesList.data.find((g) => g.id === lastId) : undefined) ??
-        gamesList.data.find((g) => g.status !== GameStatus.Completed) ??
-        gamesList.data[0];
-      if (target) {
-        router.replace(gameHref(target.id));
+    if (id === "" && gamesList.data && gamesList.data.length === 1) {
+      const single = gamesList.data[0];
+      if (single) {
+        router.replace(gameHref(single.id));
       }
     }
   }, [id, gamesList.data, router]);
+
+  async function handleSwitchGame(targetId: string) {
+    if (targetId === id || isSwitching) return;
+    setIsSwitching(true);
+    try {
+      await flushPendingSaveRef.current?.();
+    } finally {
+      setIsSwitching(false);
+      router.push(gameHref(targetId));
+    }
+  }
 
   if (id === null || detail.isLoading || (id === "" && gamesList.isLoading)) {
     return (
@@ -101,15 +127,76 @@ export default function GamePage() {
   }
 
   if (!id) {
+    const allGames = gamesList.data ?? [];
+    if (allGames.length === 0) {
+      return (
+        <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
+          <CalloutNote label="Kein Spiel gewählt" tone="yellow">
+            Du bist aktuell in keinem Spiel. Starte ein neues Spiel oder tritt
+            einem bestehenden Match bei.
+          </CalloutNote>
+          <Button asChild>
+            <Link href={paths.home}>Zur Spielzentrale</Link>
+          </Button>
+        </div>
+      );
+    }
+
+    const active = sortActiveGames(
+      allGames.filter((g) => g.status !== GameStatus.Completed),
+    );
+    const completed = allGames.filter((g) => g.status === GameStatus.Completed);
+
     return (
-      <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
-        <CalloutNote label="Kein Spiel gewählt" tone="yellow">
-          Du bist aktuell in keinem Spiel. Starte ein neues Spiel oder tritt
-          einem bestehenden Match bei.
-        </CalloutNote>
-        <Button asChild>
-          <Link href={paths.home}>Zur Spielzentrale</Link>
-        </Button>
+      <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="font-display text-2xl tracking-tight text-ink">
+              Deine Spiele
+            </h1>
+            <p className="text-sm font-medium text-secondary">
+              Wähle eine laufende Runde aus oder kehre zu einem abgeschlossenen
+              Spiel zurück.
+            </p>
+          </div>
+          <Button variant="secondary" asChild>
+            <Link href={paths.home}>Zur Spielzentrale</Link>
+          </Button>
+        </div>
+
+        {active.length > 0 ? (
+          <section className="space-y-3">
+            <h2 className="font-display text-lg text-ink">Laufende Runden</h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              {active.map((item) => (
+                <GameOverviewCard
+                  key={item.id}
+                  game={item}
+                  dataUpdatedAt={gamesList.dataUpdatedAt}
+                  isLastVisited={item.id === lastGameHintId}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {completed.length > 0 ? (
+          <section className="space-y-3">
+            <h2 className="font-display text-lg text-ink">
+              Abgeschlossene Runden
+            </h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              {completed.map((item) => (
+                <GameOverviewCard
+                  key={item.id}
+                  game={item}
+                  dataUpdatedAt={gamesList.dataUpdatedAt}
+                  isLastVisited={item.id === lastGameHintId}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     );
   }
@@ -132,75 +219,96 @@ export default function GamePage() {
 
   const game = detail.data;
   const activeIdx = PHASES.findIndex((p) => p.status === game.status);
-  const runningGames = (gamesList.data ?? []).filter(
-    (g) => g.status !== GameStatus.Completed,
+  const runningGames = sortActiveGames(
+    (gamesList.data ?? []).filter((g) => g.status !== GameStatus.Completed),
+  );
+  const hasOtherActionNeeded = runningGames.some(
+    (g) => g.id !== game.id && g.needsAction,
   );
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 sm:space-y-5 sm:p-6">
       <SetBreadcrumbLabel label={game.title} />
 
-      {/* Parallel Games Quick-Switch Bar */}
-      {runningGames.length > 1 ? (
-        <nav
-          aria-label="Parallele Spiele wechseln"
-          className="flex flex-wrap items-center gap-2"
-        >
-          {runningGames.map((item) => {
-            const isCurrent = item.id === game.id;
-            return (
-              <Link
-                key={item.id}
-                href={gameHref(item.id)}
-                aria-current={isCurrent ? "page" : undefined}
-                className={cn(
-                  "inline-flex min-h-11 items-center gap-2 rounded-sm border-2 border-strong px-3 py-1.5 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-                  isCurrent
-                    ? "brutal-shadow-sm bg-primary text-primary-foreground"
-                    : "bg-surface text-ink hover:bg-surface-muted",
-                )}
-              >
-                <span className="max-w-36 truncate">{item.title}</span>
-                <CodeTag tone={isCurrent ? "surface" : "cyan"}>
-                  {shortStatusLabel(item.status)}
-                </CodeTag>
-              </Link>
-            );
-          })}
-          <Link
-            href={paths.home}
-            className="inline-flex min-h-11 items-center gap-1 rounded-sm border-2 border-dashed border-strong bg-canvas px-3 py-1.5 text-xs font-bold text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            Lobbys
-          </Link>
-        </nav>
-      ) : null}
-
-      {/* Match Stage Bar & 4-Phase Stepper */}
-      <section className="brutal-shadow rounded-md border-[2.5px] border-strong bg-surface p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="min-w-0 space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
+      {/* Compact single-row match header + thin phase progress track */}
+      <header className="space-y-2.5 border-b-2 border-strong pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-2">
               <h1 className="truncate font-display text-xl tracking-tight text-ink sm:text-2xl">
                 {game.title}
               </h1>
-              <CodeTag tone="cyan">
-                {game.gridSize}×{game.gridSize}
-              </CodeTag>
+              <Badge variant="primary" className="shrink-0">
+                {shortStatusLabel(game.status)}
+              </Badge>
             </div>
-            <p className="font-mono text-xs font-bold text-secondary">
-              {game.players.length} Spieler
+            <p className="truncate font-mono text-xs font-bold text-secondary">
+              {game.gridSize}×{game.gridSize} ·{" "}
+              {visibilityLabel(game.visibilityMode)} · {game.players.length}{" "}
+              Spieler
             </p>
           </div>
-          <Badge variant="primary">{shortStatusLabel(game.status)}</Badge>
+
+          {runningGames.length > 1 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isSwitching}
+                  className="shrink-0 gap-1.5"
+                >
+                  <span>Runden ({runningGames.length})</span>
+                  {hasOtherActionNeeded ? (
+                    <>
+                      <span
+                        aria-hidden="true"
+                        className="size-2 rounded-full border border-strong bg-primary"
+                      />
+                      <span className="sr-only">
+                        (Aktion in anderem Spiel nötig)
+                      </span>
+                    </>
+                  ) : null}
+                  <ChevronDown className="size-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>Parallele Spiele</DropdownMenuLabel>
+                {runningGames.map((item) => {
+                  const isCurrent = item.id === game.id;
+                  return (
+                    <DropdownMenuItem
+                      key={item.id}
+                      disabled={isCurrent || isSwitching}
+                      onSelect={() => void handleSwitchGame(item.id)}
+                      className="justify-between gap-2"
+                    >
+                      <span className="truncate font-bold">{item.title}</span>
+                      <span className="shrink-0 font-mono text-[11px] text-secondary">
+                        {isCurrent
+                          ? "Aktiv"
+                          : item.needsAction
+                            ? "Aktion"
+                            : shortStatusLabel(item.status)}
+                      </span>
+                    </DropdownMenuItem>
+                  );
+                })}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href={paths.home}>
+                    <Plus className="size-4" aria-hidden="true" />
+                    Alle Lobbys
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </div>
 
-        {/* Visual Phase Stepper */}
-        <ol
-          aria-label="Spielphasen"
-          className="mt-4 grid grid-cols-4 gap-1.5 border-t-2 border-strong pt-4"
-        >
+        <ol aria-label="Spielphasen" className="grid grid-cols-4 gap-1.5">
           {PHASES.map((step, idx) => {
             const isCurrent = idx === activeIdx;
             const isDone = idx < activeIdx;
@@ -208,32 +316,121 @@ export default function GamePage() {
               <li
                 key={step.status}
                 aria-current={isCurrent ? "step" : undefined}
-                className={cn(
-                  "flex items-center justify-center gap-1.5 rounded-sm border-2 border-strong px-2 py-1.5 text-center text-xs font-bold",
-                  isCurrent
-                    ? "brutal-shadow-sm bg-primary text-primary-foreground"
-                    : isDone
-                      ? "bg-cyan-subtle text-ink"
-                      : "bg-surface-muted text-secondary",
-                )}
+                className="space-y-1"
               >
-                <span className="font-mono">{step.num}.</span>
-                <span className="truncate">{step.label}</span>
+                <div
+                  className={cn(
+                    "h-2.5 w-full rounded-sm border border-strong",
+                    isCurrent
+                      ? "bg-primary"
+                      : isDone
+                        ? "bg-cyan"
+                        : "bg-surface-muted",
+                  )}
+                />
+                <span
+                  className={cn(
+                    "hidden font-mono text-[10px] leading-none font-bold sm:block",
+                    isCurrent ? "text-ink" : "text-secondary",
+                  )}
+                >
+                  {step.num}. {step.label}
+                </span>
+                <span className="sr-only sm:hidden">
+                  {step.num}. {step.label}
+                  {isCurrent ? " (aktuell)" : isDone ? " (erledigt)" : ""}
+                </span>
               </li>
             );
           })}
         </ol>
-      </section>
+      </header>
 
       {game.status === GameStatus.Lobby ? (
-        <LobbyPhase key={game.id} game={game} />
+        <LobbyPhase
+          key={game.id}
+          game={game}
+          registerFlush={(fn) => {
+            flushPendingSaveRef.current = fn;
+          }}
+        />
       ) : game.status === GameStatus.Drafting ? (
-        <DraftingPhase key={game.id} game={game} />
+        <DraftingPhase
+          key={game.id}
+          game={game}
+          detailUpdatedAt={detail.dataUpdatedAt}
+          registerFlush={(fn) => {
+            flushPendingSaveRef.current = fn;
+          }}
+        />
       ) : game.status === GameStatus.Active ? (
         <ActivePlayPhase key={game.id} game={game} />
       ) : (
         <CompletedPhase key={game.id} game={game} />
       )}
     </div>
+  );
+}
+
+function GameOverviewCard({
+  game,
+  dataUpdatedAt,
+  isLastVisited,
+}: {
+  game: NonNullable<ReturnType<typeof useGamesQuery>["data"]>[number];
+  dataUpdatedAt: number;
+  isLastVisited: boolean;
+}) {
+  const countdown = useGameCountdown(
+    game.draftClosesAt,
+    game.serverNow,
+    dataUpdatedAt,
+  );
+
+  return (
+    <Card className="overflow-hidden">
+      <div
+        className={cn(
+          "flex items-start justify-between gap-2 border-b-2 border-strong px-5 py-3.5",
+          game.status === GameStatus.Completed
+            ? "bg-surface-muted"
+            : game.needsAction || game.status === GameStatus.Active
+              ? "bg-primary-subtle"
+              : game.status === GameStatus.Drafting
+                ? "bg-cyan-subtle"
+                : "bg-pink-subtle",
+        )}
+      >
+        <div className="min-w-0 space-y-1">
+          <h3 className="truncate font-display text-lg text-ink">
+            {game.title}
+          </h3>
+          {game.needsAction || isLastVisited ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {game.needsAction ? (
+                <Badge variant="warning">Aktion nötig</Badge>
+              ) : null}
+              {isLastVisited ? (
+                <span className="font-mono text-[11px] font-bold text-secondary">
+                  Zuletzt geöffnet
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        <Badge variant="info">{shortStatusLabel(game.status)}</Badge>
+      </div>
+      <CardContent className="flex items-center justify-between gap-3 pt-4 pb-4">
+        <p className="font-mono text-xs font-bold text-secondary">
+          {formatGameProgress(game, countdown)}
+        </p>
+        <Button variant="secondary" size="sm" asChild>
+          <Link href={gameHref(game.id)}>
+            {gameNextActionLabel(game)}
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

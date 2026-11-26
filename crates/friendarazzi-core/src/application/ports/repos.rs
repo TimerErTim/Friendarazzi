@@ -45,6 +45,7 @@ pub trait GameRepository: Send + Sync {
         &self,
         user_id: BenutzerId,
     ) -> RepositoryResult<Vec<Versioned<Game>>>;
+    async fn find_drafting_with_countdown(&self) -> RepositoryResult<Vec<Versioned<Game>>>;
     async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()>;
 }
 

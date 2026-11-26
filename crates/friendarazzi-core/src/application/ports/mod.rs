@@ -1,4 +1,5 @@
 mod clock;
+mod event_queue;
 mod mail;
 mod object_store;
 mod pdf;
@@ -8,6 +9,7 @@ mod signing;
 mod throttle;
 
 pub use clock::*;
+pub use event_queue::*;
 pub use mail::*;
 pub use object_store::*;
 pub use pdf::*;

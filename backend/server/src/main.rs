@@ -13,8 +13,13 @@ use friendarazzi_core::{
     ports::MailSender,
 };
 use friendarazzi_filesystemstore::FileSystemObjectStore;
+use friendarazzi_scheduler::{FriendarazziScheduler, FriendarazziSchedulerConfig};
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
-use friendarazzi_sqlite::SQLiteInstance;
+use friendarazzi_sqlite::{
+    SQLiteInstance,
+    event_queue::{self, SqliteEventQueue},
+    job_store::SQLiteStateStore,
+};
 use poem::http::StatusCode;
 use poem::middleware::{CatchPanic, Compression, Cors, Middleware, RequestId, ReuseId, Tracing};
 use poem::{EndpointExt, IntoResponse, Route, Server, listener::TcpListener};
@@ -271,6 +276,19 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .await
         .change_context(BackendServerError)?;
 
+    let mut event_queue = SqliteEventQueue::new(Arc::clone(&sqlite));
+    event_queue
+        .migrate_to_latest()
+        .await
+        .change_context(BackendServerError)?;
+    let event_queue = Arc::new(event_queue);
+
+    let mut scheduler_store = SQLiteStateStore::new(Arc::clone(&sqlite));
+    scheduler_store
+        .migrate_to_latest()
+        .await
+        .change_context(BackendServerError)?;
+
     let object_store = FileSystemObjectStore::new(config.object_store_dir.clone())
         .change_context(BackendServerError)?;
 
@@ -287,8 +305,23 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .signing(Arc::new(signing_key))
         .throttle(Arc::new(InMemoryThrottle::new()))
         .mail_sender(mail_sender)
+        .event_queue(Arc::clone(&event_queue))
         .konto(konto)
         .build();
+
+    let (eq_shutdown_tx, mut eq_shutdown_rx) = tokio::sync::watch::channel(false);
+    let eq_worker = tokio::spawn(event_queue::run(
+        Arc::clone(&event_queue),
+        app.clone(),
+        async move {
+            let _ = eq_shutdown_rx.wait_for(|&stopped| stopped).await;
+        },
+    ));
+
+    let (sched_handle, sched_fut) = FriendarazziScheduler::new(app.clone())
+        .state_store(scheduler_store)
+        .start_with_handle(FriendarazziSchedulerConfig::default());
+    let sched_worker = tokio::spawn(sched_fut);
 
     let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
     let api_url = config
@@ -328,6 +361,48 @@ async fn main() -> Result<(), Report<BackendServerError>> {
     .run_with_graceful_shutdown(app, shutdown_signal(), None)
     .await
     .change_context(BackendServerError);
+
+    tracing::info!("stopping sqlite scheduler and event queue workers");
+    sched_handle.shutdown();
+    let _ = eq_shutdown_tx.send(true);
+
+    let mut sched_worker = sched_worker;
+    tokio::select! {
+        res = &mut sched_worker => match res {
+            Ok(Ok(report)) => {
+                tracing::info!(?report, "scheduler stopped");
+            }
+            Ok(Err(err)) => {
+                tracing::error!(?err, "scheduler exited with error");
+            }
+            Err(err) => {
+                tracing::error!(?err, "scheduler task failed");
+            }
+        },
+        () = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
+            sched_worker.abort();
+            let _ = sched_worker.await;
+            tracing::info!("scheduler aborted after shutdown timeout");
+        }
+    }
+
+    match eq_worker.await {
+        Ok(Ok(report)) => {
+            tracing::info!(
+                processed = report.processed,
+                failed = report.failed,
+                retried = report.retried,
+                recovered = report.recovered,
+                "sqlite event queue worker stopped"
+            );
+        }
+        Ok(Err(err)) => {
+            tracing::error!(?err, "sqlite event queue worker exited with error");
+        }
+        Err(err) => {
+            tracing::error!(?err, "sqlite event queue worker task failed");
+        }
+    }
 
     tracing_guard.shutdown();
     result

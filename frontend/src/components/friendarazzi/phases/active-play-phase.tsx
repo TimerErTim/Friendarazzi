@@ -265,6 +265,11 @@ export function ActivePlayPhase({
                       <Badge variant="warning">Teaser verpixelt</Badge>
                     ) : (
                       <p className="line-clamp-2 text-xs font-medium text-ink">
+                        {item.target ? (
+                          <span className="mr-1.5 inline-block rounded-[2px] border border-strong bg-primary px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground">
+                            {item.target.displayName}
+                          </span>
+                        ) : null}
                         {item.promptText}
                       </p>
                     )}
@@ -300,20 +305,25 @@ export function ActivePlayPhase({
         <DialogContent>
           <DialogHeader className="space-y-2.5">
             {selectedTile?.targetUser ? (
-              <div className="flex items-center gap-3 rounded-md border-2 border-strong bg-cyan-subtle p-2.5">
-                <PlayerAvatar
-                  user={selectedTile.targetUser}
-                  size="sm"
-                  linkToProfile={false}
-                />
-                <div className="min-w-0">
-                  <p className="truncate font-display text-sm leading-tight text-ink">
-                    {selectedTile.targetUser.displayName}
-                  </p>
-                  <p className="truncate font-mono text-[11px] font-bold text-secondary">
-                    {selectedTile.targetUser.effectiveTitle}
-                  </p>
+              <div className="flex items-center justify-between gap-3 rounded-md border-2 border-strong bg-cyan-subtle p-2.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <PlayerAvatar
+                    user={selectedTile.targetUser}
+                    size="sm"
+                    linkToProfile={false}
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate font-display text-sm leading-tight text-ink">
+                      {selectedTile.targetUser.displayName}
+                    </p>
+                    <p className="truncate font-mono text-[11px] font-bold text-secondary">
+                      {selectedTile.targetUser.effectiveTitle}
+                    </p>
+                  </div>
                 </div>
+                <span className="shrink-0 rounded-sm border border-strong bg-surface px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-ink uppercase">
+                  Zielperson
+                </span>
               </div>
             ) : null}
             <DialogTitle className="font-display text-2xl leading-tight tracking-tight text-ink">

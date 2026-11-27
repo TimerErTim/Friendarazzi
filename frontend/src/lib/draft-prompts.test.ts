@@ -9,7 +9,7 @@ import {
 
 type TestSlot = {
   key: string;
-  targetName: string;
+  targetName?: string;
   text: string;
   source: "custom" | "deck";
 };
@@ -19,13 +19,16 @@ function withDeckText(slot: TestSlot, text: string): TestSlot {
 }
 
 describe("draft-prompts", () => {
-  it("fillPromptTemplate substitutes {name} and trims surrounding whitespace", () => {
+  it("fillPromptTemplate trims target-agnostic templates and strips legacy {name} if present", () => {
+    expect(fillPromptTemplate("  Bestellt noch ein Getränk  ")).toBe(
+      "Bestellt noch ein Getränk",
+    );
     expect(
       fillPromptTemplate("  {name} bestellt noch ein Getränk  ", "Mara"),
     ).toBe("Mara bestellt noch ein Getränk");
   });
 
-  it("autofillEmptySlots fills empty slots uniquely and preserves custom prompts", () => {
+  it("autofillEmptySlots fills empty slots uniquely across targets and preserves custom prompts", () => {
     const slots: TestSlot[] = [
       {
         key: "a-0",
@@ -36,7 +39,11 @@ describe("draft-prompts", () => {
       { key: "a-1", targetName: "Mara", text: "", source: "custom" },
       { key: "b-0", targetName: "Luca", text: "", source: "custom" },
     ];
-    const templates = ["Custom Prompt", "{name} lacht", "{name} tanzt"];
+    const templates = [
+      "Custom Prompt",
+      "Lacht über den eigenen Witz",
+      "Tanzt kurz alleine im Stehen",
+    ];
 
     const result = autofillEmptySlots(
       slots,
@@ -53,25 +60,31 @@ describe("draft-prompts", () => {
     expect(new Set(normalized).size).toBe(3);
   });
 
-  it("autofillEmptySlots detects collisions after {name} substitution and duplicate templates", () => {
+  it("autofillEmptySlots detects case-insensitive collisions and duplicate templates", () => {
     const slots: TestSlot[] = [
-      { key: "a-0", targetName: "Mara", text: "Mara lacht", source: "custom" },
+      {
+        key: "a-0",
+        targetName: "Mara",
+        text: "Lacht über den eigenen Witz",
+        source: "custom",
+      },
       { key: "a-1", targetName: "Mara", text: "", source: "custom" },
       { key: "b-0", targetName: "Luca", text: "", source: "custom" },
     ];
     const templates = [
-      "{name} lacht",
-      "mara lacht",
-      "{name} winkt",
-      "{name} winkt",
+      "Lacht über den eigenen Witz",
+      "lacht über den eigenen witz",
+      "Winkt jemandem aus der Ferne zu",
+      "Winkt jemandem aus der Ferne zu",
+      "Bestellt noch eine Runde",
     ];
 
     const result = autofillEmptySlots(slots, templates, withDeckText, () => 0);
 
     expect(result.filledCount).toBe(2);
     expect(result.remainingEmptyCount).toBe(0);
-    expect(result.slots[1]?.text).toBe("Mara winkt");
-    expect(result.slots[2]?.text).toBe("Luca winkt");
+    expect(result.slots[1]?.text).toBe("Winkt jemandem aus der Ferne zu");
+    expect(result.slots[2]?.text).toBe("Bestellt noch eine Runde");
   });
 
   it("autofillEmptySlots leaves remaining slots empty when deck runs out of unique prompts", () => {
@@ -80,7 +93,11 @@ describe("draft-prompts", () => {
       { key: "a-1", targetName: "Mara", text: "", source: "custom" },
       { key: "a-2", targetName: "Mara", text: "", source: "custom" },
     ];
-    const templates = ["{name} lacht", "{name} tanzt", "{name} lacht"];
+    const templates = [
+      "Lacht über den eigenen Witz",
+      "Tanzt kurz alleine im Stehen",
+      "Lacht über den eigenen Witz",
+    ];
 
     const result = autofillEmptySlots(
       slots,
@@ -99,10 +116,24 @@ describe("draft-prompts", () => {
 
   it("rerollSingleSlot excludes current slot value and other occupied slots", () => {
     const slots: TestSlot[] = [
-      { key: "a-0", targetName: "Mara", text: "Mara lacht", source: "deck" },
-      { key: "a-1", targetName: "Mara", text: "Mara tanzt", source: "custom" },
+      {
+        key: "a-0",
+        targetName: "Mara",
+        text: "Lacht über den eigenen Witz",
+        source: "deck",
+      },
+      {
+        key: "a-1",
+        targetName: "Mara",
+        text: "Tanzt kurz alleine im Stehen",
+        source: "custom",
+      },
     ];
-    const templates = ["{name} lacht", "{name} tanzt", "{name} winkt"];
+    const templates = [
+      "Lacht über den eigenen Witz",
+      "Tanzt kurz alleine im Stehen",
+      "Winkt jemandem aus der Ferne zu",
+    ];
 
     const result = rerollSingleSlot(
       slots,
@@ -113,17 +144,30 @@ describe("draft-prompts", () => {
     );
 
     expect(result.changed).toBe(true);
-    expect(result.slots[0]?.text).toBe("Mara winkt");
+    expect(result.slots[0]?.text).toBe("Winkt jemandem aus der Ferne zu");
     expect(result.slots[0]?.source).toBe("deck");
-    expect(result.slots[1]?.text).toBe("Mara tanzt");
+    expect(result.slots[1]?.text).toBe("Tanzt kurz alleine im Stehen");
   });
 
   it("rerollSingleSlot keeps slot unchanged when no unique alternative exists", () => {
     const slots: TestSlot[] = [
-      { key: "a-0", targetName: "Mara", text: "Mara lacht", source: "deck" },
-      { key: "a-1", targetName: "Mara", text: "Mara tanzt", source: "custom" },
+      {
+        key: "a-0",
+        targetName: "Mara",
+        text: "Lacht über den eigenen Witz",
+        source: "deck",
+      },
+      {
+        key: "a-1",
+        targetName: "Mara",
+        text: "Tanzt kurz alleine im Stehen",
+        source: "custom",
+      },
     ];
-    const templates = ["{name} lacht", "mara tanzt"];
+    const templates = [
+      "Lacht über den eigenen Witz",
+      "tanzt kurz alleine im stehen",
+    ];
 
     const result = rerollSingleSlot(
       slots,
@@ -134,7 +178,7 @@ describe("draft-prompts", () => {
     );
 
     expect(result.changed).toBe(false);
-    expect(result.slots[0]?.text).toBe("Mara lacht");
-    expect(result.slots[1]?.text).toBe("Mara tanzt");
+    expect(result.slots[0]?.text).toBe("Lacht über den eigenen Witz");
+    expect(result.slots[1]?.text).toBe("Tanzt kurz alleine im Stehen");
   });
 });

@@ -32,7 +32,7 @@ import {
 } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -451,34 +451,36 @@ export function DraftingPhase({
       {deckNotice ? <Alert variant="info">{deckNotice}</Alert> : null}
 
       {/* Grouped Prompt Workshop — right at the top on mobile */}
-      <Card>
-        <CardContent className="divide-y-2 divide-subtle pt-4 pb-4">
-          {game.myQuotas.map((quota) => {
-            const targetSlots = slots.filter(
-              (s) => s.targetUserId === quota.targetUser.id,
-            );
-            const targetFilled = targetSlots.filter((s) =>
-              s.text.trim(),
-            ).length;
+      <div className="space-y-4">
+        {game.myQuotas.map((quota) => {
+          const targetSlots = slots.filter(
+            (s) => s.targetUserId === quota.targetUser.id,
+          );
+          const targetFilled = targetSlots.filter((s) => s.text.trim()).length;
 
-            return (
-              <section
-                key={quota.targetUser.id}
-                className="space-y-3 py-4 first:pt-0 last:pb-0"
-              >
+          return (
+            <Card key={quota.targetUser.id} className="overflow-hidden">
+              <CardHeader className="bg-primary-subtle px-4 py-2.5 sm:px-6">
                 <div className="flex items-center justify-between gap-2">
-                  <PlayerBadgeLink user={quota.targetUser} compact />
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 rounded-sm border border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-primary-foreground uppercase">
+                      Ziel
+                    </span>
+                    <PlayerBadgeLink user={quota.targetUser} compact />
+                  </div>
                   <span
                     className={cn(
-                      "rounded-sm border border-strong px-2 py-0.5 font-mono text-xs font-bold tabular-nums",
+                      "shrink-0 rounded-sm border border-strong px-2 py-0.5 font-mono text-xs font-bold tabular-nums",
                       targetFilled === quota.requiredCount
                         ? "border-success bg-success/15 text-ink"
-                        : "bg-primary-subtle text-ink",
+                        : "bg-surface text-ink",
                     )}
                   >
                     {targetFilled}/{quota.requiredCount}
                   </span>
                 </div>
+              </CardHeader>
+              <CardContent className="px-4 pt-3.5 pb-4 sm:px-6">
                 <div className="grid gap-2.5 md:grid-cols-2">
                   {targetSlots.map((slot, index) => (
                     <div key={slot.key} className="flex items-center gap-2">
@@ -488,7 +490,7 @@ export function DraftingPhase({
                       <Input
                         value={slot.text}
                         disabled={isLocked}
-                        placeholder={`z.B. ${quota.targetUser.displayName} bestellt noch ein Getränk`}
+                        placeholder="z.B. Bestellt noch ein Getränk"
                         aria-label={`Auftrag ${index + 1} für ${quota.targetUser.displayName}`}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -528,11 +530,11 @@ export function DraftingPhase({
                     </div>
                   ))}
                 </div>
-              </section>
-            );
-          })}
-        </CardContent>
-      </Card>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
       {mutations.savePrompts.isError ? (
         <Alert variant="error">

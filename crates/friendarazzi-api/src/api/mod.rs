@@ -10,7 +10,7 @@ use friendarazzi_core::{
     application::AuthContext,
     domain::{
         self, BenachrichtigungArt, BenachrichtigungId, BenachrichtigungsEinstellungen, BenutzerId,
-        BoardTileId, Capture, Game, GameAwards, GameId, InviteCode, MIN_PLAYERS,
+        BoardTileId, Capture, CaptureId, Game, GameAwards, GameId, InviteCode, MIN_PLAYERS,
         can_view_blurred_capture, can_view_full_capture, compute_game_awards,
         target_quotas_for_author,
     },
@@ -23,8 +23,8 @@ use friendarazzi_core::{
         HostFillRemainingDrafts, LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler,
         PasswortWiederherstellen, PasswortWiederherstellenFehler, ProfileUseCaseError,
         RegistrierungAbschliessenFehler, RegistrierungAbschließen, RegistrierungStarten,
-        RegistrierungStartenFehler, SessionAusgestellt, SetDraftDeadline, StartDrafting,
-        SubmitCapture, UnlockDraftPrompts, UploadAvatar,
+        RegistrierungStartenFehler, RetractCapture, SessionAusgestellt, SetDraftDeadline,
+        StartDrafting, SubmitCapture, UnlockDraftPrompts, UploadAvatar,
     },
 };
 use tracing::warn;
@@ -652,6 +652,26 @@ impl FriendarazziAppApi {
                 .winning_line
                 .map(|line| line.into_iter().map(GridCoordinate::from).collect()),
         })
+    }
+
+    pub async fn capture_retract(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        capture_id: CaptureId,
+    ) -> ResultReport<GameDetail, CaptureUseCaseError> {
+        self.app
+            .execute(
+                auth,
+                RetractCapture {
+                    game_id,
+                    capture_id,
+                },
+            )
+            .await?;
+        self.game_detail(auth, game_id)
+            .await
+            .change_context(CaptureUseCaseError::Persistence)
     }
 
     // ---------------------------------------------------------------- Profiles & Galleries

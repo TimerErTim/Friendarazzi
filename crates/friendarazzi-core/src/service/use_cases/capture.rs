@@ -197,3 +197,115 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
         }
     }
 }
+
+/// Retract a previously uploaded photo capture while the game is still active.
+#[derive(Debug, Clone)]
+pub struct RetractCapture {
+    pub game_id: GameId,
+    pub capture_id: CaptureId,
+}
+
+#[async_trait]
+impl UseCase<()> for RetractCapture {
+    type Error = Report<CaptureUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<(), Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(CaptureUseCaseError::Unauthorized)?;
+
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(CaptureUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(CaptureUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(CaptureUseCaseError::Persistence),
+            };
+
+            if !game.has_player(user_id) {
+                return Err(Report::new(CaptureUseCaseError::Forbidden));
+            }
+            if !matches!(&*game, Game::Active(_)) {
+                return Err(Report::new(CaptureUseCaseError::Conflict));
+            }
+
+            let capture = match uow.captures().find_by_id(self.capture_id).await {
+                Ok(c) => c,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(CaptureUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(CaptureUseCaseError::Persistence),
+            };
+
+            if capture.game_id() != self.game_id {
+                return Err(Report::new(CaptureUseCaseError::NotFound));
+            }
+            if capture.catcher_user_id() != user_id {
+                return Err(Report::new(CaptureUseCaseError::Forbidden));
+            }
+
+            let full_key = capture.image_storage_key().to_owned();
+            let thumb_key = capture.thumbnail_storage_key().to_owned();
+            let tile_id = capture.tile_id();
+
+            let mut board = uow
+                .boards()
+                .find_by_game_and_owner(self.game_id, user_id)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(CaptureUseCaseError::Persistence)?;
+
+            board
+                .retract_capture(tile_id, self.capture_id)
+                .change_context(CaptureUseCaseError::Conflict)?;
+
+            uow.boards()
+                .update(&mut board)
+                .await
+                .map_err(IntoReport::into_report)
+                .map_err(|err| {
+                    if matches!(
+                        err.current_context(),
+                        RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
+                    ) {
+                        err.change_context(CaptureUseCaseError::Conflict)
+                    } else {
+                        err.change_context(CaptureUseCaseError::Persistence)
+                    }
+                })?;
+
+            uow.captures()
+                .delete(capture)
+                .await
+                .map_err(IntoReport::into_report)
+                .map_err(|err| {
+                    if matches!(
+                        err.current_context(),
+                        RepositoryError::VersionMismatch { .. } | RepositoryError::Conflict
+                    ) {
+                        err.change_context(CaptureUseCaseError::Conflict)
+                    } else {
+                        err.change_context(CaptureUseCaseError::Persistence)
+                    }
+                })?;
+
+            Ok::<_, Report<CaptureUseCaseError>>((full_key, thumb_key))
+        }
+        .await;
+
+        let (full_key, thumb_key) = uow.finish(result, CaptureUseCaseError::Persistence).await?;
+        for key in [&full_key, &thumb_key] {
+            if let Err(cleanup_err) = ctx.object_store().ensure_deleted(key).await {
+                warn!(%key, fehler = %cleanup_err, "failed to delete retracted capture media");
+            }
+        }
+        Ok(())
+    }
+}

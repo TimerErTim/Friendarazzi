@@ -404,6 +404,15 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
     );
   }
 
+  async captureRetract(gameId: string, captureId: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.DELETE("/games/{game_id}/captures/{capture_id}", {
+        params: { path: { game_id: gameId, capture_id: captureId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
   async fetchMediaBlob(storageKey: string): Promise<Blob> {
     return this.authenticated<Blob>(async () => {
       const headers: Record<string, string> = {};

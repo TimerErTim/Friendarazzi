@@ -10,8 +10,18 @@ import {
 import { ActivePlayPhase } from "./active-play-phase";
 
 vi.mock("@/api/hooks", () => ({
+  useBenutzerQuery: () => ({
+    data: { id: "u-alice", displayName: "Alice" },
+  }),
   useFriendarazziMutations: () => ({
     submitCapture: {
+      mutateAsync: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+    },
+    retractCapture: {
       mutateAsync: vi.fn(),
       reset: vi.fn(),
       isPending: false,

@@ -566,3 +566,105 @@ async fn e2e_capture_normalizes_exif_orientation_and_strips_exif() {
         (60, 120, [G, Y, R, B])
     );
 }
+
+#[test_log::test(tokio::test)]
+async fn e2e_retract_capture_clears_tile_and_guards_completed_or_other_player() {
+    let harness = E2eHarness::new().await;
+    let (t_alice, _) = neuer_benutzer(&harness, "r-alice@example.at").await;
+    let (t_bob, _) = neuer_benutzer(&harness, "r-bob@example.at").await;
+    let (t_carol, _) = neuer_benutzer(&harness, "r-carol@example.at").await;
+
+    let (game_id, _) = enroll_and_start_game(
+        &harness,
+        &t_alice,
+        &[&t_bob, &t_carol],
+        "Retract E2E",
+        3,
+        "LiveFeed",
+    )
+    .await;
+
+    let (_, active) = harness
+        .client
+        .get_json_auth(&format!("/api/games/{game_id}"), &t_alice)
+        .await;
+    let tiles = active["myBoard"]["tiles"].as_array().unwrap();
+    let tile_id = |r: i64, c: i64| -> String {
+        tiles
+            .iter()
+            .find(|t| t["row"] == r && t["col"] == c)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    let png = png_bytes_for_test(16, 16);
+    let t00 = tile_id(0, 0);
+    let (st, uploaded) = harness
+        .client
+        .post_multipart_file_auth(
+            &format!("/api/games/{game_id}/tiles/{t00}/capture"),
+            "file",
+            "snap.png",
+            "image/png",
+            png.clone(),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{uploaded}");
+    let cap_id = uploaded["capture"]["id"].as_str().unwrap().to_owned();
+
+    // Non-owner gets 403 Forbidden
+    let (st, _) = harness
+        .client
+        .delete_auth(&format!("/api/games/{game_id}/captures/{cap_id}"), &t_bob)
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // Owner retracts -> 200 OK with cleared tile & empty feed
+    let (st, retracted) = harness
+        .client
+        .delete_auth(&format!("/api/games/{game_id}/captures/{cap_id}"), &t_alice)
+        .await;
+    assert_eq!(st, StatusCode::OK, "{retracted}");
+    let tile_after = retracted["myBoard"]["tiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == t00)
+        .unwrap();
+    assert_eq!(tile_after["isCaptured"], false);
+    assert!(tile_after["captureId"].is_null());
+    assert!(retracted["feed"].as_array().unwrap().is_empty());
+
+    // Finish a row -> Completed; retracting now returns 409 Conflict.
+    let mut kept_id = String::new();
+    for col in 0..3 {
+        let tid = tile_id(0, col);
+        let (st, cap) = harness
+            .client
+            .post_multipart_file_auth(
+                &format!("/api/games/{game_id}/tiles/{tid}/capture"),
+                "file",
+                "win.png",
+                "image/png",
+                png.clone(),
+                &t_alice,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK, "{cap}");
+        if col == 0 {
+            kept_id = cap["capture"]["id"].as_str().unwrap().to_owned();
+        }
+    }
+
+    let (st, _) = harness
+        .client
+        .delete_auth(
+            &format!("/api/games/{game_id}/captures/{kept_id}"),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::CONFLICT);
+}

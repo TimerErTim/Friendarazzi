@@ -65,6 +65,7 @@ export interface FriendarazziApi {
     tileId: string,
     file: File,
   ): Promise<CaptureOutcome>;
+  captureRetract(gameId: string, captureId: string): Promise<GameDetail>;
   fetchMediaBlob(storageKey: string): Promise<Blob>;
 
   // ---------------------------------------------------------------- Profiles & Galleries

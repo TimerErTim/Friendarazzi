@@ -263,14 +263,15 @@ impl BoardRepository for SQLiteBoardRepository {
         .await?;
 
         for tile in board.tiles() {
-            if let Some(capture_id) = tile.capture_id() {
-                tx.execute(
-                    r#"UPDATE "board_tile" SET capture_id = ?2 WHERE id = ?1 AND capture_id IS NULL"#,
-                    (tile.id().0.to_string(), capture_id.0.to_string()),
-                )
-                .await
-                .contextualize_with(libsql_error_to_persistence_error)?;
-            }
+            tx.execute(
+                r#"UPDATE "board_tile" SET capture_id = ?2 WHERE id = ?1"#,
+                (
+                    tile.id().0.to_string(),
+                    tile.capture_id().map(|id| id.0.to_string()),
+                ),
+            )
+            .await
+            .contextualize_with(libsql_error_to_persistence_error)?;
         }
 
         board.increment();

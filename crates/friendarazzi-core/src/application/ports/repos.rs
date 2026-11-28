@@ -77,6 +77,7 @@ pub trait CaptureRepository: Send + Sync {
         user_id: BenutzerId,
     ) -> RepositoryResult<Vec<Versioned<Capture>>>;
     async fn find_by_storage_key(&self, key: &str) -> RepositoryResult<Versioned<Capture>>;
+    async fn delete(&self, capture: Versioned<Capture>) -> RepositoryResult<()>;
 }
 
 #[async_trait]

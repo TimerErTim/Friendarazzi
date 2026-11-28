@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::libsql_error_to_persistence_error,
-    repos::common::{format_datetime, parse_datetime, parse_uuid, parse_version},
+    repos::common::{delete_versioned, format_datetime, parse_datetime, parse_uuid, parse_version},
 };
 
 const SELECT: &str = r#"SELECT c.id, b.game_id, c.tile_id, b.owner_user_id, bt.target_user_id, ps.text, c.image_storage_key, c.thumbnail_storage_key, c.captured_at, c._version
@@ -196,5 +196,18 @@ impl CaptureRepository for SQLiteCaptureRepository {
             return Err(RepositoryError::NotFound.into());
         };
         capture_from_row(&row)
+    }
+
+    async fn delete(&self, capture: Versioned<Capture>) -> RepositoryResult<()> {
+        let mut guard = self.tx.lock().await;
+        let tx = guard.as_mut().ok_or(RepositoryError::Conflict)?;
+
+        delete_versioned(
+            tx,
+            r#"DELETE FROM "capture" WHERE id = ?1 AND _version = ?2"#,
+            (capture.id().0.to_string(), capture.v() as i64),
+            capture.v(),
+        )
+        .await
     }
 }

@@ -35,6 +35,8 @@ pub enum BoardError {
     TileNotFound,
     #[error("Diese Kachel wurde bereits erfasst")]
     TileAlreadyCaptured,
+    #[error("Diese Kachel hat kein Foto")]
+    TileNotCaptured,
 }
 
 /// Validated zero-based `(row, col)` coordinate on a Bingo board.
@@ -248,6 +250,23 @@ impl Board {
             self.has_bingo = true;
         }
         Ok(winning_line)
+    }
+
+    /// Remove a previously attached capture from a tile and recompute win state.
+    pub fn retract_capture(
+        &mut self,
+        tile_id: BoardTileId,
+        expected_capture_id: CaptureId,
+    ) -> ResultReport<(), BoardError> {
+        let Some(tile) = self.tiles.iter_mut().find(|t| t.id == tile_id) else {
+            return Err(Report::new(BoardError::TileNotFound));
+        };
+        if tile.capture_id != Some(expected_capture_id) {
+            return Err(Report::new(BoardError::TileNotCaptured));
+        }
+        tile.capture_id = None;
+        self.has_bingo = self.evaluate_bingo().is_some();
+        Ok(())
     }
 
     /// Evaluate whether this board contains any completed Bingo line (row, column, or diagonal).
@@ -473,6 +492,33 @@ mod tests {
         assert!(matches!(
             err.current_context(),
             BoardError::InvalidTileLayout
+        ));
+    }
+
+    #[test_log::test]
+    fn retract_capture_clears_tile_and_rejects_mismatched_or_empty_tile() {
+        let mut board = mk_board(GridSize::Three);
+        let tile_id = board.tiles()[0].id();
+        let cap_id = CaptureId(Uuid::new_v4());
+        board.record_capture(tile_id, cap_id).unwrap();
+        assert_eq!(board.tiles().iter().filter(|t| t.is_filled()).count(), 1);
+
+        let wrong_err = board
+            .retract_capture(tile_id, CaptureId(Uuid::new_v4()))
+            .unwrap_err();
+        assert!(matches!(
+            wrong_err.current_context(),
+            BoardError::TileNotCaptured
+        ));
+
+        board.retract_capture(tile_id, cap_id).unwrap();
+        assert_eq!(board.tiles().iter().filter(|t| t.is_filled()).count(), 0);
+        assert!(board.tiles()[0].capture_id().is_none());
+
+        let empty_err = board.retract_capture(tile_id, cap_id).unwrap_err();
+        assert!(matches!(
+            empty_err.current_context(),
+            BoardError::TileNotCaptured
         ));
     }
 }

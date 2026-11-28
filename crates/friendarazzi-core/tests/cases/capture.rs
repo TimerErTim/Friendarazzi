@@ -3,12 +3,14 @@
 use chrono::Duration;
 use friendarazzi_core::{
     domain::{
-        BoardCoordinates, Game, GridSize, NonEmptyString, VisibilityMode, compute_game_awards,
+        BoardCoordinates, CaptureId, Game, GridSize, NonEmptyString, VisibilityMode,
+        compute_game_awards,
     },
     ports::{RepositoryError, collect_object},
-    service::{CaptureUseCaseError, SubmitCapture, UpdateProfile},
+    service::{CaptureUseCaseError, RetractCapture, SubmitCapture, UpdateProfile},
 };
 use friendarazzi_fakes::png_bytes_for_test;
+use uuid::Uuid;
 
 use super::helpers::{build, is_webp, load_tiles, register_user, setup_active_game, user_id_of};
 
@@ -550,4 +552,151 @@ async fn superlatives_computed_from_persisted_captures() {
     assert_eq!(awards.quickest_draw.metric_value, 45);
     assert_eq!(awards.sniper.user_id, user_id_of(bob));
     assert_eq!(awards.sniper.metric_value, 4);
+}
+
+#[test_log::test(pollster::test)]
+async fn retract_capture_clears_tile_deletes_media_and_guards_completed_or_foreign() {
+    let harness = build(super::super::base_app_builder().await);
+    let alice = register_user(&harness, "ret-alice@example.at").await;
+    let bob = register_user(&harness, "ret-bob@example.at").await;
+    let carol = register_user(&harness, "ret-carol@example.at").await;
+
+    let game = setup_active_game(
+        &harness,
+        alice,
+        &[bob, carol],
+        "Retract Hunt",
+        GridSize::Three,
+        VisibilityMode::LiveFeed,
+    )
+    .await;
+    let alice_tiles = load_tiles(&harness, alice, game.id()).await;
+    let target_tile = alice_tiles[0].id();
+    let png = png_bytes_for_test(16, 16);
+
+    let submitted = harness
+        .app()
+        .execute(
+            alice,
+            SubmitCapture {
+                game_id: game.id(),
+                tile_id: target_tile,
+                image_bytes: png.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    let cap_id = submitted.capture.id();
+    let full_key = submitted.capture.image_storage_key().to_owned();
+
+    // Another player cannot retract Alice's capture -> Forbidden
+    let err = harness
+        .app()
+        .execute(
+            bob,
+            RetractCapture {
+                game_id: game.id(),
+                capture_id: cap_id,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        CaptureUseCaseError::Forbidden
+    ));
+
+    // Unknown capture -> NotFound
+    let err = harness
+        .app()
+        .execute(
+            alice,
+            RetractCapture {
+                game_id: game.id(),
+                capture_id: CaptureId(Uuid::new_v4()),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        CaptureUseCaseError::NotFound
+    ));
+
+    // Owner retracts own capture -> tile cleared & media removed; tile can be captured again.
+    harness
+        .app()
+        .execute(
+            alice,
+            RetractCapture {
+                game_id: game.id(),
+                capture_id: cap_id,
+            },
+        )
+        .await
+        .unwrap();
+
+    let updated_tiles = load_tiles(&harness, alice, game.id()).await;
+    let cleared = updated_tiles
+        .iter()
+        .find(|t| t.id() == target_tile)
+        .unwrap();
+    assert!(cleared.capture_id().is_none());
+    let stored = harness
+        .app()
+        .execute_fn(alice, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let cap_missing = uow.captures().find_by_id(cap_id).await.is_err();
+            let obj = ctx.object_store().get(&full_key).await.unwrap();
+            uow.finish(
+                Ok::<_, error_stack::Report<RepositoryError>>((cap_missing, obj.is_none())),
+                RepositoryError::Unknown,
+            )
+            .await
+        })
+        .await
+        .unwrap();
+    assert!(stored.0, "capture row must be deleted");
+    assert!(stored.1, "media object must be deleted");
+
+    // Complete a Bingo row for Alice; once game Completed, retract is rejected with Conflict.
+    let mut kept_capture_id = None;
+    for col in 0..3 {
+        let tid = updated_tiles
+            .iter()
+            .find(|t| t.row() == 0 && t.col() == col)
+            .unwrap()
+            .id();
+        let out = harness
+            .app()
+            .execute(
+                alice,
+                SubmitCapture {
+                    game_id: game.id(),
+                    tile_id: tid,
+                    image_bytes: png.clone(),
+                },
+            )
+            .await
+            .unwrap();
+        if col == 0 {
+            kept_capture_id = Some(out.capture.id());
+        }
+    }
+
+    let err = harness
+        .app()
+        .execute(
+            alice,
+            RetractCapture {
+                game_id: game.id(),
+                capture_id: kept_capture_id.unwrap(),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        CaptureUseCaseError::Conflict
+    ));
 }

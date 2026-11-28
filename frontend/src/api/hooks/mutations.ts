@@ -219,6 +219,17 @@ export function useFriendarazziMutations() {
         }
       },
     }),
+    retractCapture: useMutation({
+      mutationFn: (vars: { gameId: string; captureId: string }) =>
+        api.captureRetract(vars.gameId, vars.captureId),
+      ...SITE_HANDLED,
+      onSuccess: (detail) => {
+        syncGameDetail(detail);
+        void queryClient.invalidateQueries({
+          queryKey: friendarazziKeys.profiles.all(),
+        });
+      },
+    }),
     updateProfile: useMutation({
       mutationFn: (input: UpdateProfileInput) => api.profileUpdate(input),
       ...SITE_HANDLED,

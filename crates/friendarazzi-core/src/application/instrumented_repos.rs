@@ -121,6 +121,8 @@ impl_instrumented_repo!(
         fn find_by_catcher_user(&self, user_id: BenutzerId) -> RepositoryResult<Vec<Versioned<Capture>>>;
         #[instrument(skip(self, key), level = "trace", err(Debug))]
         fn find_by_storage_key(&self, key: &str) -> RepositoryResult<Versioned<Capture>>;
+        #[instrument(skip(self, capture), level = "debug", err(Debug))]
+        fn delete(&self, capture: Versioned<Capture>) -> RepositoryResult<()>;
     ]
 );
 

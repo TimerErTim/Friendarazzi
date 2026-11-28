@@ -1,7 +1,15 @@
 "use client";
 
-import { Crown, Flame, Ghost, Target, Zap } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  Crown,
+  Flame,
+  Ghost,
+  LayoutGrid,
+  List,
+  Target,
+  Zap,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type CaptureFeedItem,
@@ -16,10 +24,22 @@ import {
   PlayerAvatar,
   PlayerBadgeLink,
 } from "@/components/friendarazzi/player-avatar";
+import {
+  MatchTargetOverview,
+  TargetGroupedBoard,
+} from "@/components/friendarazzi/target-grouped-board";
 import { Badge } from "@/components/ui/badge";
 import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Card, CardContent } from "@/components/ui/card";
+import { SearchInput } from "@/components/ui/search-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  aggregateMatchByTarget,
+  type BoardViewMode,
+  loadBoardViewMode,
+  saveBoardViewMode,
+} from "@/lib/board-grouping";
 
 function superlativeMeta(kind: SuperlativeKind, metric: number) {
   switch (kind) {
@@ -61,7 +81,22 @@ export function CompletedPhase({
 }) {
   const [selectedCapture, setSelectedCapture] =
     useState<CaptureFeedItem | null>(null);
+  const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>(() =>
+    loadBoardViewMode(),
+  );
+  const [targetSearch, setTargetSearch] = useState("");
   const openedCaptureRef = useRef<string | null>(null);
+
+  const matchTargetOverview = useMemo(
+    () => aggregateMatchByTarget(game.allBoards, game.feed, targetSearch),
+    [game.allBoards, game.feed, targetSearch],
+  );
+
+  function handleBoardViewChange(next: string) {
+    if (next !== "grid" && next !== "list") return;
+    setBoardViewMode(next);
+    saveBoardViewMode(next);
+  }
 
   useEffect(() => {
     if (!initialCaptureId || openedCaptureRef.current === initialCaptureId) {
@@ -137,7 +172,7 @@ export function CompletedPhase({
         captures={game.feed}
       />
 
-      {/* Tabbed Recap: Gallery vs All Unlocked Boards */}
+      {/* Tabbed Recap: Gallery, All Unlocked Boards, and Target Overview (#26) */}
       <Tabs defaultValue="gallery">
         <TabsList>
           <TabsTrigger value="gallery">
@@ -145,6 +180,9 @@ export function CompletedPhase({
           </TabsTrigger>
           <TabsTrigger value="boards">
             Aufgedeckte Bretter ({game.allBoards.length})
+          </TabsTrigger>
+          <TabsTrigger value="by-target">
+            Nach Ziel ({matchTargetOverview.length})
           </TabsTrigger>
         </TabsList>
 
@@ -166,23 +204,76 @@ export function CompletedPhase({
           )}
         </TabsContent>
 
-        <TabsContent value="boards" className="pt-2">
-          <div className="grid gap-6 xl:grid-cols-2">
+        <TabsContent value="boards" className="space-y-4 pt-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-mono text-xs font-bold text-secondary">
+              Darstellung der Spielbretter wählen:
+            </p>
+            <ToggleGroup
+              type="single"
+              value={boardViewMode}
+              onValueChange={handleBoardViewChange}
+              aria-label="Brett-Darstellung im Rückblick wählen"
+            >
+              <ToggleGroupItem value="grid">
+                <LayoutGrid className="size-4" aria-hidden="true" />
+                <span>Raster</span>
+              </ToggleGroupItem>
+              <ToggleGroupItem value="list">
+                <List className="size-4" aria-hidden="true" />
+                <span>Nach Ziel</span>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+
+          <div
+            className={
+              boardViewMode === "grid"
+                ? "grid gap-6 xl:grid-cols-2"
+                : "space-y-6"
+            }
+          >
             {game.allBoards.map((board) => (
               <div key={board.id} className="space-y-3">
                 <div className="brutal-shadow-sm flex items-center justify-between gap-2 rounded-md border-2 border-strong bg-surface px-4 py-2.5">
                   <PlayerBadgeLink user={board.owner} compact />
                   {board.hasBingo ? <Badge variant="info">Bingo!</Badge> : null}
                 </div>
-                <BingoBoard
-                  board={board}
-                  gridSize={game.gridSize}
-                  feed={game.feed}
-                  onViewCapture={(cap) => setSelectedCapture(cap)}
-                />
+                {boardViewMode === "list" ? (
+                  <TargetGroupedBoard
+                    board={board}
+                    feed={game.feed}
+                    onViewCapture={(cap) => setSelectedCapture(cap)}
+                  />
+                ) : (
+                  <BingoBoard
+                    board={board}
+                    gridSize={game.gridSize}
+                    feed={game.feed}
+                    onViewCapture={(cap) => setSelectedCapture(cap)}
+                  />
+                )}
               </div>
             ))}
           </div>
+        </TabsContent>
+
+        <TabsContent value="by-target" className="space-y-4 pt-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-secondary">
+              Alle Aufträge und Treffer dieses Spiels nach Zielperson gruppiert.
+            </p>
+            <SearchInput
+              value={targetSearch}
+              onChange={(e) => setTargetSearch(e.target.value)}
+              placeholder="Ziel, Auftrag oder Fänger …"
+              aria-label="Rückblick nach Zielperson durchsuchen"
+            />
+          </div>
+          <MatchTargetOverview
+            aggregates={matchTargetOverview}
+            onViewCapture={(cap) => setSelectedCapture(cap)}
+          />
         </TabsContent>
       </Tabs>
 

@@ -5,6 +5,25 @@ import { useAuth } from "../auth-provider";
 import { useFriendarazziApi } from "../provider";
 import { friendarazziKeys } from "../query-keys";
 
+function useDocumentVisible(): boolean {
+  const [visible, setVisible] = useState(() =>
+    typeof document === "undefined"
+      ? true
+      : document.visibilityState !== "hidden",
+  );
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onChange = () => {
+      setVisible(document.visibilityState !== "hidden");
+    };
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+
+  return visible;
+}
+
 export function useHealthQuery() {
   const { api } = useFriendarazziApi();
   return useQuery({
@@ -38,11 +57,12 @@ export function useDecksQuery() {
 export function useGamesQuery() {
   const { api } = useFriendarazziApi();
   const phase = useAuth();
+  const visible = useDocumentVisible();
   return useQuery({
     queryKey: friendarazziKeys.games.all(),
     queryFn: () => api.gamesList(),
     enabled: phase.status === "authenticated",
-    refetchInterval: 5000,
+    refetchInterval: visible ? 5000 : false,
     retry: false,
   });
 }
@@ -61,12 +81,13 @@ export function useGameByCodeQuery(code: string | null) {
 export function useGameDetailQuery(gameId: string | null) {
   const { api } = useFriendarazziApi();
   const phase = useAuth();
+  const visible = useDocumentVisible();
   return useQuery({
     queryKey: friendarazziKeys.games.detail(gameId ?? ""),
     queryFn: () => api.gameDetail(gameId ?? ""),
     enabled: phase.status === "authenticated" && Boolean(gameId),
     refetchInterval: (query) =>
-      query.state.data?.status === "Completed" ? false : 5000,
+      !visible || query.state.data?.status === "Completed" ? false : 5000,
     retry: false,
   });
 }
@@ -96,11 +117,12 @@ export function useUserGalleryQuery(userId: string | null) {
 export function useNotificationsQuery() {
   const { api } = useFriendarazziApi();
   const phase = useAuth();
+  const visible = useDocumentVisible();
   return useQuery({
     queryKey: friendarazziKeys.notifications.inbox(),
     queryFn: () => api.notificationsList(),
     enabled: phase.status === "authenticated",
-    refetchInterval: 10_000,
+    refetchInterval: visible ? 10_000 : false,
     retry: false,
   });
 }

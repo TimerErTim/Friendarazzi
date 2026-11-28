@@ -48,7 +48,7 @@ export default function OptionsPage() {
     unauthorized: "Das Passwort ist falsch oder die Sitzung ist abgelaufen.",
     badRequest: "Das Passwort muss 8 bis 128 Zeichen lang sein.",
     fallback:
-      "Das Konto konnte nicht gelöscht werden. Bitte versuchen Sie es später erneut.",
+      "Das Konto konnte nicht gelöscht werden. Bitte versuche es später erneut.",
   });
 
   function deleteAccount() {
@@ -124,7 +124,7 @@ export default function OptionsPage() {
                     htmlFor="pref-default-watch"
                     className="block text-sm font-bold text-ink"
                   >
-                    Neue Spiele automatisch beobachten
+                    Benachrichtigungen für neue Spiele automatisch aktivieren
                   </label>
                   <p className="text-xs font-medium text-secondary">
                     Beim Erstellen oder Beitreten eines Spiels aktiv (pro Spiel
@@ -155,7 +155,7 @@ export default function OptionsPage() {
                       Spielstart (Entwurfsphase beendet)
                     </label>
                     <p className="text-xs font-medium text-secondary">
-                      Wenn ein beobachtetes Spiel startet.
+                      Wenn ein Spiel mit aktivierten Benachrichtigungen startet.
                     </p>
                   </div>
                   <Switch
@@ -177,8 +177,8 @@ export default function OptionsPage() {
                       Neue Beweisfotos
                     </label>
                     <p className="text-xs font-medium text-secondary">
-                      Wenn in einem beobachteten Spiel ein Beweisfoto
-                      hochgeladen wird.
+                      Wenn in einem Spiel mit aktivierten Benachrichtigungen ein
+                      Beweisfoto hochgeladen wird.
                     </p>
                   </div>
                   <Switch
@@ -200,7 +200,8 @@ export default function OptionsPage() {
                       Spielende & Bingo-Sieg
                     </label>
                     <p className="text-xs font-medium text-secondary">
-                      Wenn jemand ein beobachtetes Spiel gewinnt.
+                      Wenn jemand ein Spiel mit aktivierten Benachrichtigungen
+                      gewinnt.
                     </p>
                   </div>
                   <Switch
@@ -238,8 +239,8 @@ export default function OptionsPage() {
           <div className="space-y-1">
             <h2 className="text-sm font-bold text-ink">Konto löschen</h2>
             <p className="text-sm font-medium text-secondary">
-              Ihr Konto, Ihr Profil und Ihre persönlichen Daten werden entfernt.
-              Dieser Vorgang kann nicht rückgängig gemacht werden.
+              Dein Konto, dein Profil und deine persönlichen Daten werden
+              entfernt. Dieser Vorgang kann nicht rückgängig gemacht werden.
             </p>
           </div>
           {message ? (
@@ -266,13 +267,13 @@ export default function OptionsPage() {
           <DialogHeader>
             <DialogTitle>Konto endgültig löschen?</DialogTitle>
             <DialogDescription>
-              Geben Sie zur Bestätigung Ihr Passwort ein. Ihre Sitzungen enden
+              Gib zur Bestätigung dein Passwort ein. Deine Sitzungen enden
               sofort; diese Aktion kann nicht rückgängig gemacht werden.
             </DialogDescription>
           </DialogHeader>
           <Field
             label="Passwort"
-            hint="Geben Sie zur Bestätigung Ihr aktuelles Passwort ein."
+            hint="Gib zur Bestätigung dein aktuelles Passwort ein."
           >
             <Input
               type="password"

@@ -15,7 +15,7 @@ const listeners = new Set<Listener>();
 
 /** What a failure says when nothing more specific is known. */
 export const GENERAL_ERROR_MESSAGE =
-  "Die Aktion konnte nicht ausgeführt werden. Bitte versuchen Sie es erneut.";
+  "Die Aktion konnte nicht ausgeführt werden. Bitte versuche es erneut.";
 
 export function reportGeneralError(text: string): void {
   for (const listener of listeners) listener(text);

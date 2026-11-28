@@ -21,6 +21,7 @@ import {
   LobbyPhase,
   visibilityLabel,
 } from "@/components/friendarazzi/game-phases";
+import { GameRulesDialog } from "@/components/friendarazzi/game-rules-dialog";
 import { SetBreadcrumbLabel } from "@/components/layout/page-chrome";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -264,6 +265,10 @@ export default function GamePage() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            <GameRulesDialog
+              status={game.status}
+              visibilityMode={game.visibilityMode}
+            />
             <Button
               type="button"
               variant={game.watching ? "secondary" : "ghost"}
@@ -294,7 +299,7 @@ export default function GamePage() {
                 <BellOff className="size-4" aria-hidden="true" />
               )}
               <span className="hidden sm:inline">
-                {game.watching ? "Beobachtet" : "Stumm"}
+                {game.watching ? "Benachrichtigungen" : "Stumm"}
               </span>
             </Button>
 

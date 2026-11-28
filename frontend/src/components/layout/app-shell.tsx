@@ -262,8 +262,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6">
             <Alert variant="warning" icon={<CircleAlert aria-hidden="true" />}>
               <p>
-                Ihre Sitzung konnte nicht überprüft werden. Bitte laden Sie die
-                Seite erneut oder melden Sie sich an.
+                Deine Sitzung konnte nicht überprüft werden. Bitte lade die
+                Seite erneut oder melde dich an.
               </p>
             </Alert>
           </div>

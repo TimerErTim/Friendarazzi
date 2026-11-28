@@ -528,9 +528,9 @@ function GuestLanding() {
 // ------------------------------------------------------------------ Authenticated Cockpit
 
 const GRID_OPTIONS = [
-  { size: "3", title: "3 × 3", subtitle: "Schnell (9 Felder)" },
-  { size: "4", title: "4 × 4", subtitle: "Mittel (16 Felder)" },
-  { size: "5", title: "5 × 5", subtitle: "Marathon (25 Felder)" },
+  { size: "3", title: "3 × 3", subtitle: "Empfohlen · Kurz (1–2 Std.)" },
+  { size: "4", title: "4 × 4", subtitle: "Abend (16 Felder)" },
+  { size: "5", title: "5 × 5", subtitle: "Wochenende (25 Felder)" },
 ] as const;
 
 const MODE_OPTIONS = [

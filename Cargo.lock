@@ -1139,6 +1139,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
+ "chrono",
  "clap",
  "error-stack",
  "friendarazzi-api",
@@ -1147,6 +1148,7 @@ dependencies = [
  "friendarazzi-scheduler",
  "friendarazzi-smtp",
  "friendarazzi-sqlite",
+ "image",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",

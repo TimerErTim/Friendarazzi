@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -95,114 +95,129 @@ pub enum SmtpVerschlüsselung {
     Implizit,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Subcommand)]
+pub enum Command {
+    /// Seed the database with sample development data and exit
+    Seed,
+}
+
 #[derive(Debug, Parser, Default, PartialEq, Eq)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
+    /// Seed the database with sample development data before starting the server
+    #[arg(long)]
+    pub seed: bool,
+
     /// Path to the config file (`.json` or `.toml`)
-    #[arg(long = "config-path", env = "FRIENDARAZZI_CONFIG_PATH")]
+    #[arg(long = "config-path", global = true, env = "FRIENDARAZZI_CONFIG_PATH")]
     pub config_path: Option<PathBuf>,
 
     /// IP address to bind to
-    #[arg(long, env = "FRIENDARAZZI_BIND_ADDRESS")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_BIND_ADDRESS")]
     pub bind_address: Option<String>,
 
     /// Port to bind to
-    #[arg(long, env = "FRIENDARAZZI_BIND_PORT")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_BIND_PORT")]
     pub bind_port: Option<u16>,
 
     /// Subpath this service is hosted on
-    #[arg(long, env = "SUBPATH")]
+    #[arg(long, global = true, env = "SUBPATH")]
     pub subpath: Option<String>,
 
     /// Database URL
-    #[arg(long, env = "FRIENDARAZZI_DATABASE_URL")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_DATABASE_URL")]
     pub database_url: Option<String>,
 
     /// Directory for object store
-    #[arg(long, env = "FRIENDARAZZI_OBJECT_STORE_DIR")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_OBJECT_STORE_DIR")]
     pub object_store_dir: Option<PathBuf>,
 
     /// Directory for rotated JSON log files (omit to disable logging)
-    #[arg(long, env = "FRIENDARAZZI_LOG_DIR")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_LOG_DIR")]
     pub log_dir: Option<PathBuf>,
 
     /// PKCS#8 PEM private key that signs access tokens; omit to generate one per process
-    #[arg(long, env = "FRIENDARAZZI_SIGNING_KEY_PATH")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_SIGNING_KEY_PATH")]
     pub signing_key_path: Option<PathBuf>,
 
     /// Issuer claim of every access token
-    #[arg(long, env = "FRIENDARAZZI_TOKEN_ISSUER")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_TOKEN_ISSUER")]
     pub token_issuer: Option<String>,
 
     /// Audience claim of every access token
-    #[arg(long, env = "FRIENDARAZZI_TOKEN_AUDIENCE")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_TOKEN_AUDIENCE")]
     pub token_audience: Option<String>,
 
     /// Frontend origin the mailed links point at
-    #[arg(long, env = "FRIENDARAZZI_FRONTEND_BASIS_URL")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_FRONTEND_BASIS_URL")]
     pub frontend_basis_url: Option<String>,
 
     /// Public URL of the server
-    #[arg(long, env = "FRIENDARAZZI_PUBLIC_URL")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_PUBLIC_URL")]
     pub public_url: Option<String>,
 
     /// SMTP relay host; omit to run without mail delivery
-    #[arg(long, env = "FRIENDARAZZI_SMTP_HOST")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_SMTP_HOST")]
     pub smtp_host: Option<String>,
 
     /// SMTP relay port
-    #[arg(long, env = "FRIENDARAZZI_SMTP_PORT")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_SMTP_PORT")]
     pub smtp_port: Option<u16>,
 
     /// SMTP transport: klar, start-tls, or implizit
-    #[arg(long, env = "FRIENDARAZZI_SMTP_VERSCHLUESSELUNG")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_SMTP_VERSCHLUESSELUNG")]
     pub smtp_verschlüsselung: Option<SmtpVerschlüsselung>,
 
     /// SMTP username
-    #[arg(long, env = "FRIENDARAZZI_SMTP_BENUTZERNAME")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_SMTP_BENUTZERNAME")]
     pub smtp_benutzername: Option<String>,
 
     /// SMTP password
-    #[arg(long, env = "FRIENDARAZZI_SMTP_PASSWORT")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_SMTP_PASSWORT")]
     pub smtp_passwort: Option<String>,
 
     /// Envelope sender of transactional mail
-    #[arg(long, env = "FRIENDARAZZI_SMTP_ABSENDER")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_SMTP_ABSENDER")]
     pub smtp_absender: Option<String>,
 
     /// OTLP HTTP traces endpoint (omit to disable OTLP trace export)
-    #[arg(long, env = "FRIENDARAZZI_OTLP_ENDPOINT")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_OTLP_ENDPOINT")]
     pub otlp_endpoint: Option<String>,
 
     /// Optional Basic auth username for the OTLP endpoint
-    #[arg(long, env = "FRIENDARAZZI_OTLP_USERNAME")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_OTLP_USERNAME")]
     pub otlp_username: Option<String>,
 
     /// Optional Basic auth password for the OTLP endpoint
-    #[arg(long, env = "FRIENDARAZZI_OTLP_PASSWORD")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_OTLP_PASSWORD")]
     pub otlp_password: Option<String>,
 
     /// OpenObserve `stream-name` header value for OTLP traces
-    #[arg(long, env = "FRIENDARAZZI_OTLP_STREAM_NAME")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_OTLP_STREAM_NAME")]
     pub otlp_stream_name: Option<String>,
 
     /// OpenTelemetry `service.name` resource attribute
-    #[arg(long, env = "FRIENDARAZZI_OTEL_SERVICE_NAME")]
+    #[arg(long, global = true, env = "FRIENDARAZZI_OTEL_SERVICE_NAME")]
     pub otel_service_name: Option<String>,
 }
 
-pub fn load() -> Result<ServerConfig, ConfigError> {
-    resolve(Cli::parse())
+pub fn load() -> Result<(ServerConfig, Cli), ConfigError> {
+    let cli = Cli::parse();
+    let config = resolve_ref(&cli)?;
+    Ok((config, cli))
 }
 
-pub fn resolve(cli: Cli) -> Result<ServerConfig, ConfigError> {
+fn resolve_ref(cli: &Cli) -> Result<ServerConfig, ConfigError> {
     let explicit = cli.config_path.is_some();
     let path = cli
         .config_path
         .clone()
         .unwrap_or_else(|| PathBuf::from(DEFAULT_CONFIG_FILE));
     let file = load_file(&path, explicit)?;
-    Ok(overlay(file, &cli))
+    Ok(overlay(file, cli))
 }
 
 fn load_file(path: &Path, explicit: bool) -> Result<ServerConfig, ConfigError> {
@@ -553,5 +568,40 @@ logDir = "server-logs/"
         assert_eq!(resolved.otlp_password.as_deref(), Some("secret"));
         assert_eq!(resolved.otlp_stream_name, "custom_traces");
         assert_eq!(resolved.otel_service_name, "friendarazzi-test");
+    }
+
+    #[test_log::test]
+    fn parses_seed_subcommand_with_global_flags_before_or_after() {
+        let after = Cli::try_parse_from([
+            "friendarazzi-server",
+            "seed",
+            "--database-url",
+            "/tmp/seed.db",
+        ])
+        .unwrap();
+        assert_eq!(after.command, Some(Command::Seed));
+        assert!(!after.seed);
+        assert_eq!(after.database_url.as_deref(), Some("/tmp/seed.db"));
+
+        let before = Cli::try_parse_from([
+            "friendarazzi-server",
+            "--database-url",
+            "/tmp/seed.db",
+            "seed",
+        ])
+        .unwrap();
+        assert_eq!(before.command, Some(Command::Seed));
+        assert_eq!(before.database_url.as_deref(), Some("/tmp/seed.db"));
+    }
+
+    #[test_log::test]
+    fn parses_seed_flag_for_server_startup() {
+        let default = Cli::try_parse_from(["friendarazzi-server"]).unwrap();
+        assert_eq!(default.command, None);
+        assert!(!default.seed);
+
+        let with_flag = Cli::try_parse_from(["friendarazzi-server", "--seed"]).unwrap();
+        assert_eq!(with_flag.command, None);
+        assert!(with_flag.seed);
     }
 }

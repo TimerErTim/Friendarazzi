@@ -1,4 +1,5 @@
 mod config;
+mod seed;
 mod tracing_setup;
 
 use std::{collections::HashSet, sync::Arc};
@@ -260,11 +261,16 @@ fn ensure_database_directory(database_url: &str) -> Result<(), Report<BackendSer
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Report<BackendServerError>> {
-    let config = config::load().change_context(BackendServerError)?;
-    let tracing_guard = init_tracing(&config);
+struct AppRuntime {
+    app: App,
+    event_queue: Arc<SqliteEventQueue>,
+    scheduler_store: SQLiteStateStore,
+}
 
+async fn build_app_runtime(
+    config: &config::ServerConfig,
+    with_mail_relay: bool,
+) -> Result<AppRuntime, Report<BackendServerError>> {
     ensure_database_directory(&config.database_url)?;
     let sqlite = Arc::new(
         SQLiteInstance::local(&config.database_url)
@@ -292,15 +298,19 @@ async fn main() -> Result<(), Report<BackendServerError>> {
     let object_store = FileSystemObjectStore::new(config.object_store_dir.clone())
         .change_context(BackendServerError)?;
 
-    let signing_key = build_signing_key(&config)?;
-    let mail_sender = lade_mail_sender(&config)?;
+    let signing_key = build_signing_key(config)?;
+    let mail_sender: Arc<dyn MailSender> = if with_mail_relay {
+        lade_mail_sender(config)?
+    } else {
+        Arc::new(NullMailSender)
+    };
     let konto = IdentityProviderConfiguration::neu(
         config.token_issuer.clone(),
         config.token_audience.clone(),
     );
 
     let app = App::builder()
-        .uow_provider(Box::new(sqlite.clone()))
+        .uow_provider(Box::new(sqlite))
         .object_store(Arc::new(object_store))
         .signing(Arc::new(signing_key))
         .throttle(Arc::new(InMemoryThrottle::new()))
@@ -308,6 +318,37 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .event_queue(Arc::clone(&event_queue))
         .konto(konto)
         .build();
+
+    Ok(AppRuntime {
+        app,
+        event_queue,
+        scheduler_store,
+    })
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Report<BackendServerError>> {
+    let (config, cli) = config::load().change_context(BackendServerError)?;
+    let tracing_guard = init_tracing(&config);
+
+    if let Some(config::Command::Seed) = cli.command {
+        let runtime = build_app_runtime(&config, false).await?;
+        let result = seed::seed(&runtime.app)
+            .await
+            .change_context(BackendServerError);
+        tracing_guard.shutdown();
+        return result;
+    }
+
+    let AppRuntime {
+        app,
+        event_queue,
+        scheduler_store,
+    } = build_app_runtime(&config, true).await?;
+
+    if cli.seed {
+        seed::seed(&app).await.change_context(BackendServerError)?;
+    }
 
     let (eq_shutdown_tx, mut eq_shutdown_rx) = tokio::sync::watch::channel(false);
     let eq_worker = tokio::spawn(event_queue::run(

@@ -9,13 +9,14 @@ use friendarazzi_core::{
     application::AuthContext,
     domain::{
         BenutzerId, BoardTileId, Game, GameId, GridSize, InviteCode, NonEmptyString, PromptSource,
-        PromptSubmissionId, READY_GRACE_PERIOD_SECONDS, VisibilityMode,
+        PromptSubmissionId, PromptText, READY_GRACE_PERIOD_SECONDS, VisibilityMode,
     },
     ports::{EventQueue, EventQueueError, RepositoryError},
     service::{
-        CaptureUseCaseError, CreateGame, DraftPromptInput, GameUseCaseError, JoinGame,
-        LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts, StartDrafting, StartReadyGames,
-        SubmitCapture, UnlockDraftPrompts, UpdateGameSettings, UpdateProfile, UploadAvatar,
+        CaptureUseCaseError, CreateGame, DraftPromptInput, GameUseCaseError,
+        HostFillRemainingDrafts, JoinGame, LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts,
+        SetDraftDeadline, StartDrafting, StartReadyGames, SubmitCapture, UnlockDraftPrompts,
+        UpdateGameSettings, UpdateProfile, UploadAvatar,
     },
 };
 use friendarazzi_fakes::png_bytes_for_test;
@@ -40,6 +41,7 @@ async fn anonymous_users_cannot_run_game_capture_or_profile_use_cases() {
                 title: NonEmptyString::neu("Geheim").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -73,6 +75,7 @@ async fn anonymous_users_cannot_run_game_capture_or_profile_use_cases() {
                 title: NonEmptyString::neu("Neu").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -193,6 +196,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 title: NonEmptyString::neu("Lobby").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -266,6 +270,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 title: NonEmptyString::neu("Hacked").unwrap(),
                 grid_size: GridSize::Four,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -300,6 +305,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 title: NonEmptyString::neu("Wochenende 4x4").unwrap(),
                 grid_size: GridSize::Four,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -326,6 +332,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 title: NonEmptyString::neu("Zu spät").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -385,6 +392,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
                 title: NonEmptyString::neu("Drafting Checks").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::BlurredTeaser,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -460,7 +468,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
                 game_id: game.id(),
                 prompts: vec![DraftPromptInput {
                     target_user_id: alice_id,
-                    text: NonEmptyString::neu("Selbstporträt").unwrap(),
+                    text: PromptText::new("Selbstporträt").unwrap(),
                     source: PromptSource::Custom,
                 }],
             },
@@ -481,7 +489,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
                 game_id: game.id(),
                 prompts: vec![DraftPromptInput {
                     target_user_id: outsider_id,
-                    text: NonEmptyString::neu("Fremder").unwrap(),
+                    text: PromptText::new("Fremder").unwrap(),
                     source: PromptSource::Custom,
                 }],
             },
@@ -502,7 +510,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
                 game_id: game.id(),
                 prompts: vec![DraftPromptInput {
                     target_user_id: bob_id,
-                    text: NonEmptyString::neu("Zu wenige").unwrap(),
+                    text: PromptText::new("Zu wenige").unwrap(),
                     source: PromptSource::Custom,
                 }],
             },
@@ -779,6 +787,7 @@ async fn start_ready_games_ignores_superseded_countdown_until_current_expires() 
                 title: NonEmptyString::neu("Event Start Test").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -921,6 +930,7 @@ async fn start_ready_games_starts_expired_drafts_and_reports_next_deadline() {
                         title: NonEmptyString::neu(&title).unwrap(),
                         grid_size: GridSize::Three,
                         visibility_mode: VisibilityMode::LiveFeed,
+                        draft_deadline_at: None,
                     },
                 )
                 .await
@@ -1024,4 +1034,250 @@ async fn start_ready_games_starts_expired_drafts_and_reports_next_deadline() {
         .unwrap();
     assert_eq!(end.started_games, vec![game_b]);
     assert_eq!(end.next_draft_closes_at, None);
+}
+
+#[test_log::test(pollster::test)]
+async fn draft_deadline_and_host_fill_remaining_workflows() {
+    let harness = build(super::super::base_app_builder().await);
+    let alice = register_user(&harness, "dd-alice@example.at").await;
+    let bob = register_user(&harness, "dd-bob@example.at").await;
+    let carol = register_user(&harness, "dd-carol@example.at").await;
+    let alice_id = user_id_of(alice);
+
+    // Past draft_deadline_at on CreateGame -> BadRequest
+    let past = harness.jetzt() - Duration::minutes(5);
+    let err = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Past Deadline").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: Some(past),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        GameUseCaseError::BadRequest
+    ));
+
+    // Create game A for host fill-remaining test
+    let game_a = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Host Fill Test").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    for guest in [bob, carol] {
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: game_a.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    let drafted_a = harness
+        .app()
+        .execute(
+            alice,
+            StartDrafting {
+                game_id: game_a.id(),
+            },
+        )
+        .await
+        .unwrap();
+    let tiles_needed = drafted_a.playable_tile_count();
+    let player_ids = drafted_a.sorted_player_ids();
+
+    // Non-host cannot set draft deadline or fill remaining
+    let err = harness
+        .app()
+        .execute(
+            bob,
+            SetDraftDeadline {
+                game_id: game_a.id(),
+                draft_deadline_at: Some(harness.jetzt() + Duration::minutes(15)),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err.current_context(), GameUseCaseError::Forbidden));
+
+    let err = harness
+        .app()
+        .execute(
+            bob,
+            HostFillRemainingDrafts {
+                game_id: game_a.id(),
+                start_immediately: false,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err.current_context(), GameUseCaseError::Forbidden));
+
+    // Host sets invalid past deadline -> BadRequest; future deadline -> succeeds
+    let err = harness
+        .app()
+        .execute(
+            alice,
+            SetDraftDeadline {
+                game_id: game_a.id(),
+                draft_deadline_at: Some(harness.jetzt() - Duration::seconds(1)),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        GameUseCaseError::BadRequest
+    ));
+
+    let future_deadline = harness.jetzt() + Duration::minutes(30);
+    let updated = harness
+        .app()
+        .execute(
+            alice,
+            SetDraftDeadline {
+                game_id: game_a.id(),
+                draft_deadline_at: Some(future_deadline),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.draft_deadline_at(), Some(future_deadline));
+
+    // Alice saves custom prompts and locks; Bob & Carol stay empty/unlocked.
+    let alice_prompts = balanced_prompts_for(
+        &player_ids,
+        alice_id,
+        tiles_needed,
+        PromptSource::Custom,
+        "AliceCustom",
+    );
+    harness
+        .app()
+        .execute(
+            alice,
+            SaveDraftPrompts {
+                game_id: game_a.id(),
+                prompts: alice_prompts,
+            },
+        )
+        .await
+        .unwrap();
+    harness
+        .app()
+        .execute(
+            alice,
+            LockDraftPrompts {
+                game_id: game_a.id(),
+            },
+        )
+        .await
+        .unwrap();
+
+    // Host fills remaining drafts without immediate start -> all locked & 60s countdown starts.
+    let filled = harness
+        .app()
+        .execute(
+            alice,
+            HostFillRemainingDrafts {
+                game_id: game_a.id(),
+                start_immediately: false,
+            },
+        )
+        .await
+        .unwrap();
+    let Game::Drafting(d) = filled else {
+        panic!("expected Drafting with countdown");
+    };
+    assert!(d.draft_closes_at().is_some());
+
+    // Now start immediately -> transitions to Active with 9 tiles per board.
+    let started = harness
+        .app()
+        .execute(
+            alice,
+            HostFillRemainingDrafts {
+                game_id: game_a.id(),
+                start_immediately: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(started, Game::Active(_)));
+    let alice_tiles = load_tiles(&harness, alice, game_a.id()).await;
+    assert_eq!(alice_tiles.len(), 9);
+
+    // Game B tests automatic autofill + start when draft_deadline_at expires.
+    let deadline_b = harness.jetzt() + Duration::minutes(10);
+    let game_b = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Deadline Auto Start").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: Some(deadline_b),
+            },
+        )
+        .await
+        .unwrap();
+    for guest in [bob, carol] {
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: game_b.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    harness
+        .app()
+        .execute(
+            alice,
+            StartDrafting {
+                game_id: game_b.id(),
+            },
+        )
+        .await
+        .unwrap();
+
+    let before = harness
+        .app()
+        .execute(AuthContext::Anonymous, StartReadyGames)
+        .await
+        .unwrap();
+    assert!(before.started_games.is_empty());
+    assert_eq!(before.next_draft_closes_at, Some(deadline_b));
+
+    harness.vorspulen(Duration::minutes(10));
+    let after = harness
+        .app()
+        .execute(AuthContext::Anonymous, StartReadyGames)
+        .await
+        .unwrap();
+    assert_eq!(after.started_games, vec![game_b.id()]);
+    assert_eq!(after.next_draft_closes_at, None);
+    let bob_tiles = load_tiles(&harness, bob, game_b.id()).await;
+    assert_eq!(bob_tiles.len(), 9);
 }

@@ -301,6 +301,32 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
     );
   }
 
+  async gameHostFillDrafts(
+    gameId: string,
+    startImmediately: boolean,
+  ): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games/{game_id}/prompts/fill-remaining", {
+        params: { path: { game_id: gameId } },
+        body: { startImmediately },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameSetDraftDeadline(
+    gameId: string,
+    draftDeadlineAt: string | null,
+  ): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.PUT("/games/{game_id}/draft-deadline", {
+        params: { path: { game_id: gameId } },
+        body: { draftDeadlineAt },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
   async gameSetWatch(gameId: string, watching: boolean): Promise<GameDetail> {
     return this.authenticated(() =>
       this.client.PUT("/games/{game_id}/watch", {

@@ -1,5 +1,5 @@
 use chrono::Duration;
-use friendarazzi_core::{application::AuthContext, service::StartReadyGames};
+use friendarazzi_core::{application::AuthContext, ports::Clock as _, service::StartReadyGames};
 use poem::http::StatusCode;
 use serde_json::json;
 
@@ -368,4 +368,101 @@ async fn e2e_reversible_ready_grace_period_and_summary_progress() {
         )
         .await;
     assert_eq!(st, StatusCode::CONFLICT);
+}
+
+#[test_log::test(tokio::test)]
+async fn e2e_draft_deadline_host_fill_and_prompt_char_cap() {
+    let harness = E2eHarness::new().await;
+    let (t_alice, alice_id) = neuer_benutzer(&harness, "p2-alice@example.at").await;
+    let (t_bob, bob_id) = neuer_benutzer(&harness, "p2-bob@example.at").await;
+    let (t_carol, carol_id) = neuer_benutzer(&harness, "p2-carol@example.at").await;
+
+    let (st, created) = harness
+        .client
+        .post_json_auth(
+            "/api/games",
+            json!({
+                "title": "PR2 E2E",
+                "gridSize": 3,
+                "visibilityMode": "LiveFeed"
+            }),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{created}");
+    let game_id = created["id"].as_str().unwrap().to_owned();
+    let invite_code = created["inviteCode"].as_str().unwrap().to_owned();
+
+    for token in [&t_bob, &t_carol] {
+        let (st, _) = harness
+            .client
+            .post_json_auth(
+                "/api/games/join",
+                json!({ "inviteCode": invite_code }),
+                token,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK);
+    }
+
+    let (st, _) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/start-drafting"),
+            json!({}),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    // Prompt > 80 characters is rejected with 400 BadRequest.
+    let too_long = "x".repeat(81);
+    let (st, _) = harness
+        .client
+        .put_json_auth(
+            &format!("/api/games/{game_id}/prompts"),
+            json!({
+                "prompts": [{
+                    "targetUserId": bob_id,
+                    "text": too_long,
+                    "source": "Custom"
+                }]
+            }),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::BAD_REQUEST);
+
+    // Host sets draft deadline via PUT /draft-deadline.
+    let deadline = harness.clock.now() + Duration::minutes(15);
+    let (st, with_deadline) = harness
+        .client
+        .put_json_auth(
+            &format!("/api/games/{game_id}/draft-deadline"),
+            json!({ "draftDeadlineAt": deadline }),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{with_deadline}");
+    assert!(with_deadline["draftDeadlineAt"].is_string());
+
+    // Host fills remaining drafts and starts immediately.
+    let (st, started) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/prompts/fill-remaining"),
+            json!({ "startImmediately": true }),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{started}");
+    assert_eq!(started["status"], "Active");
+
+    let (st, bob_view) = harness
+        .client
+        .get_json_auth(&format!("/api/games/{game_id}"), &t_bob)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(bob_view["myBoard"]["tiles"].as_array().unwrap().len(), 9);
+    let _ = (alice_id, carol_id);
 }

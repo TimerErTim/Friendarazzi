@@ -39,6 +39,14 @@ export interface FriendarazziApi {
   ): Promise<GameDetail>;
   gameLockPrompts(gameId: string): Promise<GameDetail>;
   gameUnlockPrompts(gameId: string): Promise<GameDetail>;
+  gameHostFillDrafts(
+    gameId: string,
+    startImmediately: boolean,
+  ): Promise<GameDetail>;
+  gameSetDraftDeadline(
+    gameId: string,
+    draftDeadlineAt: string | null,
+  ): Promise<GameDetail>;
   gameSetWatch(gameId: string, watching: boolean): Promise<GameDetail>;
 
   // ---------------------------------------------------------------- Notifications

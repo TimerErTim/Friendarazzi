@@ -13,7 +13,7 @@ use friendarazzi_core::{
     domain::{
         Benachrichtigung, BenachrichtigungArt, BenachrichtigungId, BenutzerId, CaptureId,
         EmailAdresse, GameId, GridSize, NeueBenachrichtigung, NeuerBenutzer, NonEmptyString,
-        PromptSource, READY_GRACE_PERIOD_SECONDS, VisibilityMode, konto::SessionId,
+        PromptSource, PromptText, READY_GRACE_PERIOD_SECONDS, VisibilityMode, konto::SessionId,
         target_quotas_for_author,
     },
     ports::{
@@ -339,6 +339,7 @@ async fn per_user_uow_split_isolates_failures_across_all_game_events() {
                 title: NonEmptyString::neu("Split Test").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -373,7 +374,7 @@ async fn per_user_uow_split_isolates_failures_across_all_game_events() {
             .flat_map(|(target, count)| {
                 (0..count).map(move |i| DraftPromptInput {
                     target_user_id: target,
-                    text: NonEmptyString::neu(format!("P{idx}-{i}")).unwrap(),
+                    text: PromptText::new(format!("P{idx}-{i}")).unwrap(),
                     source: PromptSource::Custom,
                 })
             })

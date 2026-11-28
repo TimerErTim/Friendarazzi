@@ -12,6 +12,7 @@ mod v0002_mvp;
 mod v0003_ready_grace_period;
 mod v0004_benachrichtigungen;
 mod v0005_target_agnostic_starter_decks;
+mod v0006_draft_deadline_and_expanded_decks;
 
 type Registry = MigrationRegistry<dyn UpMigration<libsql::Transaction, libsql::Error>>;
 
@@ -23,6 +24,7 @@ pub static MIGRATIONS: LazyLock<Registry> = LazyLock::new(|| {
     registry.add(v0003_ready_grace_period::Migration);
     registry.add(v0004_benachrichtigungen::Migration);
     registry.add(v0005_target_agnostic_starter_decks::Migration);
+    registry.add(v0006_draft_deadline_and_expanded_decks::Migration);
     registry
 });
 

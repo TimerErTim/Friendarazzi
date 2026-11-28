@@ -1,6 +1,8 @@
 //! Game lobby, drafting quotas, balanced board generation, and TypeState lifecycle transitions.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::str::FromStr;
 
 use chrono::{DateTime, Utc};
 use error_stack::{Report, ResultExt};
@@ -16,6 +18,7 @@ use crate::{
     domain::{
         BenutzerId, NonEmptyString,
         board::{Board, BoardTileAssignment, NewBoard},
+        deck::StarterDeck,
     },
 };
 
@@ -27,6 +30,9 @@ pub const MIN_PLAYERS: usize = 3;
 /// Shared grace period once all players lock prompts before boards are dealt.
 pub const READY_GRACE_PERIOD_SECONDS: i64 = 60;
 
+/// Maximum visible character count allowed for a Bingo prompt submission.
+pub const PROMPT_MAX_CHARS: usize = 80;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GameId(pub Uuid);
 
@@ -37,6 +43,12 @@ pub struct PromptSubmissionId(pub Uuid);
 pub enum GameError {
     #[error("Der Spieltitel darf nicht leer sein")]
     EmptyTitle,
+    #[error("Der Auftragstext darf nicht leer sein")]
+    EmptyPromptText,
+    #[error("Der Auftragstext darf maximal {PROMPT_MAX_CHARS} Zeichen lang sein")]
+    PromptTooLong,
+    #[error("Die Frist muss in der Zukunft liegen")]
+    DeadlineInPast,
     #[error("Der Einladungscode ist ungültig")]
     InvalidInviteCode,
     #[error("Die Rastergröße muss 3, 4 oder 5 sein")]
@@ -223,13 +235,64 @@ pub struct GamePlayer {
     pub watching: bool,
 }
 
+/// Validated prompt text (`1..=PROMPT_MAX_CHARS` characters, trimmed).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PromptText(String);
+
+impl PromptText {
+    pub fn new<S: AsRef<str>>(raw: S) -> Result<Self, GameError> {
+        let trimmed = raw.as_ref().trim();
+        if trimmed.is_empty() {
+            return Err(GameError::EmptyPromptText);
+        }
+        if trimmed.chars().count() > PROMPT_MAX_CHARS {
+            return Err(GameError::PromptTooLong);
+        }
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl AsRef<str> for PromptText {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for PromptText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl FromStr for PromptText {
+    type Err = GameError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::new(value)
+    }
+}
+
+impl From<PromptText> for NonEmptyString {
+    fn from(value: PromptText) -> Self {
+        NonEmptyString::neu(value.0).expect("PromptText is guaranteed non-empty")
+    }
+}
+
 /// One submitted prompt entity owned by a `Game` aggregate.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PromptSubmission {
     pub id: PromptSubmissionId,
     pub author_user_id: BenutzerId,
     pub target_user_id: BenutzerId,
-    pub text: NonEmptyString,
+    pub text: PromptText,
     pub source: PromptSource,
 }
 
@@ -238,7 +301,7 @@ impl PromptSubmission {
         id: PromptSubmissionId,
         author_user_id: BenutzerId,
         target_user_id: BenutzerId,
-        text: NonEmptyString,
+        text: PromptText,
         source: PromptSource,
     ) -> ResultReport<Self, GameError> {
         if author_user_id == target_user_id {
@@ -262,6 +325,7 @@ pub struct NewGame {
     pub title: NonEmptyString,
     pub grid_size: GridSize,
     pub visibility_mode: VisibilityMode,
+    pub draft_deadline_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -274,6 +338,7 @@ pub struct GameIn<S> {
     title: NonEmptyString,
     grid_size: GridSize,
     visibility_mode: VisibilityMode,
+    draft_deadline_at: Option<DateTime<Utc>>,
     players: Vec<GamePlayer>,
     created_at: DateTime<Utc>,
     state: S,
@@ -351,6 +416,10 @@ impl<S> GameIn<S> {
         self.visibility_mode
     }
 
+    pub fn draft_deadline_at(&self) -> Option<DateTime<Utc>> {
+        self.draft_deadline_at
+    }
+
     pub fn players(&self) -> &[GamePlayer] {
         &self.players
     }
@@ -409,6 +478,7 @@ impl<S> GameIn<S> {
         title: String,
         grid_size: u8,
         visibility_mode: String,
+        draft_deadline_at: Option<DateTime<Utc>>,
         mut players: Vec<GamePlayer>,
         created_at: DateTime<Utc>,
         state: S,
@@ -439,6 +509,7 @@ impl<S> GameIn<S> {
             title,
             grid_size,
             visibility_mode,
+            draft_deadline_at,
             players,
             created_at,
             state,
@@ -460,6 +531,7 @@ impl LobbyGame {
             title: input.title,
             grid_size: input.grid_size,
             visibility_mode: input.visibility_mode,
+            draft_deadline_at: input.draft_deadline_at,
             players: vec![host_player],
             created_at: input.created_at,
             state: state::Lobby,
@@ -472,10 +544,19 @@ impl LobbyGame {
         title: NonEmptyString,
         grid_size: GridSize,
         visibility_mode: VisibilityMode,
-    ) {
+        draft_deadline_at: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+    ) -> ResultReport<(), GameError> {
+        if let Some(deadline) = draft_deadline_at
+            && deadline <= now
+        {
+            return Err(Report::new(GameError::DeadlineInPast));
+        }
         self.title = title;
         self.grid_size = grid_size;
         self.visibility_mode = visibility_mode;
+        self.draft_deadline_at = draft_deadline_at;
+        Ok(())
     }
 
     /// Join `user_id` to the lobby (idempotent if already present).
@@ -501,6 +582,7 @@ impl LobbyGame {
             title: self.title,
             grid_size: self.grid_size,
             visibility_mode: self.visibility_mode,
+            draft_deadline_at: self.draft_deadline_at,
             players: self.players,
             created_at: self.created_at,
             state: state::Drafting {
@@ -545,6 +627,151 @@ impl DraftingGame {
 
     pub fn is_ready_to_start(&self, now: DateTime<Utc>) -> bool {
         self.all_players_locked() && self.state.draft_closes_at.is_some_and(|t| now >= t)
+    }
+
+    pub fn is_draft_deadline_reached(&self, now: DateTime<Utc>) -> bool {
+        self.draft_deadline_at.is_some_and(|t| now >= t)
+    }
+
+    pub fn set_draft_deadline(
+        &mut self,
+        deadline: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+    ) -> ResultReport<(), GameError> {
+        if let Some(at) = deadline
+            && at <= now
+        {
+            return Err(Report::new(GameError::DeadlineInPast));
+        }
+        self.draft_deadline_at = deadline;
+        Ok(())
+    }
+
+    /// Fill missing quota slots for any unlocked player from `decks` and mark all players locked.
+    pub fn autofill_missing_prompts(
+        &mut self,
+        decks: &[StarterDeck],
+        now: DateTime<Utc>,
+        rng: &mut (impl Rng + ?Sized),
+    ) -> ResultReport<usize, GameError> {
+        let player_ids = self.sorted_player_ids();
+        let total_tiles = self.playable_tile_count();
+        let mut used_texts: HashSet<String> = self
+            .state
+            .prompts
+            .iter()
+            .map(|p| p.text.as_str().trim().to_lowercase())
+            .collect();
+
+        let mut pool: Vec<String> = decks
+            .iter()
+            .flat_map(|d| d.prompts.iter())
+            .filter_map(|raw| PromptText::new(raw).ok().map(PromptText::into_string))
+            .collect();
+        if pool.is_empty() {
+            return Err(Report::new(GameError::InvalidPromptQuota));
+        }
+        pool.shuffle(rng);
+
+        let mut added = 0usize;
+        for &author in &player_ids {
+            if self.state.draft_locked.contains(&author) {
+                continue;
+            }
+            let quotas = target_quotas_for_author(&player_ids, author, total_tiles)?;
+            let mut existing_by_target: HashMap<BenutzerId, Vec<PromptSubmission>> = HashMap::new();
+            for p in self
+                .state
+                .prompts
+                .iter()
+                .filter(|p| p.author_user_id == author)
+            {
+                existing_by_target
+                    .entry(p.target_user_id)
+                    .or_default()
+                    .push(p.clone());
+            }
+
+            let mut rebuilt: Vec<PromptSubmission> = Vec::with_capacity(total_tiles);
+            for (target, req) in quotas {
+                let mut current = existing_by_target.remove(&target).unwrap_or_default();
+                current.truncate(req);
+                while current.len() < req {
+                    let next_text = if let Some(pos) = pool
+                        .iter()
+                        .position(|cand| !used_texts.contains(&cand.trim().to_lowercase()))
+                    {
+                        let chosen = pool[pos].clone();
+                        used_texts.insert(chosen.trim().to_lowercase());
+                        chosen
+                    } else {
+                        pool.choose(rng).expect("pool is non-empty").clone()
+                    };
+                    let text = PromptText::new(next_text)?;
+                    current.push(PromptSubmission::new(
+                        PromptSubmissionId(Uuid::new_v4()),
+                        author,
+                        target,
+                        text,
+                        PromptSource::StarterDeck,
+                    )?);
+                    added += 1;
+                }
+                rebuilt.extend(current);
+            }
+
+            self.state.prompts.retain(|p| p.author_user_id != author);
+            self.state.prompts.extend(rebuilt);
+            self.state.draft_locked.insert(author);
+        }
+
+        if self.all_players_locked() && self.state.draft_closes_at.is_none() {
+            self.state.draft_closes_at =
+                Some(now + chrono::Duration::seconds(READY_GRACE_PERIOD_SECONDS));
+        }
+        Ok(added)
+    }
+
+    /// Fill any open prompts from `decks`, lock all players, deal boards, and transition immediately to `Active`.
+    pub fn finalize_with_autofill(
+        mut self,
+        decks: &[StarterDeck],
+        now: DateTime<Utc>,
+        rng: &mut (impl Rng + ?Sized),
+    ) -> ResultReport<(ActiveGame, Vec<NewBoard>), GameError> {
+        self.autofill_missing_prompts(decks, now, rng)?;
+        self.deal_active_boards(now, rng)
+    }
+
+    fn deal_active_boards(
+        self,
+        now: DateTime<Utc>,
+        rng: &mut (impl Rng + ?Sized),
+    ) -> ResultReport<(ActiveGame, Vec<NewBoard>), GameError> {
+        let player_ids = self.sorted_player_ids();
+        let boards = assemble_boards(
+            self.id,
+            self.grid_size,
+            &player_ids,
+            &self.state.prompts,
+            rng,
+        )?;
+        let active = GameIn {
+            id: self.id,
+            invite_code: self.invite_code,
+            host_user_id: self.host_user_id,
+            title: self.title,
+            grid_size: self.grid_size,
+            visibility_mode: self.visibility_mode,
+            draft_deadline_at: self.draft_deadline_at,
+            players: self.players,
+            created_at: self.created_at,
+            state: state::Active {
+                prompts: self.state.prompts,
+                started_at: now,
+            },
+        };
+        Ok((active, boards))
     }
 
     /// Replace all prompts authored by `author`, unlock their draft, and cancel any pending countdown.
@@ -640,32 +867,8 @@ impl DraftingGame {
             return Ok(DraftStartOutcome::StillDrafting(self));
         }
 
-        let player_ids = self.sorted_player_ids();
-        let boards = assemble_boards(
-            self.id,
-            self.grid_size,
-            &player_ids,
-            &self.state.prompts,
-            rng,
-        )?;
-        let active = GameIn {
-            id: self.id,
-            invite_code: self.invite_code,
-            host_user_id: self.host_user_id,
-            title: self.title,
-            grid_size: self.grid_size,
-            visibility_mode: self.visibility_mode,
-            players: self.players,
-            created_at: self.created_at,
-            state: state::Active {
-                prompts: self.state.prompts,
-                started_at: now,
-            },
-        };
-        Ok(DraftStartOutcome::Started {
-            game: active,
-            boards,
-        })
+        let (game, boards) = self.deal_active_boards(now, rng)?;
+        Ok(DraftStartOutcome::Started { game, boards })
     }
 }
 
@@ -694,6 +897,7 @@ impl ActiveGame {
             title: self.title,
             grid_size: self.grid_size,
             visibility_mode: self.visibility_mode,
+            draft_deadline_at: self.draft_deadline_at,
             players: self.players,
             created_at: self.created_at,
             state: state::Completed {
@@ -780,6 +984,15 @@ impl Game {
             Self::Drafting(g) => g.visibility_mode(),
             Self::Active(g) => g.visibility_mode(),
             Self::Completed(g) => g.visibility_mode(),
+        }
+    }
+
+    pub fn draft_deadline_at(&self) -> Option<DateTime<Utc>> {
+        match self {
+            Self::Lobby(g) => g.draft_deadline_at(),
+            Self::Drafting(g) => g.draft_deadline_at(),
+            Self::Active(g) => g.draft_deadline_at(),
+            Self::Completed(g) => g.draft_deadline_at(),
         }
     }
 
@@ -965,6 +1178,13 @@ pub fn assemble_boards(
         }
     }
 
+    dedupe_board_prompt_texts(
+        players,
+        playable_count,
+        &shuffled_prompts,
+        &mut slot_matched_prompt,
+    );
+
     let mut result = Vec::with_capacity(n);
     for (player_idx, &owner) in players.iter().enumerate() {
         let mut assigned_prompts: Vec<&PromptSubmission> = Vec::with_capacity(playable_count);
@@ -988,7 +1208,7 @@ pub fn assemble_boards(
                 BoardTileAssignment {
                     prompt_submission_id: p.id,
                     target_user_id: p.target_user_id,
-                    prompt_text: p.text.clone(),
+                    prompt_text: p.text.clone().into(),
                 }
             })
             .collect();
@@ -1035,6 +1255,75 @@ fn kuhn_augment(
     false
 }
 
+/// Best-effort pairwise swap pass reducing duplicate normalized prompt texts on the same board
+/// while strictly preserving `author != owner && target != owner`.
+fn dedupe_board_prompt_texts(
+    players: &[BenutzerId],
+    playable_count: usize,
+    shuffled_prompts: &[&PromptSubmission],
+    slot_matched_prompt: &mut [Option<usize>],
+) {
+    let norm =
+        |p_idx: usize| -> String { shuffled_prompts[p_idx].text.as_str().trim().to_lowercase() };
+    let board_count_for = |player_idx: usize, key: &str, matched: &[Option<usize>]| -> usize {
+        let start = player_idx * playable_count;
+        (start..start + playable_count)
+            .filter_map(|s| matched[s])
+            .filter(|&p_idx| norm(p_idx) == key)
+            .count()
+    };
+
+    let total_slots = players.len() * playable_count;
+    for _pass in 0..4 {
+        let mut swapped = false;
+        for slot_a in 0..total_slots {
+            let Some(p_a) = slot_matched_prompt[slot_a] else {
+                continue;
+            };
+            let owner_a_idx = slot_a / playable_count;
+            let owner_a = players[owner_a_idx];
+            let key_a = norm(p_a);
+            if board_count_for(owner_a_idx, &key_a, slot_matched_prompt) <= 1 {
+                continue;
+            }
+
+            for slot_b in 0..total_slots {
+                let owner_b_idx = slot_b / playable_count;
+                if owner_a_idx == owner_b_idx {
+                    continue;
+                }
+                let Some(p_b) = slot_matched_prompt[slot_b] else {
+                    continue;
+                };
+                let key_b = norm(p_b);
+                if key_a == key_b {
+                    continue;
+                }
+                let owner_b = players[owner_b_idx];
+                let prompt_a = shuffled_prompts[p_a];
+                let prompt_b = shuffled_prompts[p_b];
+                if prompt_a.author_user_id == owner_b
+                    || prompt_a.target_user_id == owner_b
+                    || prompt_b.author_user_id == owner_a
+                    || prompt_b.target_user_id == owner_a
+                {
+                    continue;
+                }
+                if board_count_for(owner_a_idx, &key_b, slot_matched_prompt) == 0
+                    && board_count_for(owner_b_idx, &key_a, slot_matched_prompt) == 0
+                {
+                    slot_matched_prompt.swap(slot_a, slot_b);
+                    swapped = true;
+                    break;
+                }
+            }
+        }
+        if !swapped {
+            break;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rand::{SeedableRng, rngs::StdRng};
@@ -1059,7 +1348,12 @@ mod tests {
                             PromptSubmissionId(Uuid::new_v4()),
                             author,
                             target,
-                            NonEmptyString::neu(format!("{author:?}->{target:?} #{idx}")).unwrap(),
+                            PromptText::new(format!(
+                                "{}->{} #{idx}",
+                                author.0.as_u128(),
+                                target.0.as_u128()
+                            ))
+                            .unwrap(),
                             PromptSource::Custom,
                         )
                         .unwrap(),
@@ -1147,6 +1441,7 @@ mod tests {
                 title: NonEmptyString::neu("Testabend").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
+                draft_deadline_at: None,
                 created_at: now,
             },
         );
@@ -1158,11 +1453,15 @@ mod tests {
         assert_eq!(lobby.player_watching(players[2]), Some(false));
         lobby.set_player_watching(players[2], true).unwrap();
         assert_eq!(lobby.player_watching(players[2]), Some(true));
-        lobby.update_settings(
-            NonEmptyString::neu("Updated").unwrap(),
-            GridSize::Three,
-            VisibilityMode::LiveFeed,
-        );
+        lobby
+            .update_settings(
+                NonEmptyString::neu("Updated").unwrap(),
+                GridSize::Three,
+                VisibilityMode::LiveFeed,
+                None,
+                now,
+            )
+            .unwrap();
 
         let mut drafting = lobby.start_drafting().unwrap();
         let all_prompts = build_valid_prompts(&players, drafting.playable_tile_count());
@@ -1242,7 +1541,7 @@ mod tests {
             PromptSubmissionId(Uuid::new_v4()),
             p,
             p,
-            NonEmptyString::neu("Selfie").unwrap(),
+            PromptText::new("Selfie").unwrap(),
             PromptSource::Custom,
         )
         .unwrap_err();
@@ -1250,5 +1549,106 @@ mod tests {
             err.current_context(),
             GameError::SelfTargetNotAllowed
         ));
+    }
+
+    #[test_log::test]
+    fn prompt_text_enforces_80_char_limit_and_non_empty() {
+        assert!(matches!(
+            PromptText::new("   "),
+            Err(GameError::EmptyPromptText)
+        ));
+        let exact_80 = "a".repeat(PROMPT_MAX_CHARS);
+        assert_eq!(PromptText::new(&exact_80).unwrap().as_str().len(), 80);
+        let too_long = "ä".repeat(PROMPT_MAX_CHARS + 1);
+        assert!(matches!(
+            PromptText::new(too_long),
+            Err(GameError::PromptTooLong)
+        ));
+    }
+
+    #[test_log::test]
+    fn autofill_missing_prompts_fills_and_locks_unlocked_players() {
+        let mut rng = StdRng::seed_from_u64(11);
+        let players = test_players(3);
+        let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let mut lobby = LobbyGame::new(
+            GameId(Uuid::new_v4()),
+            NewGame {
+                invite_code: InviteCode::new("AUTO12").unwrap(),
+                host_user_id: players[0],
+                host_watching: true,
+                title: NonEmptyString::neu("Autofill").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::Undercover,
+                draft_deadline_at: Some(now + chrono::Duration::minutes(30)),
+                created_at: now,
+            },
+        );
+        lobby.join_player(players[1], now, true);
+        lobby.join_player(players[2], now, true);
+
+        let mut drafting = lobby.start_drafting().unwrap();
+        assert!(!drafting.is_draft_deadline_reached(now));
+        assert!(drafting.is_draft_deadline_reached(now + chrono::Duration::minutes(30)));
+
+        let decks = crate::domain::builtin_starter_decks();
+        let added = drafting
+            .autofill_missing_prompts(&decks, now, &mut rng)
+            .unwrap();
+        assert_eq!(added, 27);
+        assert!(drafting.all_players_locked());
+        let (active, boards) = drafting
+            .finalize_with_autofill(&decks, now, &mut rng)
+            .unwrap();
+        assert_eq!(boards.len(), 3);
+        assert_eq!(active.prompts().len(), 27);
+    }
+
+    #[test_log::test]
+    fn assemble_boards_avoids_duplicate_prompt_texts_on_same_board() {
+        let mut rng = StdRng::seed_from_u64(5);
+        let players = test_players(4);
+        let game_id = GameId(Uuid::new_v4());
+        let mut prompts = Vec::new();
+        for (a_idx, &author) in players.iter().enumerate() {
+            let quotas = target_quotas_for_author(&players, author, 9).unwrap();
+            let mut slot_idx = 0usize;
+            for (target, count) in quotas {
+                for _ in 0..count {
+                    // Three authors pick rotated targets so boards can separate all duplicates.
+                    let text = if a_idx < 3 && slot_idx == a_idx * 3 {
+                        "Trinkt Wasser".to_owned()
+                    } else {
+                        format!("Unique {a_idx}-{slot_idx}")
+                    };
+                    prompts.push(
+                        PromptSubmission::new(
+                            PromptSubmissionId(Uuid::new_v4()),
+                            author,
+                            target,
+                            PromptText::new(text).unwrap(),
+                            PromptSource::Custom,
+                        )
+                        .unwrap(),
+                    );
+                    slot_idx += 1;
+                }
+            }
+        }
+
+        let boards =
+            assemble_boards(game_id, GridSize::Three, &players, &prompts, &mut rng).unwrap();
+        for nb in boards {
+            let texts: HashSet<String> = nb
+                .assignments()
+                .iter()
+                .map(|a| a.prompt_text.as_str().to_lowercase())
+                .collect();
+            assert_eq!(
+                texts.len(),
+                nb.assignments().len(),
+                "board had duplicate prompt text"
+            );
+        }
     }
 }

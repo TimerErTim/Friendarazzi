@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Faster drafting: expanded all four Quick-Start starter decks to 36 unique prompts, added an "Alle Decks mischen" option, one-tap "Leere füllen & bereit", a Quick-Pick suggestion bar, an 80-character prompt limit with live counter, board-assembly duplicate avoidance, and optional drafting deadlines (`Kein Limit`, `+15 Min.`, `+1 Std.`, `+24 Std.`, or custom) with host "Offene Plätze automatisch füllen" override.
 - Target-grouped board view (`Nach Ziel`) alongside the classic Bingo grid in both active games and the post-game recap (including an aggregated per-target match overview), plus target pinning (up to 3 focus friends), a `Nur offene` filter, instant prompt/target search, an in-game `?` rules & visibility guide, and a dismissible first-capture tip.
 - Persistent in-app notification inbox (`/benachrichtigungen`) with unread badge counter, mark-read / mark-all-read controls, and deep links directly to started/completed games (`/games?id=...`) or directly into the photo inspection lightbox for new captures (`/games?id=...&capture=...`).
 - Styled Neubrutalist HTML + plain-text emails with `List-Unsubscribe` headers and one-click logged-out unsubscribe (`/abbestellen`) for game starts (draft phase finished), new captures (mentioning catcher, target, and prompt without embedding images, respecting Undercover/BlurredTeaser visibility rules), and game wins (naming game and winner in the subject).

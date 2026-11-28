@@ -9,7 +9,7 @@ use friendarazzi_core::{
     },
     domain::{
         BenutzerId, BoardTile, EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource,
-        READY_GRACE_PERIOD_SECONDS, VisibilityMode,
+        PromptText, READY_GRACE_PERIOD_SECONDS, VisibilityMode,
         konto::{AccessTokenClaims, KlartextPasswort, SecretToken, SessionId},
         target_quotas_for_author,
     },
@@ -173,7 +173,7 @@ pub fn balanced_prompts_for(
         for idx in 0..count {
             prompts.push(DraftPromptInput {
                 target_user_id: target,
-                text: NonEmptyString::neu(format!("{label_prefix} {idx}")).unwrap(),
+                text: PromptText::new(format!("{label_prefix} {idx}")).unwrap(),
                 source,
             });
         }
@@ -197,6 +197,7 @@ pub async fn setup_active_game(
                 title: NonEmptyString::neu(title).unwrap(),
                 grid_size,
                 visibility_mode,
+                draft_deadline_at: None,
             },
         )
         .await

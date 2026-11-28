@@ -30,6 +30,10 @@ import {
 } from "@/api/friendarazzi-api";
 import { useFriendarazziMutations, useGamesQuery } from "@/api/hooks";
 import { Wordmark } from "@/components/brand/wordmark";
+import {
+  type DeadlinePresetKey,
+  DraftDeadlinePicker,
+} from "@/components/friendarazzi/draft-deadline-picker";
 import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -565,6 +569,10 @@ function AuthenticatedHome() {
   const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>(
     VisibilityMode.Undercover,
   );
+  const [deadlinePreset, setDeadlinePreset] =
+    useState<DeadlinePresetKey>("none");
+  const [deadlineCustomLocal, setDeadlineCustomLocal] = useState("");
+  const [draftDeadlineAt, setDraftDeadlineAt] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState("");
 
   async function handleCreate(e: React.FormEvent) {
@@ -573,8 +581,12 @@ function AuthenticatedHome() {
       title,
       gridSize: Number(gridSize),
       visibilityMode,
+      draftDeadlineAt,
     });
     setCreateOpen(false);
+    setDeadlinePreset("none");
+    setDeadlineCustomLocal("");
+    setDraftDeadlineAt(null);
     router.push(gameHref(created.id));
   }
 
@@ -775,6 +787,20 @@ function AuthenticatedHome() {
                 })}
               </div>
             </fieldset>
+
+            <DraftDeadlinePicker
+              preset={deadlinePreset}
+              customLocalValue={deadlineCustomLocal}
+              currentIso={draftDeadlineAt}
+              onSelectPreset={(preset, nextIso) => {
+                setDeadlinePreset(preset);
+                setDraftDeadlineAt(nextIso);
+              }}
+              onCustomChange={(local, nextIso) => {
+                setDeadlineCustomLocal(local);
+                setDraftDeadlineAt(nextIso);
+              }}
+            />
 
             {mutations.createGame.isError ? (
               <Alert variant="error">

@@ -691,23 +691,23 @@ async fn register_via_mailpit(
     harness: &E2eHarness,
     email: &str,
 ) -> (String, String, mailpit::MailpitNachricht) {
-    let (st, _) = harness
-        .client
-        .post_json("/api/registrierung/start", json!({ "eMailAdresse": email }))
-        .await;
-    assert_eq!(st, StatusCode::OK);
-
-    let msg = mailpit::letzte_nachricht_an(email).await;
-    let token = mailpit::token_aus(&msg.text);
     let (st, body, _) = harness
         .client
         .post_json_cookie(
-            "/api/registrierung/abschluss",
-            json!({ "token": token, "passwort": PASSWORT }),
+            "/api/registrierung",
+            json!({ "eMailAdresse": email, "passwort": PASSWORT }),
             None,
         )
         .await;
     assert_eq!(st, StatusCode::OK, "{body}");
+
+    let msg = mailpit::letzte_nachricht_an(email).await;
+    let token = mailpit::token_aus(&msg.text);
+    let (st, _) = harness
+        .client
+        .post_json("/api/konto/email/bestaetigen", json!({ "token": token }))
+        .await;
+    assert_eq!(st, StatusCode::OK);
 
     let access = body["accessToken"].as_str().unwrap().to_owned();
     let (st, benutzer) = harness.client.get_json_auth("/api/benutzer", &access).await;

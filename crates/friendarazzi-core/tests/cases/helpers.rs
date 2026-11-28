@@ -15,8 +15,8 @@ use friendarazzi_core::{
     },
     ports::{ClientKey, Clock, RepositoryError, Signing},
     service::{
-        CreateGame, DraftPromptInput, JoinGame, LockDraftPrompts, RegistrierungAbschließen,
-        RegistrierungStarten, SaveDraftPrompts, SessionPrüfen, StartDrafting, StartReadyGames,
+        CreateGame, DraftPromptInput, EmailBestätigen, JoinGame, LockDraftPrompts, Registrieren,
+        SaveDraftPrompts, SessionPrüfen, StartDrafting, StartReadyGames,
     },
 };
 use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
@@ -126,27 +126,25 @@ pub const TEST_PASSWORT: &str = "korrekt-pferd-batterie";
 
 pub async fn register_user(harness: &Harness, email: &str) -> AuthContext {
     let client_key = ClientKey::new("127.0.0.1".parse().unwrap(), email.to_owned());
-    harness
+    let session = harness
         .app()
         .execute(
             AuthContext::Anonymous,
-            RegistrierungStarten {
+            Registrieren {
                 email: EmailAdresse::normalisiert(email).unwrap(),
+                passwort: KlartextPasswort::neu(TEST_PASSWORT).unwrap(),
+                display_name: None,
                 client_key: client_key.clone(),
             },
         )
         .await
         .unwrap();
     let token = SecretToken::try_from(harness.letztes_token().as_str()).unwrap();
-    let session = harness
+    harness
         .app()
         .execute(
             AuthContext::Anonymous,
-            RegistrierungAbschließen {
-                token,
-                passwort: KlartextPasswort::neu(TEST_PASSWORT).unwrap(),
-                client_key,
-            },
+            EmailBestätigen { token, client_key },
         )
         .await
         .unwrap();

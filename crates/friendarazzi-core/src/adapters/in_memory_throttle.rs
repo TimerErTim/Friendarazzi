@@ -184,7 +184,7 @@ mod tests {
     async fn das_budget_wird_genau_einmal_ausgeschöpft() {
         let throttle = InMemoryThrottle::new();
         let client = client("a");
-        let action = ThrottleAction::RegistrierungStart;
+        let action = ThrottleAction::Registrierung;
 
         for _ in 0..action.threshold() {
             throttle.increment(&client, action, now()).await.unwrap();
@@ -196,7 +196,7 @@ mod tests {
     async fn nach_dem_fenster_ist_das_budget_wieder_frei() {
         let throttle = InMemoryThrottle::new();
         let client = client("a");
-        let action = ThrottleAction::RegistrierungStart;
+        let action = ThrottleAction::Registrierung;
 
         for _ in 0..action.threshold() {
             throttle.increment(&client, action, now()).await.unwrap();
@@ -213,15 +213,15 @@ mod tests {
         let a = client("a");
         let b = client("b");
 
-        for _ in 0..ThrottleAction::RegistrierungStart.threshold() {
+        for _ in 0..ThrottleAction::Registrierung.threshold() {
             throttle
-                .increment(&a, ThrottleAction::RegistrierungStart, now())
+                .increment(&a, ThrottleAction::Registrierung, now())
                 .await
                 .unwrap();
         }
         assert!(
             throttle
-                .check(&a, ThrottleAction::RegistrierungStart, now())
+                .check(&a, ThrottleAction::Registrierung, now())
                 .await
                 .is_err()
         );
@@ -229,7 +229,7 @@ mod tests {
         // Another client, and another action of the same client, are unaffected.
         assert!(
             throttle
-                .check(&b, ThrottleAction::RegistrierungStart, now())
+                .check(&b, ThrottleAction::Registrierung, now())
                 .await
                 .is_ok()
         );

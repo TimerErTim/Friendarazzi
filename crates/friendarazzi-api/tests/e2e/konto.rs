@@ -28,98 +28,153 @@ fn refresh_cookie(set_cookie: &str) -> String {
     cookie_pair(set_cookie)
 }
 
-/// Register fully and return `(access_token, refresh_cookie, benutzer_id, email)`.
+/// Single-step register over HTTP, verify confirmation link, and return `(access_token, refresh_cookie, benutzer_id, email)`.
 async fn registriere(harness: &E2eHarness, email: &str) -> (String, String, String, String) {
-    let (status, _) = harness
-        .client
-        .post_json("/api/registrierung/start", json!({ "eMailAdresse": email }))
-        .await;
-    assert_eq!(status, StatusCode::OK);
-
-    let token = harness.letztes_token();
     let (status, body, cookie) = harness
         .client
         .post_json_cookie(
-            "/api/registrierung/abschluss",
-            json!({ "token": token, "passwort": PASSWORT }),
+            "/api/registrierung",
+            json!({ "eMailAdresse": email, "passwort": PASSWORT }),
             None,
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "abschluss: {body}");
+    assert_eq!(status, StatusCode::OK, "registrierung: {body}");
+
+    let token = harness.letztes_token();
+    let (confirm_st, _) = harness
+        .client
+        .post_json("/api/konto/email/bestaetigen", json!({ "token": token }))
+        .await;
+    assert_eq!(confirm_st, StatusCode::OK);
 
     let access = body["accessToken"]
         .as_str()
         .expect("accessToken im Body")
         .to_owned();
-    let cookie = refresh_cookie(&cookie.expect("Set-Cookie beim Abschluss"));
+    let cookie = refresh_cookie(&cookie.expect("Set-Cookie bei Registrierung"));
     let (_, benutzer) = harness.client.get_json_auth("/api/benutzer", &access).await;
     let benutzer_id = benutzer["id"].as_str().expect("id im Body").to_owned();
     (access, cookie, benutzer_id, email.to_owned())
 }
 
-// ------------------------------------------------------------------- AC-1, AC-2, AC-20
+// ------------------------------------------------------------------- Single-step registration & 1-game limit
 
 #[test_log::test(pollster::test)]
-async fn ac1_registrierung_startet_ohne_benutzer_und_mailt_genau_einmal() {
+async fn ac1_registrierung_in_einem_schritt_eroeffnet_session_und_setzt_limit() {
     let harness = E2eHarness::new().await;
 
-    let (status, _) = harness
+    let (status, body, cookie) = harness
         .client
-        .post_json(
-            "/api/registrierung/start",
-            json!({ "eMailAdresse": "anna@muster.at" }),
+        .post_json_cookie(
+            "/api/registrierung",
+            json!({
+                "eMailAdresse": "anna@muster.at",
+                "passwort": PASSWORT,
+                "displayName": "Anna K."
+            }),
+            None,
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let access = body["accessToken"].as_str().unwrap().to_owned();
+    let _cookie = refresh_cookie(&cookie.expect("Set-Cookie"));
     assert_eq!(harness.mail.sent().len(), 1);
 
-    // AC-20: no Benutzer exists before step 2, so an unknown address cannot log in.
-    let (status, _) = harness
+    let (st, me) = harness.client.get_json_auth("/api/benutzer", &access).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(me["displayName"], "Anna K.");
+    assert_eq!(me["emailVerified"], false);
+
+    // Unverified player can create 1 game and preview it anonymously via invite code.
+    let (st, game1) = harness
         .client
-        .post_json(
-            "/api/anmeldung",
-            json!({ "eMailAdresse": "anna@muster.at", "passwort": PASSWORT }),
+        .post_json_auth(
+            "/api/games",
+            json!({ "title": "Erstes Spiel", "gridSize": 3, "visibilityMode": "LiveFeed" }),
+            &access,
         )
         .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(st, StatusCode::OK, "{game1}");
+    let invite_code = game1["inviteCode"].as_str().unwrap().to_owned();
+
+    let (st, preview) = harness
+        .client
+        .get_json(&format!("/api/games/by-code/{invite_code}"))
+        .await;
+    assert_eq!(st, StatusCode::OK, "{preview}");
+    assert_eq!(preview["title"], "Erstes Spiel");
+    assert!(preview.get("players").is_none());
+
+    // 2nd game fails with 403 Forbidden until email is verified.
+    let (st, blocked) = harness
+        .client
+        .post_json_auth(
+            "/api/games",
+            json!({ "title": "Zweites Spiel", "gridSize": 3, "visibilityMode": "LiveFeed" }),
+            &access,
+        )
+        .await;
+    assert_eq!(st, StatusCode::FORBIDDEN, "{blocked}");
+
+    // Resend + confirm email unlocks game creation.
+    let (st, _) = harness
+        .client
+        .post_json_auth("/api/konto/email/bestaetigung-erneut", json!({}), &access)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    let fresh_token = harness.letztes_token();
+    let (st, _) = harness
+        .client
+        .post_json(
+            "/api/konto/email/bestaetigen",
+            json!({ "token": fresh_token }),
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    let (st, me_after) = harness.client.get_json_auth("/api/benutzer", &access).await;
+    assert_eq!(st, StatusCode::OK);
+    assert_eq!(me_after["emailVerified"], true);
+
+    let (st, game2) = harness
+        .client
+        .post_json_auth(
+            "/api/games",
+            json!({ "title": "Zweites Spiel", "gridSize": 3, "visibilityMode": "LiveFeed" }),
+            &access,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{game2}");
 }
 
 #[test_log::test(pollster::test)]
-async fn ac2_vergebene_adresse_antwortet_gleich_und_mailt_nicht() {
+async fn ac2_vergebene_adresse_antwortet_mit_409_und_mailt_nicht() {
     let harness = E2eHarness::new().await;
     registriere(&harness, "anna@muster.at").await;
     harness.mail.clear();
 
-    let (frei_status, frei_body) = harness
+    let (status, body) = harness
         .client
         .post_json(
-            "/api/registrierung/start",
-            json!({ "eMailAdresse": "neu@muster.at" }),
-        )
-        .await;
-    let (belegt_status, belegt_body) = harness
-        .client
-        .post_json(
-            "/api/registrierung/start",
-            json!({ "eMailAdresse": "anna@muster.at" }),
+            "/api/registrierung",
+            json!({ "eMailAdresse": "anna@muster.at", "passwort": PASSWORT }),
         )
         .await;
 
-    assert_eq!(frei_status, belegt_status, "derselbe Status");
-    assert_eq!(frei_body, belegt_body, "derselbe Body");
-    // Only the free address was mailed.
-    assert_eq!(harness.mail.sent().len(), 1);
-    assert_eq!(
-        harness.mail.latest().empfänger.as_ref(),
-        "neu@muster.at",
-        "die vergebene Adresse bekommt keine Mail"
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(
+        body.to_string()
+            .contains("Diese E-Mail-Adresse ist bereits vergeben"),
+        "{body}"
     );
+    assert!(harness.mail.sent().is_empty());
 }
 
 // ------------------------------------------------------------------------------- AC-3
 
 #[test_log::test(pollster::test)]
-async fn ac3_abschluss_erzeugt_benutzer_konto_und_erste_session() {
+async fn ac3_registrierung_erzeugt_benutzer_konto_und_erste_session() {
     let harness = E2eHarness::new().await;
     let (access, cookie, benutzer_id, _) = registriere(&harness, "anna@muster.at").await;
 
@@ -131,27 +186,20 @@ async fn ac3_abschluss_erzeugt_benutzer_konto_und_erste_session() {
     let (status, body) = harness.client.get_json_auth("/api/benutzer", &access).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["eMailAdresse"], "anna@muster.at");
+    assert_eq!(body["emailVerified"], true);
 }
 
 // ------------------------------------------------------------------------- AC-4, AC-5
 
 #[test_log::test(pollster::test)]
-async fn ac4_kurzes_passwort_oder_ungültiges_token_erzeugt_nichts() {
+async fn ac4_kurzes_passwort_oder_ungültiges_token_abgelehnt() {
     let harness = E2eHarness::new().await;
-    harness
-        .client
-        .post_json(
-            "/api/registrierung/start",
-            json!({ "eMailAdresse": "anna@muster.at" }),
-        )
-        .await;
-    let token = harness.letztes_token();
 
     let (status, _) = harness
         .client
         .post_json(
-            "/api/registrierung/abschluss",
-            json!({ "token": token, "passwort": "kurz" }),
+            "/api/registrierung",
+            json!({ "eMailAdresse": "anna@muster.at", "passwort": "kurz" }),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "zu kurzes Passwort");
@@ -159,25 +207,11 @@ async fn ac4_kurzes_passwort_oder_ungültiges_token_erzeugt_nichts() {
     let (status, _) = harness
         .client
         .post_json(
-            "/api/registrierung/abschluss",
-            json!({ "token": "völlig-erfunden", "passwort": PASSWORT }),
+            "/api/konto/email/bestaetigen",
+            json!({ "token": "völlig-erfunden" }),
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "unbekanntes Token");
-
-    // The address is still free: nothing was created by either attempt.
-    let (status, _) = harness
-        .client
-        .post_json(
-            "/api/registrierung/abschluss",
-            json!({ "token": token, "passwort": PASSWORT }),
-        )
-        .await;
-    assert_eq!(
-        status,
-        StatusCode::OK,
-        "das gültige Token wurde nicht verbraucht"
-    );
 }
 
 #[test_log::test(pollster::test)]
@@ -334,20 +368,11 @@ async fn ac7_erneuerung_rotiert_und_das_alte_refresh_token_ist_verbraucht() {
 async fn ac7a_access_token_steht_nie_in_einem_cookie() {
     let harness = E2eHarness::new().await;
 
-    harness
-        .client
-        .post_json(
-            "/api/registrierung/start",
-            json!({ "eMailAdresse": "anna@muster.at" }),
-        )
-        .await;
-    let token = harness.letztes_token();
-
     let (status, body, set_cookie) = harness
         .client
         .post_json_cookie(
-            "/api/registrierung/abschluss",
-            json!({ "token": token, "passwort": PASSWORT }),
+            "/api/registrierung",
+            json!({ "eMailAdresse": "anna@muster.at", "passwort": PASSWORT }),
             None,
         )
         .await;
@@ -716,8 +741,8 @@ async fn ac16_registrierung_ist_auf_fünf_pro_stunde_gedrosselt() {
         let (status, _) = harness
             .client
             .post_json(
-                "/api/registrierung/start",
-                json!({ "eMailAdresse": format!("nr{i}@muster.at") }),
+                "/api/registrierung",
+                json!({ "eMailAdresse": format!("nr{i}@muster.at"), "passwort": PASSWORT }),
             )
             .await;
         assert_eq!(status, StatusCode::OK, "Versuch {i} liegt im Budget");
@@ -726,8 +751,8 @@ async fn ac16_registrierung_ist_auf_fünf_pro_stunde_gedrosselt() {
     let (status, _) = harness
         .client
         .post_json(
-            "/api/registrierung/start",
-            json!({ "eMailAdresse": "zuviel@muster.at" }),
+            "/api/registrierung",
+            json!({ "eMailAdresse": "zuviel@muster.at", "passwort": PASSWORT }),
         )
         .await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
@@ -877,8 +902,8 @@ async fn ac19_die_mail_trägt_einen_aufrufbaren_link() {
     harness
         .client
         .post_json(
-            "/api/registrierung/start",
-            json!({ "eMailAdresse": "anna@muster.at" }),
+            "/api/registrierung",
+            json!({ "eMailAdresse": "anna@muster.at", "passwort": PASSWORT }),
         )
         .await;
 
@@ -891,10 +916,7 @@ async fn ac19_die_mail_trägt_einen_aufrufbaren_link() {
     let token = mailpit::token_aus(&text);
     let (status, body) = harness
         .client
-        .post_json(
-            "/api/registrierung/abschluss",
-            json!({ "token": token, "passwort": PASSWORT }),
-        )
+        .post_json("/api/konto/email/bestaetigen", json!({ "token": token }))
         .await;
     assert_eq!(
         status,

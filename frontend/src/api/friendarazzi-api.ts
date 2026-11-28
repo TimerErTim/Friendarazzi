@@ -26,7 +26,7 @@ export interface FriendarazziApi {
 
   // ---------------------------------------------------------------- Games
   gamesList(): Promise<GameSummary[]>;
-  gameByInviteCode(inviteCode: string): Promise<GameSummary>;
+  gameByInviteCode(inviteCode: string): Promise<GameInvitePreview>;
   gameCreate(input: CreateGameInput): Promise<GameDetail>;
   gameJoin(inviteCode: string): Promise<GameDetail>;
   gameDetail(gameId: string): Promise<GameDetail>;
@@ -81,8 +81,9 @@ export interface FriendarazziApi {
   profileUploadAvatar(file: File): Promise<UserProfile>;
 
   // ---------------------------------------------------------------- Konto
-  registrierungStarten(eMailAdresse: string): Promise<void>;
-  registrierungAbschliessen(token: string, passwort: string): Promise<void>;
+  registrieren(input: RegistrierungInput): Promise<void>;
+  emailBestaetigen(token: string): Promise<void>;
+  emailBestaetigungErneutSenden(): Promise<void>;
   anmelden(eMailAdresse: string, passwort: string): Promise<void>;
   passwortVergessen(eMailAdresse: string): Promise<void>;
   passwortWiederherstellen(token: string, neuesPasswort: string): Promise<void>;
@@ -116,7 +117,9 @@ export type BoardView = components["schemas"]["BoardView"];
 export type CaptureFeedItem = components["schemas"]["CaptureFeedItem"];
 export type SuperlativeView = components["schemas"]["SuperlativeView"];
 export type GameSummary = components["schemas"]["GameSummary"];
+export type GameInvitePreview = components["schemas"]["GameInvitePreview"];
 export type GameDetail = components["schemas"]["GameDetail"];
+export type RegistrierungInput = components["schemas"]["RegistrierungRequest"];
 export type GridCoordinate = components["schemas"]["GridCoordinate"];
 export type CaptureOutcome = components["schemas"]["CaptureOutcome"];
 export type GalleryGameGroup = components["schemas"]["GalleryGameGroup"];

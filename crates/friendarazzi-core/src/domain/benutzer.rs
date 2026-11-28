@@ -46,6 +46,7 @@ pub struct NeuerBenutzer {
     email_address: EmailAdresse,
     display_name: NonEmptyString,
     registered_at: DateTime<Utc>,
+    email_verified_at: Option<DateTime<Utc>>,
 }
 
 impl NeuerBenutzer {
@@ -58,12 +59,18 @@ impl NeuerBenutzer {
             email_address,
             display_name,
             registered_at,
+            email_verified_at: Some(registered_at),
         }
     }
 
     pub fn registrierung(email_address: EmailAdresse, registered_at: DateTime<Utc>) -> Self {
         let display_name = default_display_name_from_email(&email_address);
         Self::neu(email_address, display_name, registered_at)
+    }
+
+    pub fn with_email_verified_at(mut self, email_verified_at: Option<DateTime<Utc>>) -> Self {
+        self.email_verified_at = email_verified_at;
+        self
     }
 
     pub fn email_address(&self) -> &EmailAdresse {
@@ -77,12 +84,13 @@ impl NeuerBenutzer {
     pub fn registered_at(&self) -> DateTime<Utc> {
         self.registered_at
     }
+
+    pub fn email_verified_at(&self) -> Option<DateTime<Utc>> {
+        self.email_verified_at
+    }
 }
 
 /// The logical identity and player profile the product knows: one person's account.
-///
-/// Created only by a completed registration (SPEC-konto rule 3), so there is no
-/// unconfirmed state to represent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Benutzer {
     id: BenutzerId,
@@ -93,6 +101,7 @@ pub struct Benutzer {
     equipped_title: Option<String>,
     notification_preferences: BenachrichtigungsEinstellungen,
     registered_at: DateTime<Utc>,
+    email_verified_at: Option<DateTime<Utc>>,
 }
 
 impl Benutzer {
@@ -107,6 +116,7 @@ impl Benutzer {
             equipped_title: None,
             notification_preferences: BenachrichtigungsEinstellungen::standard(neu.registered_at),
             registered_at: neu.registered_at,
+            email_verified_at: neu.email_verified_at,
         }
     }
 
@@ -121,6 +131,7 @@ impl Benutzer {
         equipped_title: Option<String>,
         notification_preferences: BenachrichtigungsEinstellungen,
         registered_at: DateTime<Utc>,
+        email_verified_at: Option<DateTime<Utc>>,
     ) -> ResultReport<Self, ProfileError> {
         let display_name = NonEmptyString::neu(display_name)
             .change_context(ProfileError::EmptyField)
@@ -134,6 +145,7 @@ impl Benutzer {
             equipped_title,
             notification_preferences,
             registered_at,
+            email_verified_at,
         })
     }
 
@@ -186,11 +198,25 @@ impl Benutzer {
     }
 
     pub fn allows_email(&self, art: BenachrichtigungArt) -> bool {
-        self.notification_preferences.email_erlaubt(art)
+        self.ist_verifiziert() && self.notification_preferences.email_erlaubt(art)
     }
 
     pub fn registered_at(&self) -> DateTime<Utc> {
         self.registered_at
+    }
+
+    pub fn email_verified_at(&self) -> Option<DateTime<Utc>> {
+        self.email_verified_at
+    }
+
+    pub fn ist_verifiziert(&self) -> bool {
+        self.email_verified_at.is_some()
+    }
+
+    pub fn email_verifizieren(&mut self, zeitpunkt: DateTime<Utc>) {
+        if self.email_verified_at.is_none() {
+            self.email_verified_at = Some(zeitpunkt);
+        }
     }
 
     /// All rank titles unlocked by this user's Gold Medal count.
@@ -355,8 +381,24 @@ mod tests {
             original.equipped_title().map(str::to_owned),
             original.notification_preferences(),
             original.registered_at(),
+            original.email_verified_at(),
         )
         .unwrap();
         assert_eq!(original, geladen);
+    }
+
+    #[test_log::test]
+    fn unverified_user_blocks_game_emails_until_verified() {
+        let mut benutzer = Benutzer::neu(
+            BenutzerId(Uuid::nil()),
+            NeuerBenutzer::registrierung(email("unver@example.at"), jetzt())
+                .with_email_verified_at(None),
+        );
+        assert!(!benutzer.ist_verifiziert());
+        assert!(!benutzer.allows_email(BenachrichtigungArt::SpielGestartet));
+
+        benutzer.email_verifizieren(jetzt());
+        assert!(benutzer.ist_verifiziert());
+        assert!(benutzer.allows_email(BenachrichtigungArt::SpielGestartet));
     }
 }

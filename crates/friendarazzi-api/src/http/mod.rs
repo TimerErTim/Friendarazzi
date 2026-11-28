@@ -33,18 +33,18 @@ use crate::{
     api::{
         FriendarazziAppApi,
         requests::{
-            AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, HostFillDraftsRequest,
-            JoinGameRequest, PasswortVergessenRequest, PasswortWiederherstellenRequest,
-            RegistrierungAbschlussRequest, RegistrierungStartRequest, SaveDraftPromptsRequest,
+            AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, EmailBestaetigenRequest,
+            HostFillDraftsRequest, JoinGameRequest, PasswortVergessenRequest,
+            PasswortWiederherstellenRequest, RegistrierungRequest, SaveDraftPromptsRequest,
             SetDraftDeadlineRequest, SetGameWatchRequest, TransferHostRequest,
             UnsubscribeNotificationRequest, UpdateGameSettingsRequest,
             UpdateNotificationPreferencesRequest, UpdateProfileRequest,
         },
     },
     schema::{
-        AuthenticatedBenutzer, BuildVersion, CaptureOutcome, GameDetail, GameSummary, MailHealth,
-        NotificationPreferences, NotificationsInbox, Ok, StarterDeck, UnsubscribeOutcome,
-        UserGallery, UserProfile,
+        AuthenticatedBenutzer, BuildVersion, CaptureOutcome, GameDetail, GameInvitePreview,
+        GameSummary, MailHealth, NotificationPreferences, NotificationsInbox, Ok, StarterDeck,
+        UnsubscribeOutcome, UserGallery, UserProfile,
     },
 };
 
@@ -178,9 +178,9 @@ impl FriendarazziApiSpec {
         self.app_api.game_create(auth, body.0).await.into()
     }
 
-    /// Look up a game summary by invite code.
+    /// Look up a safe public game preview by invite code.
     ///
-    /// Used by `/join` invite links to preview lobby details before joining.
+    /// Used by `/join` invite links to preview lobby details before signing in or joining.
     #[oai(
         path = "/games/by-code/:invite_code",
         method = "get",
@@ -188,17 +188,9 @@ impl FriendarazziApiSpec {
     )]
     async fn game_by_invite_code(
         &self,
-        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
         invite_code: Path<String>,
-    ) -> TypicalJsonResponse<GameSummary> {
-        let auth = self
-            .auth_context(authorization.0.as_deref())
-            .await
-            .unwrap_or(AuthContext::Anonymous);
-        self.app_api
-            .game_by_invite_code(auth, invite_code.0)
-            .await
-            .into()
+    ) -> TypicalJsonResponse<GameInvitePreview> {
+        self.app_api.game_by_invite_code(invite_code.0).await.into()
     }
 
     /// Join an existing game lobby using its invite code.
@@ -679,16 +671,44 @@ impl FriendarazziApiSpec {
 
     // ------------------------------------------------------------------ konto
 
-    /// Registration step 1: request a confirmation mail for an e-mail address.
+    /// Register in a single step and issue an active session immediately.
     ///
-    /// Returns the same response whether the address is free or already registered.
-    #[oai(path = "/registrierung/start", method = "post", tag = "ApiTag::Konto")]
-    async fn registrierung_starten(
+    /// Creates an unverified account (1-game trial limit) and sends a verification email asynchronously.
+    #[oai(path = "/registrierung", method = "post", tag = "ApiTag::Konto")]
+    async fn registrieren(
         &self,
         real_ip: RealIp,
         #[oai(name = "User-Agent")] user_agent: Header<Option<String>>,
         #[oai(name = "Accept-Language")] accept_language: Header<Option<String>>,
-        body: Json<RegistrierungStartRequest>,
+        body: Json<RegistrierungRequest>,
+    ) -> NewSessionResponse {
+        let client_key = client_key(
+            real_ip,
+            user_agent.0.as_deref(),
+            accept_language.0.as_deref(),
+        );
+        NewSessionResponse::from(self.app_api.registrieren(body.0, client_key).await.map(
+            |ausgestellt| {
+                jwt::encode_session(ausgestellt, self.app_api.inner_app().signing.as_ref())
+                    .expect("the JOSE header serialises")
+            },
+        ))
+    }
+
+    /// Confirm ownership of an e-mail address using the mailed verification token.
+    ///
+    /// Lifts the unverified 1-game trial limit and enables game-event emails according to preferences.
+    #[oai(
+        path = "/konto/email/bestaetigen",
+        method = "post",
+        tag = "ApiTag::Konto"
+    )]
+    async fn email_bestaetigen(
+        &self,
+        real_ip: RealIp,
+        #[oai(name = "User-Agent")] user_agent: Header<Option<String>>,
+        #[oai(name = "Accept-Language")] accept_language: Header<Option<String>>,
+        body: Json<EmailBestaetigenRequest>,
     ) -> UncachedJsonResponse<Ok> {
         let client_key = client_key(
             real_ip,
@@ -697,40 +717,41 @@ impl FriendarazziApiSpec {
         );
         UncachedJsonResponse::from(
             self.app_api
-                .registrierung_starten(body.0, client_key)
+                .email_bestätigen(body.0, client_key)
                 .await
                 .map(|()| Ok { ok: true }),
         )
     }
 
-    /// Complete registration with the token from the confirmation email.
+    /// Resend the e-mail verification link to the authenticated unverified Benutzer.
     ///
-    /// Returns the new session credentials.
+    /// Throttled per client to prevent confirmation mail abuse.
     #[oai(
-        path = "/registrierung/abschluss",
+        path = "/konto/email/bestaetigung-erneut",
         method = "post",
         tag = "ApiTag::Konto"
     )]
-    async fn registrierung_abschließen(
+    async fn email_bestaetigung_erneut_senden(
         &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
         real_ip: RealIp,
         #[oai(name = "User-Agent")] user_agent: Header<Option<String>>,
         #[oai(name = "Accept-Language")] accept_language: Header<Option<String>>,
-        body: Json<RegistrierungAbschlussRequest>,
-    ) -> NewSessionResponse {
+    ) -> UncachedJsonResponse<Ok> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
         let client_key = client_key(
             real_ip,
             user_agent.0.as_deref(),
             accept_language.0.as_deref(),
         );
-        NewSessionResponse::from(
+        UncachedJsonResponse::from(
             self.app_api
-                .registrierung_abschließen(body.0, client_key)
+                .email_bestätigung_erneut_senden(auth, client_key)
                 .await
-                .map(|ausgestellt| {
-                    jwt::encode_session(ausgestellt, self.app_api.inner_app().signing.as_ref())
-                        .expect("the JOSE header serialises")
-                }),
+                .map(|()| Ok { ok: true }),
         )
     }
 

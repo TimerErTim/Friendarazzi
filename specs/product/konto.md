@@ -24,11 +24,7 @@ product's data model, so this spec separates the two from the start.
 
 ## Outcome
 
-A person registers with an email address and a password, confirms that the address is reachable, and
-from then on logs in and out, recovers a forgotten password, and deletes the account without help.
-Registration is started by the address itself: the app only creates the `Benutzer` once the mailed
-confirmation link has been opened, so an address that nobody can receive mail at never becomes an
-account.
+A person registers in a single step with an email address, a password, and an optional display name: the app immediately creates the `Benutzer` and `Konto`, opens an active `Session`, and dispatches an async confirmation link. Until the email address is verified (`email_verified_at`), the player can create or join **at most one game** (further create/join attempts are refused with `403` until confirmed) and receives in-app notifications without outbound game-event emails. Once verified via the confirmation link (or a throttled resend), the 1-game limit lifts permanently. Duplicate registration emails return an explicit `409 Conflict`.
 
 Authority inside an `Anlage` — as `Administrator` or `Mitarbeiter` — is an `AnlageVerwaltung` granted by
 someone inside that `Anlage`, and it changes what the person may do there, never who they are. A
@@ -89,8 +85,7 @@ carried on the `Benutzer`; everything else is an `AnlageVerwaltung` inside one `
 
 **In scope**
 
-- Registration in two steps: address first, then `Passwort`, gated by the mailed confirmation link.
-- `E-Mail-Adresse-Bestätigung`.
+- Single-step registration (`email`, `Passwort`, optional `displayName`) with immediate `Session`, explicit duplicate-email conflict (`409`), async `E-Mail-Adresse-Bestätigung`, throttled resend, and a 1-game limit until verified (see [ADR-0006](../decisions/0006-single-step-signup-and-unverified-trial.md)).
 - Login, logout, and session renewal.
 - Password reset for a forgotten `Passwort` (email link).
 - Self-service deletion of the own `Benutzer`.

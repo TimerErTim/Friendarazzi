@@ -10,9 +10,11 @@ import type {
   DraftPromptRequestItem,
   FriendarazziApi,
   GameDetail,
+  GameInvitePreview,
   GameSummary,
   NotificationPreferences,
   NotificationsInbox,
+  RegistrierungInput,
   StarterDeck,
   UnsubscribeOutcome,
   UpdateGameSettingsInput,
@@ -212,11 +214,10 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
     );
   }
 
-  async gameByInviteCode(inviteCode: string): Promise<GameSummary> {
-    return this.authenticated(() =>
-      this.client.GET("/games/by-code/{invite_code}", {
+  async gameByInviteCode(inviteCode: string): Promise<GameInvitePreview> {
+    return unwrap(
+      await this.client.GET("/games/by-code/{invite_code}", {
         params: { path: { invite_code: inviteCode } },
-        headers: this.authorizationHeaders(),
       }),
     );
   }
@@ -516,24 +517,29 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
 
   // ---------------------------------------------------------------- Konto
 
-  async registrierungStarten(eMailAdresse: string): Promise<void> {
+  async registrieren(input: RegistrierungInput): Promise<void> {
+    const result = await unwrap(
+      await this.client.POST("/registrierung", {
+        body: input,
+      }),
+    );
+    this.setAccessToken(result.accessToken);
+  }
+
+  async emailBestaetigen(token: string): Promise<void> {
     await unwrap(
-      await this.client.POST("/registrierung/start", {
-        body: { eMailAdresse },
+      await this.client.POST("/konto/email/bestaetigen", {
+        body: { token },
       }),
     );
   }
 
-  async registrierungAbschliessen(
-    token: string,
-    passwort: string,
-  ): Promise<void> {
-    const result = await unwrap(
-      await this.client.POST("/registrierung/abschluss", {
-        body: { token, passwort },
+  async emailBestaetigungErneutSenden(): Promise<void> {
+    await this.authenticated(() =>
+      this.client.POST("/konto/email/bestaetigung-erneut", {
+        headers: this.authorizationHeaders(),
       }),
     );
-    this.setAccessToken(result.accessToken);
   }
 
   async anmelden(eMailAdresse: string, passwort: string): Promise<void> {

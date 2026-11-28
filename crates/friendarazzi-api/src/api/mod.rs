@@ -20,11 +20,11 @@ use friendarazzi_core::{
         Anmeldung, AnmeldungFehler, BenachrichtigungAbbestellenMitToken,
         BenachrichtigungAlsGelesenMarkieren, BenachrichtigungUseCaseError,
         BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen, BenutzerLöschenFehler,
-        CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
+        CaptureUseCaseError, EmailBestätigen, EmailBestätigenFehler, EmailBestätigungErneutSenden,
+        EmailBestätigungSendenFehler, Erneuerung, ErneuerungFehler, GameUseCaseError,
         HostFillRemainingDrafts, KickPlayer, LeaveGame, LockDraftPrompts, PasswortVergessen,
         PasswortVergessenFehler, PasswortWiederherstellen, PasswortWiederherstellenFehler,
-        ProfileUseCaseError, RegistrierungAbschliessenFehler, RegistrierungAbschließen,
-        RegistrierungStarten, RegistrierungStartenFehler, RetractCapture, SessionAusgestellt,
+        ProfileUseCaseError, Registrieren, RegistrierenFehler, RetractCapture, SessionAusgestellt,
         SetDraftDeadline, StartDrafting, SubmitCapture, UnlockDraftPrompts, UploadAvatar,
     },
 };
@@ -36,7 +36,7 @@ pub mod requests;
 use self::errors::{GameReadError, MediaReadError, NotificationReadError, ProfileReadError};
 use crate::schema::{
     AuthenticatedBenutzer, BoardTileView, BoardView, BuildVersion, CaptureFeedItem, CaptureOutcome,
-    DraftTargetQuota, GalleryGameGroup, GameDetail, GameSummary, GridCoordinate,
+    DraftTargetQuota, GalleryGameGroup, GameDetail, GameInvitePreview, GameSummary, GridCoordinate,
     NotificationPreferences, NotificationView, NotificationsInbox, PlayerBadge,
     PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView, UnsubscribeOutcome,
     UserGallery, UserProfile,
@@ -190,29 +190,16 @@ impl FriendarazziAppApi {
 
     pub async fn game_by_invite_code(
         &self,
-        auth: AuthContext,
         code: String,
-    ) -> ResultReport<GameSummary, GameReadError> {
+    ) -> ResultReport<GameInvitePreview, GameReadError> {
         let invite_code = InviteCode::new(code).change_context(GameReadError::BadRequest)?;
         self.app
-            .execute_fn(auth, async |ctx| {
-                let user_id = ctx
-                    .auth()
-                    .require_benutzer_id()
-                    .change_context(GameReadError::Unauthorized)?;
-                let now = ctx.clock().now();
+            .execute_fn(AuthContext::Anonymous, async |ctx| {
                 let uow = ctx
                     .enter()
                     .await
                     .change_context(GameReadError::Persistence)?;
                 let res = async {
-                    let default_watch = match uow.benutzer().find_by_id(user_id).await {
-                        Ok(u) => u.default_watch_games(),
-                        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
-                            true
-                        }
-                        Err(err) => return Err(err).change_context(GameReadError::Persistence),
-                    };
                     let game = match uow.games().find_by_invite_code(&invite_code).await {
                         Ok(g) => g.into_data(),
                         Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
@@ -220,27 +207,18 @@ impl FriendarazziAppApi {
                         }
                         Err(err) => return Err(err).change_context(GameReadError::Persistence),
                     };
-                    let winner = match &game {
-                        Game::Completed(c) => {
-                            if let Some(winner_id) = c.winner_user_id() {
-                                uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
-                                    badge_from_benutzer(
-                                        &b.into_data(),
-                                        false,
-                                        game.host_user_id() == winner_id,
-                                    )
-                                })
-                            } else {
-                                None
-                            }
-                        }
-                        Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
-                    };
-                    let mut summary = game_to_summary(&game, Some(user_id), None, winner, now);
-                    if game.player_watching(user_id).is_none() {
-                        summary.watching = default_watch;
-                    }
-                    Ok::<_, Report<GameReadError>>(summary)
+                    Ok::<_, Report<GameReadError>>(GameInvitePreview {
+                        id: game.id().0,
+                        invite_code: game.invite_code().as_str().to_owned(),
+                        title: game.title().as_str().to_owned(),
+                        grid_size: game.grid_size() as u8,
+                        visibility_mode: game.visibility_mode().into(),
+                        status: (&game).into(),
+                        playable_tile_count: game.playable_tile_count() as u32,
+                        player_count: game.players().len() as u32,
+                        draft_deadline_at: game.draft_deadline_at(),
+                        ends_at: game.ends_at(),
+                    })
                 }
                 .await;
                 uow.finish(res, GameReadError::Persistence).await
@@ -1021,23 +999,32 @@ impl FriendarazziAppApi {
 
     // ---------------------------------------------------------------- Registration & Login
 
-    pub async fn registrierung_starten(
+    pub async fn registrieren(
         &self,
-        anfrage: requests::RegistrierungStartRequest,
+        anfrage: requests::RegistrierungRequest,
         client_key: ClientKey,
-    ) -> ResultReport<(), RegistrierungStartenFehler> {
-        let use_case: RegistrierungStarten = anfrage.in_use_case(client_key)?;
+    ) -> ResultReport<SessionAusgestellt, RegistrierenFehler> {
+        let use_case: Registrieren = anfrage.in_use_case(client_key)?;
         self.app.execute(AuthContext::Anonymous, use_case).await
     }
 
-    pub async fn registrierung_abschließen(
+    pub async fn email_bestätigen(
         &self,
-        anfrage: requests::RegistrierungAbschlussRequest,
+        anfrage: requests::EmailBestaetigenRequest,
         client_key: ClientKey,
-    ) -> ResultReport<SessionAusgestellt, RegistrierungAbschliessenFehler> {
-        let use_case: RegistrierungAbschließen = anfrage.in_use_case(client_key)?;
-        let ausgestellt = self.app.execute(AuthContext::Anonymous, use_case).await?;
-        Ok(ausgestellt)
+    ) -> ResultReport<(), EmailBestätigenFehler> {
+        let use_case: EmailBestätigen = anfrage.in_use_case(client_key)?;
+        self.app.execute(AuthContext::Anonymous, use_case).await
+    }
+
+    pub async fn email_bestätigung_erneut_senden(
+        &self,
+        auth: AuthContext,
+        client_key: ClientKey,
+    ) -> ResultReport<(), EmailBestätigungSendenFehler> {
+        self.app
+            .execute(auth, EmailBestätigungErneutSenden { client_key })
+            .await
     }
 
     pub async fn anmelden(

@@ -3,9 +3,9 @@ use friendarazzi_core::ThreadSafeError;
 use friendarazzi_core::ports::{ObjectStoreError, RepositoryError};
 use friendarazzi_core::service::{
     AbmeldungFehler, AnmeldungFehler, BenachrichtigungUseCaseError, BenutzerLöschenFehler,
-    CaptureUseCaseError, ErneuerungFehler, GameUseCaseError, PasswortVergessenFehler,
-    PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
-    RegistrierungStartenFehler, SessionPrüfenFehler,
+    CaptureUseCaseError, EmailBestätigenFehler, EmailBestätigungSendenFehler, ErneuerungFehler,
+    GameUseCaseError, PasswortVergessenFehler, PasswortWiederherstellenFehler, ProfileUseCaseError,
+    RegistrierenFehler, SessionPrüfenFehler,
 };
 use http::StatusCode;
 
@@ -51,8 +51,9 @@ fn nested_http_status<C: ThreadSafeError>(error: &Report<C>) -> Option<StatusCod
         .or_else(|| mapped::<C, ErneuerungFehler>(error))
         .or_else(|| mapped::<C, AbmeldungFehler>(error))
         .or_else(|| mapped::<C, SessionPrüfenFehler>(error))
-        .or_else(|| mapped::<C, RegistrierungStartenFehler>(error))
-        .or_else(|| mapped::<C, RegistrierungAbschliessenFehler>(error))
+        .or_else(|| mapped::<C, RegistrierenFehler>(error))
+        .or_else(|| mapped::<C, EmailBestätigenFehler>(error))
+        .or_else(|| mapped::<C, EmailBestätigungSendenFehler>(error))
         .or_else(|| mapped::<C, PasswortVergessenFehler>(error))
         .or_else(|| mapped::<C, PasswortWiederherstellenFehler>(error))
         .or_else(|| mapped::<C, BenutzerLöschenFehler>(error))
@@ -108,6 +109,7 @@ impl HttpStatusMapping for ObjectStoreError {
 http_status!(GameUseCaseError {
     Unauthorized => StatusCode::UNAUTHORIZED,
     Forbidden => StatusCode::FORBIDDEN,
+    EmailVerificationRequired => StatusCode::FORBIDDEN,
     NotFound => StatusCode::NOT_FOUND,
     BadRequest => StatusCode::BAD_REQUEST,
     Conflict => StatusCode::CONFLICT,
@@ -198,24 +200,27 @@ http_status!(SessionPrüfenFehler {
     BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
 });
 
-http_status!(RegistrierungStartenFehler {
+http_status!(RegistrierenFehler {
     UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    EmailBereitsVergeben => StatusCode::CONFLICT,
     Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
-    KontoPrüfen => StatusCode::INTERNAL_SERVER_ERROR,
+    PasswortSetzen => StatusCode::INTERNAL_SERVER_ERROR,
     TokenErzeugen => StatusCode::INTERNAL_SERVER_ERROR,
-    BestätigungSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+    Persistence => StatusCode::INTERNAL_SERVER_ERROR,
 });
 
-http_status!(RegistrierungAbschliessenFehler {
-    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+http_status!(EmailBestätigenFehler {
+    UngültigerLink => StatusCode::BAD_REQUEST,
     Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
-    BestätigungLaden => StatusCode::INTERNAL_SERVER_ERROR,
-    BestätigungSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
-    PasswortSetzen => StatusCode::INTERNAL_SERVER_ERROR,
-    BenutzerAnlegen => StatusCode::INTERNAL_SERVER_ERROR,
-    KontoAnlegen => StatusCode::INTERNAL_SERVER_ERROR,
+    Persistence => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(EmailBestätigungSendenFehler {
+    Unauthorized => StatusCode::UNAUTHORIZED,
+    BereitsBestätigt => StatusCode::CONFLICT,
+    Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
     TokenErzeugen => StatusCode::INTERNAL_SERVER_ERROR,
-    SessionSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
+    Persistence => StatusCode::INTERNAL_SERVER_ERROR,
 });
 
 http_status!(PasswortVergessenFehler {

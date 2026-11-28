@@ -495,25 +495,29 @@ pub fn assert_status_ok(status: StatusCode) {
 /// The master-data suite needs an identity, not the konto assertions, so this is the short
 /// path: start, read the token out of the fake's mail, finish, read `/benutzer`.
 pub async fn neuer_benutzer(harness: &E2eHarness, email: &str) -> (String, String) {
-    let (status, _) = harness
-        .client
-        .post_json(
-            "/api/registrierung/start",
-            serde_json::json!({ "eMailAdresse": email }),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "registrierung startet");
-
-    let token = harness.letztes_token();
     let (status, body, _) = harness
         .client
         .post_json_cookie(
-            "/api/registrierung/abschluss",
-            serde_json::json!({ "token": token, "passwort": PASSWORT }),
+            "/api/registrierung",
+            serde_json::json!({ "eMailAdresse": email, "passwort": PASSWORT }),
             None,
         )
         .await;
-    assert_eq!(status, StatusCode::OK, "registrierung schließt ab: {body}");
+    assert_eq!(status, StatusCode::OK, "registrierung: {body}");
+
+    let token = harness.letztes_token();
+    let (confirm_status, confirm_body) = harness
+        .client
+        .post_json(
+            "/api/konto/email/bestaetigen",
+            serde_json::json!({ "token": token }),
+        )
+        .await;
+    assert_eq!(
+        confirm_status,
+        StatusCode::OK,
+        "bestaetigung: {confirm_body}"
+    );
 
     let access = body["accessToken"]
         .as_str()

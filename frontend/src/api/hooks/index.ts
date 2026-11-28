@@ -6,6 +6,7 @@ export {
   useDecksQuery,
   useGameByCodeQuery,
   useGameDetailQuery,
+  useGameDetailsQueries,
   useGamesQuery,
   useHealthQuery,
   useMediaObjectUrl,

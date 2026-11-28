@@ -10,25 +10,32 @@ import {
   Eye,
   EyeOff,
   Lock,
+  Pin,
   Plus,
   Sparkles,
   Ticket,
   Trophy,
   Users,
+  X,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
 import {
+  type BoardTileView,
   GameStatus,
   type GameSummary,
   VisibilityMode,
 } from "@/api/friendarazzi-api";
-import { useFriendarazziMutations, useGamesQuery } from "@/api/hooks";
+import {
+  useFriendarazziMutations,
+  useGameDetailsQueries,
+  useGamesQuery,
+} from "@/api/hooks";
 import { Wordmark } from "@/components/brand/wordmark";
 import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
@@ -51,13 +58,14 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { loadPinnedTiles, savePinnedTiles } from "@/lib/board-grouping";
 import { cn } from "@/lib/cn";
 import {
   formatGameProgress,
   gameNextActionLabel,
   sortActiveGames,
 } from "@/lib/game-overview";
-import { gameHref, joinHref, paths } from "@/lib/navigation";
+import { gameHref, gameTileHref, joinHref, paths } from "@/lib/navigation";
 import { useGameCountdown } from "@/lib/use-game-countdown";
 
 function statusLabel(status: GameStatus): string {
@@ -528,9 +536,9 @@ function GuestLanding() {
 // ------------------------------------------------------------------ Authenticated Cockpit
 
 const GRID_OPTIONS = [
-  { size: "3", title: "3 × 3", subtitle: "Empfohlen · Kurz (1–2 Std.)" },
-  { size: "4", title: "4 × 4", subtitle: "Abend (16 Felder)" },
-  { size: "5", title: "5 × 5", subtitle: "Wochenende (25 Felder)" },
+  { size: "3", title: "3 × 3", subtitle: "Abend (9 Felder)" },
+  { size: "4", title: "4 × 4", subtitle: "Mittel (16 Felder)" },
+  { size: "5", title: "5 × 5", subtitle: "Wochen (25 Felder)" },
 ] as const;
 
 const MODE_OPTIONS = [
@@ -566,6 +574,86 @@ function AuthenticatedHome() {
     VisibilityMode.Undercover,
   );
   const [inviteCode, setInviteCode] = useState("");
+  const [pinnedByGame, setPinnedByGame] = useState<Record<string, string[]>>(
+    {},
+  );
+
+  const all = games.data ?? [];
+  const active = useMemo(
+    () => sortActiveGames(all.filter((g) => g.status !== GameStatus.Completed)),
+    [all],
+  );
+  const completed = useMemo(
+    () => all.filter((g) => g.status === GameStatus.Completed),
+    [all],
+  );
+  const runningActiveGames = useMemo(
+    () => active.filter((g) => g.status === GameStatus.Active),
+    [active],
+  );
+  const activeGameIdsKey = runningActiveGames.map((g) => g.id).join(",");
+
+  const refreshPinnedFromStorage = useCallback(() => {
+    const ids = activeGameIdsKey ? activeGameIdsKey.split(",") : [];
+    const next: Record<string, string[]> = {};
+    for (const id of ids) {
+      const pins = loadPinnedTiles(id);
+      if (pins.length > 0) {
+        next[id] = pins;
+      }
+    }
+    setPinnedByGame(next);
+  }, [activeGameIdsKey]);
+
+  useEffect(() => {
+    refreshPinnedFromStorage();
+    if (typeof window === "undefined") return;
+    window.addEventListener("focus", refreshPinnedFromStorage);
+    window.addEventListener("storage", refreshPinnedFromStorage);
+    return () => {
+      window.removeEventListener("focus", refreshPinnedFromStorage);
+      window.removeEventListener("storage", refreshPinnedFromStorage);
+    };
+  }, [refreshPinnedFromStorage]);
+
+  const pinnedGameIds = useMemo(
+    () =>
+      runningActiveGames
+        .map((g) => g.id)
+        .filter((id) => (pinnedByGame[id]?.length ?? 0) > 0),
+    [runningActiveGames, pinnedByGame],
+  );
+  const pinnedDetailQueries = useGameDetailsQueries(pinnedGameIds);
+
+  const pinnedTasks: Array<{ game: GameSummary; tile: BoardTileView }> = [];
+  let isLoadingPinned = false;
+  pinnedGameIds.forEach((gameId, index) => {
+    const game = runningActiveGames.find((g) => g.id === gameId);
+    const query = pinnedDetailQueries[index];
+    if (!game || !query) return;
+    if (query.isLoading && !query.data) {
+      isLoadingPinned = true;
+      return;
+    }
+    const board = query.data?.myBoard;
+    if (!board) return;
+    const tileById = new Map(board.tiles.map((t) => [t.id, t]));
+    for (const tileId of pinnedByGame[gameId] ?? []) {
+      const tile = tileById.get(tileId);
+      if (tile && !tile.isCaptured) {
+        pinnedTasks.push({ game, tile });
+      }
+    }
+  });
+
+  function handleUnpinTask(gameId: string, tileId: string) {
+    setPinnedByGame((prev) => {
+      const current = prev[gameId] ?? loadPinnedTiles(gameId);
+      const nextForGame = current.filter((id) => id !== tileId);
+      savePinnedTiles(gameId, nextForGame);
+      return { ...prev, [gameId]: nextForGame };
+    });
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -600,12 +688,6 @@ function AuthenticatedHome() {
       </div>
     );
   }
-
-  const all = games.data ?? [];
-  const active = sortActiveGames(
-    all.filter((g) => g.status !== GameStatus.Completed),
-  );
-  const completed = all.filter((g) => g.status === GameStatus.Completed);
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
@@ -647,6 +729,65 @@ function AuthenticatedHome() {
           </Button>
         </form>
       </section>
+
+      {/* Pinned Tasks Across All Running Games */}
+      {pinnedTasks.length > 0 || isLoadingPinned ? (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Pin className="size-5 rotate-45 text-ink" aria-hidden="true" />
+            <h2 className="font-display text-xl tracking-tight text-ink">
+              Angeheftete Aufgaben ({pinnedTasks.length})
+            </h2>
+          </div>
+
+          {pinnedTasks.length === 0 ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Skeleton className="h-20 w-full" />
+            </div>
+          ) : (
+            <div className="grid gap-3 md:grid-cols-2">
+              {pinnedTasks.map(({ game, tile }) => (
+                <Card
+                  key={`${game.id}-${tile.id}`}
+                  className="flex items-stretch overflow-hidden"
+                >
+                  <Link
+                    href={gameTileHref(game.id, tile.id)}
+                    className="flex min-h-14 min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-primary-subtle/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="rounded-[2px] border border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground">
+                          {tile.targetUser.displayName}
+                        </span>
+                        <span className="truncate font-mono text-[11px] font-bold text-secondary">
+                          {game.title}
+                        </span>
+                      </div>
+                      <p className="text-sm leading-snug font-bold text-ink">
+                        {tile.promptText}
+                      </p>
+                    </div>
+                    <Camera
+                      className="size-4 shrink-0 text-secondary"
+                      aria-hidden="true"
+                    />
+                  </Link>
+                  <button
+                    type="button"
+                    aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
+                    title="Aus Fokus entfernen"
+                    onClick={() => handleUnpinTask(game.id, tile.id)}
+                    className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-strong bg-surface-muted px-3 text-ink transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </button>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
 
       {/* Active Games */}
       <section className="space-y-3">

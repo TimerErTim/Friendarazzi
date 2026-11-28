@@ -103,6 +103,14 @@ function makeActiveGame(): GameDetail {
           isCaptured: false,
         },
         {
+          id: "t-bob-2",
+          row: 0,
+          col: 2,
+          targetUser: bob,
+          promptText: "Lacht laut",
+          isCaptured: false,
+        },
+        {
           id: "t-carol",
           row: 0,
           col: 1,
@@ -126,12 +134,19 @@ describe("ActivePlayPhase", () => {
     window.localStorage.clear();
   });
 
-  it("switches between grid and target-grouped list, filters open tiles, and pins targets", () => {
+  it("removes the Nur offene filter, hides captured tasks in Nach Ziel, and pins individual tasks", () => {
     render(<ActivePlayPhase game={makeActiveGame()} />);
+
+    expect(
+      screen.queryByRole("button", { name: /Nur offene/i }),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.getByRole("radio", { name: "Raster-Ansicht" }),
     ).toHaveAttribute("aria-checked", "true");
+    expect(
+      screen.getAllByText("Schaut auf die Uhr").length,
+    ).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(
       screen.getByRole("radio", { name: "Liste nach Zielperson" }),
@@ -140,11 +155,32 @@ describe("ActivePlayPhase", () => {
       screen.getByRole("radio", { name: "Liste nach Zielperson" }),
     ).toHaveAttribute("aria-checked", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Bob anheften" }));
-    expect(screen.getByText("Fokus:")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Nur offene/i }));
     expect(screen.getByText("Trinkt Wasser")).toBeInTheDocument();
     expect(screen.queryByText("Schaut auf die Uhr")).not.toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Auftrag „Trinkt Wasser“ anheften",
+      }),
+    );
+    expect(screen.getByText("Fokus:")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", {
+        name: "Auftrag „Trinkt Wasser“ aus Fokus entfernen",
+      }),
+    ).toHaveLength(2);
+    expect(
+      screen.getByRole("button", {
+        name: "Auftrag „Lacht laut“ anheften",
+      }),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Raster-Ansicht" }));
+    const pinnedGridTile = screen.getByRole("button", {
+      name: /Bob: Trinkt Wasser \(Foto aufnehmen, angeheftet\)/,
+    });
+    expect(
+      pinnedGridTile.querySelector("[data-testid='pinned-tile-icon']"),
+    ).not.toBeNull();
   });
 });

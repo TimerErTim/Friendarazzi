@@ -54,6 +54,21 @@ function makeBoard(): BoardView {
         },
       },
       {
+        id: "tile-open-max-2",
+        row: 0,
+        col: 2,
+        promptText: "Lacht über eigenen Witz",
+        isCaptured: false,
+        targetUser: {
+          id: "u-max",
+          displayName: "Max",
+          goldMedalCount: 0,
+          effectiveTitle: "Neuling",
+          draftLocked: true,
+          isHost: false,
+        },
+      },
+      {
         id: "tile-cap-sam",
         row: 0,
         col: 1,
@@ -76,16 +91,16 @@ function makeBoard(): BoardView {
 }
 
 describe("TargetGroupedBoard", () => {
-  it("groups prompts by target person and supports pin + upload callbacks", () => {
+  it("groups prompts by target person and supports per-task pin + upload callbacks", () => {
     const onEmptyTileSelect = vi.fn();
     const onViewCapture = vi.fn();
-    const onTogglePin = vi.fn();
+    const onTogglePinTile = vi.fn();
 
     render(
       <TargetGroupedBoard
         board={makeBoard()}
-        pinnedTargetIds={new Set(["u-sam"])}
-        onTogglePin={onTogglePin}
+        pinnedTileIds={new Set(["tile-open-max-2"])}
+        onTogglePinTile={onTogglePinTile}
         onEmptyTileSelect={onEmptyTileSelect}
         onViewCapture={onViewCapture}
       />,
@@ -93,11 +108,21 @@ describe("TargetGroupedBoard", () => {
 
     expect(screen.getByText("Max")).toBeInTheDocument();
     expect(screen.getByText("Sam")).toBeInTheDocument();
-    expect(screen.getByText("0/1")).toBeInTheDocument();
+    expect(screen.getByText("0/2")).toBeInTheDocument();
     expect(screen.getByText("1/1")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Max anheften" }));
-    expect(onTogglePin).toHaveBeenCalledWith("u-max");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Auftrag „Bestellt noch ein Dessert“ anheften",
+      }),
+    );
+    expect(onTogglePinTile).toHaveBeenCalledWith("tile-open-max");
+
+    expect(
+      screen.getByRole("button", {
+        name: "Auftrag „Lacht über eigenen Witz“ aus Fokus entfernen",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(
       screen.getByRole("button", {

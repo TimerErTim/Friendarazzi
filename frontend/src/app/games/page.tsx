@@ -79,6 +79,7 @@ export default function GamePage() {
   const router = useRouter();
   const id = useQueryParam("id");
   const captureParam = useQueryParam("capture");
+  const tileParam = useQueryParam("tile");
   const gamesList = useGamesQuery();
   const detail = useGameDetailQuery(id);
   const mutations = useFriendarazziMutations();
@@ -424,6 +425,8 @@ export default function GamePage() {
           game={game}
           initialCaptureId={captureParam || null}
           onConsumeInitialCapture={() => router.replace(gameHref(game.id))}
+          initialTileId={tileParam || null}
+          onConsumeInitialTile={() => router.replace(gameHref(game.id))}
         />
       ) : (
         <CompletedPhase

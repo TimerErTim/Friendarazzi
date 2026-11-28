@@ -7,10 +7,8 @@ import type {
 
 export type BoardViewMode = "grid" | "list";
 
-export const MAX_PINNED_TARGETS = 3;
-
 const VIEW_MODE_KEY = "friendarazzi:board_view_mode";
-const PINNED_TARGETS_PREFIX = "friendarazzi:pinned_targets:";
+const PINNED_TILES_PREFIX = "friendarazzi:pinned_tiles:";
 const COACH_DISMISSED_KEY = "friendarazzi:capture_coach_dismissed";
 
 export type TargetGroup = {
@@ -19,7 +17,7 @@ export type TargetGroup = {
   totalCount: number;
   capturedCount: number;
   openCount: number;
-  isPinned: boolean;
+  hasPinnedTile: boolean;
 };
 
 export type MatchTargetAggregate = {
@@ -90,7 +88,7 @@ export function filterTileMatches(
 export function groupTilesByTarget(
   tiles: readonly BoardTileView[],
   options: {
-    pinnedTargetIds?: ReadonlySet<string>;
+    pinnedTileIds?: ReadonlySet<string>;
     hideCaptured?: boolean;
     query?: string;
   } = {},
@@ -116,7 +114,7 @@ export function groupTilesByTarget(
     }
   }
 
-  const pinnedSet = options.pinnedTargetIds;
+  const pinnedSet = options.pinnedTileIds;
   const groups: TargetGroup[] = [];
 
   for (const bucket of byTarget.values()) {
@@ -126,25 +124,33 @@ export function groupTilesByTarget(
       if (a.isCaptured !== b.isCaptured) {
         return a.isCaptured ? 1 : -1;
       }
+      const aPinned = !a.isCaptured && (pinnedSet?.has(a.id) ?? false);
+      const bPinned = !b.isCaptured && (pinnedSet?.has(b.id) ?? false);
+      if (aPinned !== bPinned) {
+        return aPinned ? -1 : 1;
+      }
       if (a.row !== b.row) return a.row - b.row;
       return a.col - b.col;
     });
 
     const capturedCount = bucket.allTiles.filter((t) => t.isCaptured).length;
     const totalCount = bucket.allTiles.length;
+    const hasPinnedTile = sortedTiles.some(
+      (t) => !t.isCaptured && (pinnedSet?.has(t.id) ?? false),
+    );
     groups.push({
       target: bucket.target,
       tiles: sortedTiles,
       totalCount,
       capturedCount,
       openCount: totalCount - capturedCount,
-      isPinned: pinnedSet?.has(bucket.target.id) ?? false,
+      hasPinnedTile,
     });
   }
 
   groups.sort((a, b) => {
-    if (a.isPinned !== b.isPinned) {
-      return a.isPinned ? -1 : 1;
+    if (a.hasPinnedTile !== b.hasPinnedTile) {
+      return a.hasPinnedTile ? -1 : 1;
     }
     if (a.openCount !== b.openCount) {
       return b.openCount - a.openCount;
@@ -226,16 +232,14 @@ export function aggregateMatchByTarget(
   return result;
 }
 
-export function togglePinnedTarget(
+export function togglePinnedTile(
   current: readonly string[],
-  targetId: string,
-  max = MAX_PINNED_TARGETS,
+  tileId: string,
 ): string[] {
-  if (current.includes(targetId)) {
-    return current.filter((id) => id !== targetId);
+  if (current.includes(tileId)) {
+    return current.filter((id) => id !== tileId);
   }
-  const next = [...current, targetId];
-  return next.length > max ? next.slice(next.length - max) : next;
+  return [...current, tileId];
 }
 
 export function loadBoardViewMode(): BoardViewMode {
@@ -257,33 +261,36 @@ export function saveBoardViewMode(mode: BoardViewMode): void {
   }
 }
 
-export function loadPinnedTargets(gameId: string): string[] {
+export function loadPinnedTiles(gameId: string): string[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(
-      `${PINNED_TARGETS_PREFIX}${gameId}`,
-    );
+    const raw = window.localStorage.getItem(`${PINNED_TILES_PREFIX}${gameId}`);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((item): item is string => typeof item === "string")
-      .slice(0, MAX_PINNED_TARGETS);
+    return Array.from(
+      new Set(
+        parsed.filter((item): item is string => typeof item === "string"),
+      ),
+    );
   } catch {
     return [];
   }
 }
 
-export function savePinnedTargets(
+export function savePinnedTiles(
   gameId: string,
-  ids: readonly string[],
+  tileIds: readonly string[],
 ): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(
-      `${PINNED_TARGETS_PREFIX}${gameId}`,
-      JSON.stringify(ids.slice(0, MAX_PINNED_TARGETS)),
-    );
+    const unique = Array.from(new Set(tileIds));
+    const key = `${PINNED_TILES_PREFIX}${gameId}`;
+    if (unique.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, JSON.stringify(unique));
   } catch {
     // Ignore storage errors
   }

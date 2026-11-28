@@ -3,11 +3,9 @@
 import {
   ChevronDown,
   ChevronUp,
-  EyeOff,
   LayoutGrid,
   List,
   Pin,
-  PinOff,
   Upload,
   Users,
   X,
@@ -59,10 +57,10 @@ import {
   filterTileMatches,
   hasDismissedCaptureCoachMark,
   loadBoardViewMode,
-  loadPinnedTargets,
+  loadPinnedTiles,
   saveBoardViewMode,
-  savePinnedTargets,
-  togglePinnedTarget,
+  savePinnedTiles,
+  togglePinnedTile,
 } from "@/lib/board-grouping";
 import { newestCapturesFirst } from "@/lib/capture-feed";
 import { cn } from "@/lib/cn";
@@ -74,10 +72,14 @@ export function ActivePlayPhase({
   game,
   initialCaptureId = null,
   onConsumeInitialCapture,
+  initialTileId = null,
+  onConsumeInitialTile,
 }: {
   game: GameDetail;
   initialCaptureId?: string | null;
   onConsumeInitialCapture?: () => void;
+  initialTileId?: string | null;
+  onConsumeInitialTile?: () => void;
 }) {
   const mutations = useFriendarazziMutations();
   const [selectedTile, setSelectedTile] = useState<BoardTileView | null>(null);
@@ -91,18 +93,18 @@ export function ActivePlayPhase({
   const [viewMode, setViewMode] = useState<BoardViewMode>(() =>
     loadBoardViewMode(),
   );
-  const [hideCaptured, setHideCaptured] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [pinnedIds, setPinnedIds] = useState<string[]>(() =>
-    loadPinnedTargets(game.id),
+  const [pinnedTileIds, setPinnedTileIds] = useState<string[]>(() =>
+    loadPinnedTiles(game.id),
   );
   const [coachDismissed, setCoachDismissed] = useState(() =>
     hasDismissedCaptureCoachMark(),
   );
   const openedCaptureRef = useRef<string | null>(null);
+  const openedTileRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setPinnedIds(loadPinnedTargets(game.id));
+    setPinnedTileIds(loadPinnedTiles(game.id));
   }, [game.id]);
 
   useEffect(() => {
@@ -116,6 +118,22 @@ export function ActivePlayPhase({
     }
   }, [initialCaptureId, game.feed]);
 
+  const board = game.myBoard;
+
+  useEffect(() => {
+    if (!initialTileId || openedTileRef.current === initialTileId || !board) {
+      return;
+    }
+    const found = board.tiles.find(
+      (tile) => tile.id === initialTileId && !tile.isCaptured,
+    );
+    if (found) {
+      openedTileRef.current = initialTileId;
+      setSelectedFile(null);
+      setSelectedTile(found);
+    }
+  }, [initialTileId, board]);
+
   useEffect(() => {
     if (!selectedFile) {
       setPreviewUrl(null);
@@ -126,52 +144,31 @@ export function ActivePlayPhase({
     return () => URL.revokeObjectURL(url);
   }, [selectedFile]);
 
-  const board = game.myBoard;
-  const pinnedTargetSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
-  const hasActiveFilter = hideCaptured || searchQuery.trim().length > 0;
+  const hasActiveFilter = searchQuery.trim().length > 0;
 
   const matchingTileIds = useMemo(() => {
     if (!board || !hasActiveFilter) return undefined;
     return new Set(
       board.tiles
-        .filter((tile) =>
-          filterTileMatches(tile, { hideCaptured, query: searchQuery }),
-        )
+        .filter((tile) => filterTileMatches(tile, { query: searchQuery }))
         .map((tile) => tile.id),
     );
-  }, [board, hasActiveFilter, hideCaptured, searchQuery]);
+  }, [board, hasActiveFilter, searchQuery]);
 
-  const pinnedSummaries = useMemo(() => {
+  const pinnedTiles = useMemo(() => {
     if (!board) return [];
-    return pinnedIds
-      .map((targetId) => {
-        const tilesForTarget = board.tiles.filter(
-          (t) => t.targetUser.id === targetId,
-        );
-        const first = tilesForTarget[0];
-        if (!first) return null;
-        const openCount = tilesForTarget.filter((t) => !t.isCaptured).length;
-        return {
-          target: first.targetUser,
-          openCount,
-          totalCount: tilesForTarget.length,
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null);
-  }, [board, pinnedIds]);
+    const tileById = new Map(board.tiles.map((tile) => [tile.id, tile]));
+    return pinnedTileIds
+      .map((id) => tileById.get(id))
+      .filter((tile): tile is BoardTileView =>
+        Boolean(tile && !tile.isCaptured),
+      );
+  }, [board, pinnedTileIds]);
 
-  const boardTargets = useMemo(() => {
-    if (!board) return [];
-    const seen = new Map<string, (typeof board.tiles)[number]["targetUser"]>();
-    for (const tile of board.tiles) {
-      if (!seen.has(tile.targetUser.id)) {
-        seen.set(tile.targetUser.id, tile.targetUser);
-      }
-    }
-    return Array.from(seen.values()).sort((a, b) =>
-      a.displayName.localeCompare(b.displayName, "de"),
-    );
-  }, [board]);
+  const pinnedTileSet = useMemo(
+    () => new Set(pinnedTiles.map((tile) => tile.id)),
+    [pinnedTiles],
+  );
 
   function handleViewModeChange(next: string) {
     if (next !== "grid" && next !== "list") return;
@@ -179,10 +176,10 @@ export function ActivePlayPhase({
     saveBoardViewMode(next);
   }
 
-  function handleTogglePin(targetId: string) {
-    setPinnedIds((prev) => {
-      const next = togglePinnedTarget(prev, targetId);
-      savePinnedTargets(game.id, next);
+  function handleTogglePinTile(tileId: string) {
+    setPinnedTileIds((prev) => {
+      const next = togglePinnedTile(prev, tileId);
+      savePinnedTiles(game.id, next);
       return next;
     });
   }
@@ -210,16 +207,27 @@ export function ActivePlayPhase({
 
   async function submitTilePhoto() {
     if (!selectedTile || !selectedFile || isUploading) return;
+    const submittedTileId = selectedTile.id;
     setIsPreparingUpload(true);
     try {
       const normalized = await normalizeImageForUpload(selectedFile);
       await mutations.submitCapture.mutateAsync({
         gameId: game.id,
-        tileId: selectedTile.id,
+        tileId: submittedTileId,
         file: normalized,
       });
+      if (pinnedTileSet.has(submittedTileId)) {
+        setPinnedTileIds((prev) => {
+          const next = prev.filter((id) => id !== submittedTileId);
+          savePinnedTiles(game.id, next);
+          return next;
+        });
+      }
       setSelectedTile(null);
       setSelectedFile(null);
+      if (initialTileId) {
+        onConsumeInitialTile?.();
+      }
     } finally {
       setIsPreparingUpload(false);
     }
@@ -258,53 +266,17 @@ export function ActivePlayPhase({
                 Mitspieler ({game.players.length})
               </p>
               <ul className="divide-y divide-subtle">
-                {game.players.map((p) => {
-                  const isBoardTarget = boardTargets.some(
-                    (target) => target.id === p.id,
-                  );
-                  const isPinned = pinnedTargetSet.has(p.id);
-                  return (
-                    <li
-                      key={p.id}
-                      className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <PlayerBadgeLink user={p} compact />
-                      </div>
-                      {isBoardTarget ? (
-                        <Button
-                          type="button"
-                          variant={isPinned ? "primary" : "ghost"}
-                          size="icon"
-                          aria-pressed={isPinned}
-                          aria-label={
-                            isPinned
-                              ? `${p.displayName} aus Fokus entfernen`
-                              : `${p.displayName} anheften`
-                          }
-                          title={
-                            isPinned
-                              ? "Aus Fokus entfernen"
-                              : "Im Fokus anheften"
-                          }
-                          onClick={() => handleTogglePin(p.id)}
-                        >
-                          {isPinned ? (
-                            <PinOff className="size-4" aria-hidden="true" />
-                          ) : (
-                            <Pin className="size-4" aria-hidden="true" />
-                          )}
-                        </Button>
-                      ) : null}
-                    </li>
-                  );
-                })}
+                {game.players.map((p) => (
+                  <li key={p.id} className="py-1.5 first:pt-0 last:pb-0">
+                    <PlayerBadgeLink user={p} compact />
+                  </li>
+                ))}
               </ul>
             </PopoverContent>
           </Popover>
         </div>
 
-        {/* Hunt Toolbar: Grid/List toggle, Hide Captured, Search */}
+        {/* Hunt Toolbar: Grid/List toggle + Search */}
         <div className="flex flex-wrap items-center gap-2">
           <ToggleGroup
             type="single"
@@ -322,71 +294,51 @@ export function ActivePlayPhase({
             </ToggleGroupItem>
           </ToggleGroup>
 
-          <Button
-            type="button"
-            variant={hideCaptured ? "primary" : "secondary"}
-            size="field"
-            aria-pressed={hideCaptured}
-            onClick={() => setHideCaptured((prev) => !prev)}
-            className="gap-1.5"
-          >
-            <EyeOff className="size-4" aria-hidden="true" />
-            <span>Nur offene</span>
-          </Button>
-
           <SearchInput
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Ziel oder Auftrag …"
             aria-label="Aufträge oder Ziele durchsuchen"
-            className="min-w-44 flex-1 sm:max-w-56"
+            className="min-w-44 flex-1 sm:max-w-64"
           />
         </div>
 
-        {/* Pinned Focus Strip (up to 3 targets) */}
-        {pinnedSummaries.length > 0 ? (
+        {/* Pinned Tasks Strip */}
+        {pinnedTiles.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2 rounded-md border-2 border-strong bg-primary-subtle px-3 py-2">
             <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-ink uppercase">
-              <Pin className="size-3.5" aria-hidden="true" />
+              <Pin className="size-3.5 rotate-45" aria-hidden="true" />
               Fokus:
             </span>
-            {pinnedSummaries.map((item) => {
-              const isFilteredToTarget =
-                searchQuery.trim().toLocaleLowerCase("de-DE") ===
-                item.target.displayName.toLocaleLowerCase("de-DE");
-              return (
-                <div
-                  key={item.target.id}
-                  className="inline-flex items-center overflow-hidden rounded-sm border-2 border-strong bg-surface"
+            {pinnedTiles.map((tile) => (
+              <div
+                key={tile.id}
+                className="inline-flex max-w-full items-center overflow-hidden rounded-sm border-2 border-strong bg-surface"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    mutations.submitCapture.reset();
+                    setSelectedFile(null);
+                    setSelectedTile(tile);
+                  }}
+                  className="inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-1.5 px-2.5 text-left text-xs font-bold text-ink transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                 >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSearchQuery(
-                        isFilteredToTarget ? "" : item.target.displayName,
-                      )
-                    }
-                    className={cn(
-                      "inline-flex min-h-9 cursor-pointer items-center gap-1.5 px-2.5 text-xs font-bold text-ink transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-                      isFilteredToTarget && "bg-cyan text-cyan-foreground",
-                    )}
-                  >
-                    <span>{item.target.displayName}</span>
-                    <span className="font-mono text-[11px] tabular-nums">
-                      ({item.openCount}/{item.totalCount})
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`${item.target.displayName} aus Fokus entfernen`}
-                    onClick={() => handleTogglePin(item.target.id)}
-                    className="inline-flex min-h-9 min-w-9 cursor-pointer items-center justify-center border-l-2 border-strong text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                  >
-                    <X className="size-3.5" aria-hidden="true" />
-                  </button>
-                </div>
-              );
-            })}
+                  <span className="shrink-0 rounded-[2px] border border-strong bg-primary px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground">
+                    {tile.targetUser.displayName}
+                  </span>
+                  <span className="truncate">{tile.promptText}</span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
+                  onClick={() => handleTogglePinTile(tile.id)}
+                  className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-strong text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -394,9 +346,10 @@ export function ActivePlayPhase({
           <Alert variant="info">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p>
-                <strong>Tipp für die Jagd:</strong> Tippe in „Nach Ziel“ auf
-                eine Person oder hefte bis zu 3 Freunde im Fokus an, damit du
-                nicht alle Felder im Kopf behalten musst.
+                <strong>Tipp für die Jagd:</strong> Wechsle zwischen Raster und
+                „Nach Ziel“ oder hefte einzelne Aufträge im Fokus an – deine
+                angehefteten Aufgaben erscheinen auch direkt in der
+                Spielzentrale.
               </p>
               <Button
                 type="button"
@@ -417,9 +370,9 @@ export function ActivePlayPhase({
           <TargetGroupedBoard
             board={board}
             feed={game.feed}
-            pinnedTargetIds={pinnedTargetSet}
-            onTogglePin={handleTogglePin}
-            hideCaptured={hideCaptured}
+            pinnedTileIds={pinnedTileSet}
+            onTogglePinTile={handleTogglePinTile}
+            hideCaptured
             searchQuery={searchQuery}
             onEmptyTileSelect={(tile) => {
               mutations.submitCapture.reset();
@@ -434,7 +387,7 @@ export function ActivePlayPhase({
             gridSize={game.gridSize}
             feed={game.feed}
             matchingTileIds={matchingTileIds}
-            pinnedTargetIds={pinnedTargetSet}
+            pinnedTileIds={pinnedTileSet}
             onEmptyTileSelect={(tile) => {
               mutations.submitCapture.reset();
               setSelectedFile(null);
@@ -563,6 +516,9 @@ export function ActivePlayPhase({
           if (!open) {
             setSelectedTile(null);
             setSelectedFile(null);
+            if (initialTileId) {
+              onConsumeInitialTile?.();
+            }
           }
         }}
       >
@@ -585,9 +541,40 @@ export function ActivePlayPhase({
                     </p>
                   </div>
                 </div>
-                <span className="shrink-0 rounded-sm border border-strong bg-surface px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-ink uppercase">
-                  Zielperson
-                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="rounded-sm border border-strong bg-surface px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-ink uppercase">
+                    Zielperson
+                  </span>
+                  <Button
+                    type="button"
+                    variant={
+                      pinnedTileSet.has(selectedTile.id)
+                        ? "primary"
+                        : "secondary"
+                    }
+                    size="icon"
+                    aria-pressed={pinnedTileSet.has(selectedTile.id)}
+                    aria-label={
+                      pinnedTileSet.has(selectedTile.id)
+                        ? `Auftrag „${selectedTile.promptText}“ aus Fokus entfernen`
+                        : `Auftrag „${selectedTile.promptText}“ anheften`
+                    }
+                    title={
+                      pinnedTileSet.has(selectedTile.id)
+                        ? "Aus Fokus entfernen"
+                        : "Im Fokus anheften"
+                    }
+                    onClick={() => handleTogglePinTile(selectedTile.id)}
+                  >
+                    <Pin
+                      className={cn(
+                        "size-4 rotate-45",
+                        pinnedTileSet.has(selectedTile.id) && "fill-current",
+                      )}
+                      aria-hidden="true"
+                    />
+                  </Button>
+                </div>
               </div>
             ) : null}
             <DialogTitle className="font-display text-2xl leading-tight tracking-tight text-ink">
@@ -638,7 +625,13 @@ export function ActivePlayPhase({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setSelectedTile(null)}
+              onClick={() => {
+                setSelectedTile(null);
+                setSelectedFile(null);
+                if (initialTileId) {
+                  onConsumeInitialTile?.();
+                }
+              }}
               disabled={isUploading}
             >
               Abbrechen

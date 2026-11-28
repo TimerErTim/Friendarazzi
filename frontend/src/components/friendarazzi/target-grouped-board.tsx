@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, CheckCircle2, Lock, Pin, PinOff } from "lucide-react";
+import { Camera, CheckCircle2, Lock, Pin } from "lucide-react";
 
 import type {
   BoardTileView,
@@ -23,8 +23,8 @@ import { AuthenticatedImage } from "./media-image";
 type TargetGroupedBoardProps = {
   board: BoardView;
   feed?: CaptureFeedItem[];
-  pinnedTargetIds?: ReadonlySet<string>;
-  onTogglePin?: (targetUserId: string) => void;
+  pinnedTileIds?: ReadonlySet<string>;
+  onTogglePinTile?: (tileId: string) => void;
   hideCaptured?: boolean;
   searchQuery?: string;
   onEmptyTileSelect?: (tile: BoardTileView) => void;
@@ -34,32 +34,42 @@ type TargetGroupedBoardProps = {
 /**
  * Target-grouped alternative representation of a Bingo board (#26):
  * groups prompts under each target friend card so players hunt one person
- * at a time with legible text and quick pin/focus support.
+ * at a time with legible text and per-task pin/focus support.
  */
 export function TargetGroupedBoard({
   board,
   feed = [],
-  pinnedTargetIds,
-  onTogglePin,
+  pinnedTileIds,
+  onTogglePinTile,
   hideCaptured = false,
   searchQuery = "",
   onEmptyTileSelect,
   onViewCapture,
 }: TargetGroupedBoardProps) {
   const groups = groupTilesByTarget(board.tiles, {
-    pinnedTargetIds,
+    pinnedTileIds,
     hideCaptured,
     query: searchQuery,
   });
 
   if (groups.length === 0) {
+    const allCaptured =
+      hideCaptured &&
+      searchQuery.trim().length === 0 &&
+      board.tiles.length > 0 &&
+      board.tiles.every((tile) => tile.isCaptured);
+
     return (
       <div className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface p-6 text-center">
         <p className="text-sm font-bold text-ink">
-          Keine passenden Aufträge gefunden.
+          {allCaptured
+            ? "Alle Aufträge erledigt!"
+            : "Keine passenden Aufträge gefunden."}
         </p>
         <p className="mt-1 text-xs font-medium text-secondary">
-          Passe Suchbegriff oder Filter an, um wieder alle Ziele zu sehen.
+          {allCaptured
+            ? "Du hast bereits alle Felder auf diesem Brett erfasst."
+            : "Passe deinen Suchbegriff an, um wieder alle Ziele zu sehen."}
         </p>
       </div>
     );
@@ -70,53 +80,15 @@ export function TargetGroupedBoard({
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {groups.map((group) => (
-        <Card
-          key={group.target.id}
-          className={cn(
-            "overflow-hidden",
-            group.isPinned && "border-strong bg-primary-subtle/20",
-          )}
-        >
-          <CardHeader
-            className={cn(
-              "px-4 py-3",
-              group.isPinned ? "bg-primary-subtle" : "bg-cyan-subtle",
-            )}
-          >
+        <Card key={group.target.id} className="overflow-hidden">
+          <CardHeader className="bg-cyan-subtle px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <PlayerBadgeLink user={group.target} compact />
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <span className="rounded-sm border border-strong bg-surface px-2 py-0.5 font-mono text-xs font-bold text-ink tabular-nums">
-                  {group.capturedCount}/{group.totalCount}
-                </span>
-                {onTogglePin ? (
-                  <Button
-                    type="button"
-                    variant={group.isPinned ? "primary" : "secondary"}
-                    size="icon"
-                    aria-pressed={group.isPinned}
-                    aria-label={
-                      group.isPinned
-                        ? `${group.target.displayName} aus Fokus entfernen`
-                        : `${group.target.displayName} anheften`
-                    }
-                    title={
-                      group.isPinned
-                        ? "Aus Fokus entfernen"
-                        : "Im Fokus anheften"
-                    }
-                    onClick={() => onTogglePin(group.target.id)}
-                  >
-                    {group.isPinned ? (
-                      <PinOff className="size-4" aria-hidden="true" />
-                    ) : (
-                      <Pin className="size-4" aria-hidden="true" />
-                    )}
-                  </Button>
-                ) : null}
-              </div>
+              <span className="shrink-0 rounded-sm border border-strong bg-surface px-2 py-0.5 font-mono text-xs font-bold text-ink tabular-nums">
+                {group.capturedCount}/{group.totalCount}
+              </span>
             </div>
           </CardHeader>
 
@@ -129,6 +101,8 @@ export function TargetGroupedBoard({
               );
               const canOpenCapture = Boolean(captureItem && onViewCapture);
               const canUpload = !tile.isCaptured && interactiveUpload;
+              const isPinned =
+                !tile.isCaptured && (pinnedTileIds?.has(tile.id) ?? false);
               const tileAriaLabel = `${tile.targetUser.displayName}: ${tile.promptText}${
                 tile.isCaptured
                   ? canOpenCapture
@@ -194,13 +168,12 @@ export function TargetGroupedBoard({
               }
 
               if (canUpload) {
-                return (
+                const uploadButton = (
                   <button
-                    key={tile.id}
                     type="button"
                     aria-label={tileAriaLabel}
                     onClick={() => onEmptyTileSelect?.(tile)}
-                    className="brutal-press flex min-h-12 w-full cursor-pointer items-center justify-between gap-3 rounded-sm border-2 border-control bg-surface px-3 py-2.5 text-left hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                    className="brutal-press flex min-h-12 min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 rounded-sm border-2 border-control bg-surface px-3 py-2.5 text-left hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                   >
                     <span className="min-w-0 flex-1 text-sm leading-snug font-bold text-ink">
                       {tile.promptText}
@@ -209,6 +182,44 @@ export function TargetGroupedBoard({
                       <Camera className="size-4" aria-hidden="true" />
                     </span>
                   </button>
+                );
+
+                if (!onTogglePinTile) {
+                  return (
+                    <div key={tile.id} className="flex">
+                      {uploadButton}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={tile.id} className="flex items-stretch gap-2">
+                    {uploadButton}
+                    <Button
+                      type="button"
+                      variant={isPinned ? "primary" : "secondary"}
+                      size="icon"
+                      className="h-auto min-h-12 w-11 shrink-0"
+                      aria-pressed={isPinned}
+                      aria-label={
+                        isPinned
+                          ? `Auftrag „${tile.promptText}“ aus Fokus entfernen`
+                          : `Auftrag „${tile.promptText}“ anheften`
+                      }
+                      title={
+                        isPinned ? "Aus Fokus entfernen" : "Im Fokus anheften"
+                      }
+                      onClick={() => onTogglePinTile(tile.id)}
+                    >
+                      <Pin
+                        className={cn(
+                          "size-4 rotate-45",
+                          isPinned && "fill-current",
+                        )}
+                        aria-hidden="true"
+                      />
+                    </Button>
+                  </div>
                 );
               }
 

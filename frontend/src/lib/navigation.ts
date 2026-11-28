@@ -60,6 +60,10 @@ export function gameHref(gameId: string): string {
   return `${paths.games}?id=${encodeURIComponent(gameId)}`;
 }
 
+export function gameTileHref(gameId: string, tileId: string): string {
+  return `${paths.games}?id=${encodeURIComponent(gameId)}&tile=${encodeURIComponent(tileId)}`;
+}
+
 export function captureHref(gameId: string, captureId: string): string {
   return `${paths.games}?id=${encodeURIComponent(gameId)}&capture=${encodeURIComponent(captureId)}`;
 }

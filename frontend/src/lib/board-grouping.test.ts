@@ -10,7 +10,9 @@ import type {
 import {
   aggregateMatchByTarget,
   groupTilesByTarget,
-  togglePinnedTarget,
+  loadPinnedTiles,
+  savePinnedTiles,
+  togglePinnedTile,
 } from "./board-grouping";
 
 function player(id: string, displayName: string): PlayerBadge {
@@ -58,17 +60,20 @@ describe("board-grouping", () => {
     tile("t5", 1, 1, max, "Winkt jemandem zu", false),
   ];
 
-  it("groups tiles by target, sorting pinned targets and open counts first", () => {
+  it("groups tiles by target, sorting groups and open tiles with pinned tasks first", () => {
     const groups = groupTilesByTarget(tiles, {
-      pinnedTargetIds: new Set(["u-sam"]),
+      pinnedTileIds: new Set(["t4", "t3"]),
     });
 
     expect(groups.map((g) => g.target.id)).toEqual([
-      "u-sam",
       "u-lena",
+      "u-sam",
       "u-max",
     ]);
-    expect(groups[0]?.isPinned).toBe(true);
+    expect(groups[0]?.hasPinnedTile).toBe(true);
+    expect(groups[0]?.tiles.map((t) => t.id)).toEqual(["t3", "t2"]);
+    expect(groups[1]?.hasPinnedTile).toBe(true);
+    expect(groups[2]?.hasPinnedTile).toBe(false);
     expect(groups[2]?.tiles.map((t) => t.id)).toEqual(["t5", "t1"]);
     expect(groups[2]?.capturedCount).toBe(1);
     expect(groups[2]?.openCount).toBe(1);
@@ -89,18 +94,23 @@ describe("board-grouping", () => {
     expect(byPrompt[0]?.tiles.map((t) => t.id)).toEqual(["t4"]);
   });
 
-  it("caps pinned targets at 3 by rotating out the oldest pin", () => {
+  it("toggles and persists pinned tiles per game without evicting earlier pins", () => {
+    window.localStorage.clear();
     let pins: string[] = [];
-    pins = togglePinnedTarget(pins, "a");
-    pins = togglePinnedTarget(pins, "b");
-    pins = togglePinnedTarget(pins, "c");
-    expect(pins).toEqual(["a", "b", "c"]);
+    pins = togglePinnedTile(pins, "t1");
+    pins = togglePinnedTile(pins, "t2");
+    pins = togglePinnedTile(pins, "t3");
+    pins = togglePinnedTile(pins, "t4");
+    expect(pins).toEqual(["t1", "t2", "t3", "t4"]);
 
-    pins = togglePinnedTarget(pins, "d");
-    expect(pins).toEqual(["b", "c", "d"]);
+    pins = togglePinnedTile(pins, "t3");
+    expect(pins).toEqual(["t1", "t2", "t4"]);
 
-    pins = togglePinnedTarget(pins, "c");
-    expect(pins).toEqual(["b", "d"]);
+    savePinnedTiles("game-1", pins);
+    expect(loadPinnedTiles("game-1")).toEqual(["t1", "t2", "t4"]);
+
+    savePinnedTiles("game-1", []);
+    expect(loadPinnedTiles("game-1")).toEqual([]);
   });
 
   it("aggregates completed match boards by target person", () => {

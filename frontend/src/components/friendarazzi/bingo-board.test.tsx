@@ -120,4 +120,25 @@ describe("BingoBoard", () => {
       expect.objectContaining({ id: "cap-1", tileId: "tile-captured" }),
     );
   });
+
+  it("marks pinned uncaptured tiles with a visual pin icon instead of changing background color", () => {
+    render(
+      <BingoBoard
+        board={makeBoard()}
+        gridSize={3}
+        pinnedTileIds={new Set(["tile-open", "tile-captured"])}
+        onEmptyTileSelect={vi.fn()}
+      />,
+    );
+
+    const openButton = screen.getByRole("button", {
+      name: /Max: Bestellt noch ein zweites Dessert trotz Völlegefühl \(Foto aufnehmen, angeheftet\)/,
+    });
+    expect(
+      openButton.querySelector("[data-testid='pinned-tile-icon']"),
+    ).not.toBeNull();
+    expect(openButton.className).toContain("bg-surface");
+    expect(openButton.className).not.toContain("bg-primary-subtle/60");
+    expect(screen.getAllByTestId("pinned-tile-icon")).toHaveLength(1);
+  });
 });

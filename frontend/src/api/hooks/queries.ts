@@ -1,28 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+
+import { useDocumentVisible } from "@/lib/use-document-visible";
 
 import { useAuth } from "../auth-provider";
 import { useFriendarazziApi } from "../provider";
 import { friendarazziKeys } from "../query-keys";
-
-function useDocumentVisible(): boolean {
-  const [visible, setVisible] = useState(() =>
-    typeof document === "undefined"
-      ? true
-      : document.visibilityState !== "hidden",
-  );
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const onChange = () => {
-      setVisible(document.visibilityState !== "hidden");
-    };
-    document.addEventListener("visibilitychange", onChange);
-    return () => document.removeEventListener("visibilitychange", onChange);
-  }, []);
-
-  return visible;
-}
 
 export function useHealthQuery() {
   const { api } = useFriendarazziApi();
@@ -89,6 +72,22 @@ export function useGameDetailQuery(gameId: string | null) {
     refetchInterval: (query) =>
       !visible || query.state.data?.status === "Completed" ? false : 5000,
     retry: false,
+  });
+}
+
+export function useGameDetailsQueries(gameIds: readonly string[]) {
+  const { api } = useFriendarazziApi();
+  const phase = useAuth();
+  const visible = useDocumentVisible();
+  return useQueries({
+    queries: gameIds.map((gameId) => ({
+      queryKey: friendarazziKeys.games.detail(gameId),
+      queryFn: () => api.gameDetail(gameId),
+      enabled: phase.status === "authenticated" && Boolean(gameId),
+      refetchInterval: (query: { state: { data?: { status?: string } } }) =>
+        !visible || query.state.data?.status === "Completed" ? false : 5000,
+      retry: false,
+    })),
   });
 }
 

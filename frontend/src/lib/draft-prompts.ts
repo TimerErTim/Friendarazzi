@@ -1,13 +1,10 @@
 export type DraftPromptSlot = {
   key: string;
-  targetName: string;
+  targetName?: string;
   text: string;
 };
 
-export function fillPromptTemplate(
-  template: string,
-  targetName: string,
-): string {
+export function fillPromptTemplate(template: string, targetName = ""): string {
   return template.replaceAll("{name}", targetName).trim();
 }
 
@@ -63,7 +60,7 @@ export function autofillEmptySlots<T extends DraftPromptSlot>(
       return slot;
     }
     for (const template of pool) {
-      const filled = fillPromptTemplate(template, slot.targetName);
+      const filled = fillPromptTemplate(template, slot.targetName ?? "");
       const normalized = normalizePromptText(filled);
       if (normalized.length > 0 && !used.has(normalized)) {
         used.add(normalized);
@@ -104,7 +101,7 @@ export function rerollSingleSlot<T extends DraftPromptSlot>(
   const candidates: string[] = [];
   const candidateKeys = new Set<string>();
   for (const template of templates) {
-    const filled = fillPromptTemplate(template, target.targetName);
+    const filled = fillPromptTemplate(template, target.targetName ?? "");
     const normalized = normalizePromptText(filled);
     if (
       normalized.length > 0 &&

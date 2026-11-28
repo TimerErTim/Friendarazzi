@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Account screens for registration, sign-in, and password recovery.
 
 ### Changed
+- Prompt submissions and Quick-Start starter decks are now formulated target-agnostically (removing `{name}` prefixes and updating drafting placeholders), while associating prompts with their target player cleanly through the UI across drafting cards, capture feeds, and gallery cards.
 - The live capture feed now shows the newest captures first and includes the capture date alongside the time.
 - Streamlined the entire frontend around single-purpose surfaces and a strict screen budget: uncaptured Bingo tiles drop empty image placeholders so prompts stay readable, captured tiles display full-bleed subtly tilted instant photos with a compact caption strip, the match header collapses into one compact row plus a thin phase track, active play puts the board first with a crew popover and collapsible activity feed, prompt drafting opens directly with an inline deck/crew bar, and the hub, lobby, join, and profile views remove redundant badges and duplicate controls.
 

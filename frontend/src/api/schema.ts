@@ -2840,7 +2840,7 @@ export interface components {
             name: string;
             /** @description Short description of the deck theme. */
             description: string;
-            /** @description Prompt templates containing `{name}` placeholder. */
+            /** @description Target-agnostic prompt templates. */
             prompts: string[];
         };
         /**

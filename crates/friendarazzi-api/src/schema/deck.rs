@@ -17,6 +17,6 @@ pub struct StarterDeck {
     pub name: String,
     /// Short description of the deck theme.
     pub description: String,
-    /// Prompt templates containing `{name}` placeholder.
+    /// Target-agnostic prompt templates.
     pub prompts: Vec<String>,
 }

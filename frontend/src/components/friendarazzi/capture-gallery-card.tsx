@@ -39,7 +39,18 @@ export function CaptureGalleryCard({
 
       <div className="space-y-2 pt-2.5">
         <p className="line-clamp-2 text-xs font-bold text-ink">
-          {capture.isBlurred ? "Verpixelter Teaser" : capture.promptText}
+          {capture.isBlurred ? (
+            "Verpixelter Teaser"
+          ) : (
+            <>
+              {capture.target ? (
+                <span className="mr-1.5 inline-block rounded-[2px] border border-strong bg-primary px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground">
+                  {capture.target.displayName}
+                </span>
+              ) : null}
+              {capture.promptText}
+            </>
+          )}
         </p>
         <div className="flex items-center justify-between gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">

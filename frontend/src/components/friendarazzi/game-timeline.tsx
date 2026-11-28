@@ -95,8 +95,8 @@ export function GameTimeline({
                       "group absolute -translate-x-1/2 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                       staggerTop,
                     )}
-                    title={`${cap.catcher.displayName}: ${cap.promptText ?? "Foto"} (${new Date(cap.capturedAt).toLocaleTimeString("de-AT")})`}
-                    aria-label={`Foto von ${cap.catcher.displayName} um ${new Date(cap.capturedAt).toLocaleTimeString("de-AT")}`}
+                    title={`${cap.catcher.displayName}${cap.target ? ` → ${cap.target.displayName}` : ""}: ${cap.promptText ?? "Foto"} (${new Date(cap.capturedAt).toLocaleTimeString("de-AT")})`}
+                    aria-label={`Foto von ${cap.catcher.displayName}${cap.target ? ` über ${cap.target.displayName}` : ""} um ${new Date(cap.capturedAt).toLocaleTimeString("de-AT")}`}
                   >
                     <span className="flex size-11 items-center justify-center">
                       <span className="brutal-shadow-sm size-9 overflow-hidden rounded-full border-2 border-strong bg-surface transition-transform group-hover:scale-110">

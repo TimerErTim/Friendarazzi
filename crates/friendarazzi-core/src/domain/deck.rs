@@ -49,6 +49,17 @@ pub fn builtin_starter_decks() -> Vec<StarterDeck> {
                 "Hält die Tür oder hält Platz frei".into(),
                 "Fotografiert gerade selbst jemanden".into(),
                 "Sieht komplett überrascht aus".into(),
+                "Reicht ein Taschentuch oder Kaugummi weiter".into(),
+                "Versucht über die Musik hinweg zu flüstern".into(),
+                "Starrt auf die Getränkekarte wie auf ein Rätsel".into(),
+                "Zählt am Tisch kurz alle Köpfe durch".into(),
+                "Bindet Jacke oder Pullover um die Hüfte".into(),
+                "Probiert heimlich vom Drink nebenan".into(),
+                "Klatscht begeistert nach einem Song".into(),
+                "Hält das Handy mit Blitz als Taschenlampe".into(),
+                "Lehnt sich an Bar oder Wand für ein Gespräch".into(),
+                "Ordnet Gläser oder Untersetzer ordentlich an".into(),
+                "Macht eine ausladende Verabschiedungsgeste".into(),
             ],
         },
         StarterDeck {
@@ -82,6 +93,17 @@ pub fn builtin_starter_decks() -> Vec<StarterDeck> {
                 "Hat Sand, Gras oder Glitzer im Gesicht".into(),
                 "Bestellt etwas in einer anderen Sprache mit Händen".into(),
                 "Starrt verträumt in die Ferne".into(),
+                "Schüttelt Sand aus Schuhen oder Handtuch".into(),
+                "Kauft ein Souvenir oder einen Festival-Becher".into(),
+                "Klebt das Armband oder Ticket stolz ans Handgelenk".into(),
+                "Sucht nach Schatten für die kurze Pause".into(),
+                "Faltet eine Decke oder Jacke als Kissen".into(),
+                "Reicht Snacks durch die Sitzreihe".into(),
+                "Lauscht mit geschlossenen Augen der Musik".into(),
+                "Hält Ausschau nach den anderen auf dem Gelände".into(),
+                "Bindet die Schuhe auf einem Koffer oder Stein".into(),
+                "Streckt die Füße in die Sonne oder ins Gras".into(),
+                "Lacht über ein Missgeschick beim Aufbau".into(),
             ],
         },
         StarterDeck {
@@ -115,6 +137,17 @@ pub fn builtin_starter_decks() -> Vec<StarterDeck> {
                 "Hält Haustier oder Kuschelkissen im Arm".into(),
                 "Schaut aus dem Fenster wie in einem Musikvideo".into(),
                 "Macht den Spülmaschinen-Tetris-Meister".into(),
+                "Sitzt im Schneidersitz auf dem Küchenstuhl".into(),
+                "Hält eine Fernbedienung wie ein Mikrofon".into(),
+                "Sucht die passende Tupperdose zum Deckel".into(),
+                "Summt eine Melodie beim Kochen oder Putzen".into(),
+                "Stellt eine Kerze an oder dimmt das Licht".into(),
+                "Blättert in einer alten Anleitung oder einem Magazin".into(),
+                "Reibt sich verschlafen die Augen".into(),
+                "Faltet Wäsche oder Socken mitten im Raum".into(),
+                "Testet vorsichtig, ob der Tee schon trinkbar ist".into(),
+                "Hält ein Brettspiel-Teil nachdenklich in der Hand".into(),
+                "Lacht über ein Video auf dem eigenen Bildschirm".into(),
             ],
         },
         StarterDeck {
@@ -148,6 +181,17 @@ pub fn builtin_starter_decks() -> Vec<StarterDeck> {
                 "Wartet ungeduldig vor der Kaffeemaschine".into(),
                 "Vergleicht zwei Ausgaben oder Folien nebeneinander".into(),
                 "Schaut panisch auf die Uhr".into(),
+                "Tippt hochmotiviert mit hörbarem Tastatur-Tempo".into(),
+                "Balanciert drei Dinge gleichzeitig zum Schreibtisch".into(),
+                "Macht ein heimliches Stretch-Programm am Platz".into(),
+                "Schaut kurz ratlos auf ein weißes Blatt".into(),
+                "Tauscht einen Stift oder Marker aus der Runde".into(),
+                "Trinkt aus einer völlig zerbeulten Trinkflasche".into(),
+                "Hebt skeptisch eine Augenbraue im Gespräch".into(),
+                "Sortiert Stifte oder Kabel in Reih und Glied".into(),
+                "Schreibt etwas hektisch auf eine Serviette oder Hand".into(),
+                "Blickt sehnsüchtig Richtung Kaffeeküche oder Ausgang".into(),
+                "Klopft leise mit dem Stift den Takt mit".into(),
             ],
         },
     ]
@@ -158,6 +202,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+    use crate::domain::game::PROMPT_MAX_CHARS;
 
     #[test]
     fn builtin_starter_decks_are_target_agnostic_and_unique() {
@@ -167,14 +212,19 @@ mod tests {
         for deck in decks {
             assert_eq!(
                 deck.prompts.len(),
-                25,
-                "deck {} should have 25 prompts",
+                36,
+                "deck {} should have 36 prompts",
                 deck.slug
             );
             let mut seen = HashSet::new();
             for prompt in &deck.prompts {
                 let trimmed = prompt.trim();
                 assert!(!trimmed.is_empty(), "empty prompt in deck {}", deck.slug);
+                assert!(
+                    trimmed.chars().count() <= PROMPT_MAX_CHARS,
+                    "prompt exceeds {PROMPT_MAX_CHARS} chars in deck {}: {trimmed}",
+                    deck.slug
+                );
                 assert!(
                     !trimmed.contains("{name}"),
                     "prompt still contains {{name}} in deck {}: {trimmed}",

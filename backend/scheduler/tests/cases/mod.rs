@@ -7,7 +7,7 @@ use friendarazzi_core::{
     adapters::{InMemorySigning, InMemoryThrottle},
     application::{AuthContext, IdentityProviderConfiguration},
     domain::{
-        EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource,
+        EmailAdresse, Game, GameId, GridSize, NonEmptyString, PromptSource, PromptText,
         READY_GRACE_PERIOD_SECONDS, VisibilityMode,
         konto::{KlartextPasswort, SecretToken, SessionId},
         target_quotas_for_author,
@@ -104,6 +104,7 @@ pub async fn setup_locked_drafting_game(
                 title: NonEmptyString::neu("Scheduler Case").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -144,7 +145,7 @@ pub async fn setup_locked_drafting_game(
             for _ in 0..count {
                 prompts.push(DraftPromptInput {
                     target_user_id,
-                    text: NonEmptyString::neu(format!("Prompt {next_num}")).unwrap(),
+                    text: PromptText::new(format!("Prompt {next_num}")).unwrap(),
                     source: PromptSource::Custom,
                 });
                 next_num += 1;

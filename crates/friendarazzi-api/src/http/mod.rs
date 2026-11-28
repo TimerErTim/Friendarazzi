@@ -33,11 +33,11 @@ use crate::{
     api::{
         FriendarazziAppApi,
         requests::{
-            AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, JoinGameRequest,
-            PasswortVergessenRequest, PasswortWiederherstellenRequest,
+            AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, HostFillDraftsRequest,
+            JoinGameRequest, PasswortVergessenRequest, PasswortWiederherstellenRequest,
             RegistrierungAbschlussRequest, RegistrierungStartRequest, SaveDraftPromptsRequest,
-            SetGameWatchRequest, UnsubscribeNotificationRequest, UpdateGameSettingsRequest,
-            UpdateNotificationPreferencesRequest, UpdateProfileRequest,
+            SetDraftDeadlineRequest, SetGameWatchRequest, UnsubscribeNotificationRequest,
+            UpdateGameSettingsRequest, UpdateNotificationPreferencesRequest, UpdateProfileRequest,
         },
     },
     schema::{
@@ -348,6 +348,54 @@ impl FriendarazziApiSpec {
             .unwrap_or(AuthContext::Anonymous);
         self.app_api
             .game_unlock_prompts(auth, GameId(game_id.0))
+            .await
+            .into()
+    }
+
+    /// Host-only action to auto-fill remaining open prompt slots for unlocked players from starter decks.
+    ///
+    /// Locks all remaining players and optionally deals boards immediately.
+    #[oai(
+        path = "/games/:game_id/prompts/fill-remaining",
+        method = "post",
+        tag = "ApiTag::Games"
+    )]
+    async fn game_host_fill_drafts(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+        body: Json<HostFillDraftsRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_host_fill_drafts(auth, GameId(game_id.0), body.0)
+            .await
+            .into()
+    }
+
+    /// Host-only update of the drafting auto-close deadline.
+    ///
+    /// Sets or clears when missing prompts auto-fill and active play begins automatically.
+    #[oai(
+        path = "/games/:game_id/draft-deadline",
+        method = "put",
+        tag = "ApiTag::Games"
+    )]
+    async fn game_set_draft_deadline(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+        body: Json<SetDraftDeadlineRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_set_draft_deadline(auth, GameId(game_id.0), body.0)
             .await
             .into()
     }

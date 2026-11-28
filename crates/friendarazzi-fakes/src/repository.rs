@@ -400,11 +400,21 @@ impl GameRepository for FakeGameRepository {
             .datastore
             .games()
             .values()
-            .filter(|g| matches!(***g, Game::Drafting(ref d) if d.draft_closes_at().is_some()))
+            .filter(|g| {
+                matches!(
+                    ***g,
+                    Game::Drafting(ref d)
+                        if d.draft_closes_at().is_some() || d.draft_deadline_at().is_some()
+                )
+            })
             .cloned()
             .collect();
         out.sort_by_key(|g| match &**g {
-            Game::Drafting(d) => d.draft_closes_at(),
+            Game::Drafting(d) => match (d.draft_closes_at(), d.draft_deadline_at()) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (None, None) => None,
+            },
             _ => None,
         });
         Ok(out)
@@ -1123,6 +1133,7 @@ mod tests {
                 title: NonEmptyString::neu(title).unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
                 created_at: sample_time(),
             },
         ))

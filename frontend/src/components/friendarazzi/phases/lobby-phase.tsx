@@ -6,6 +6,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiErrorMessage } from "@/api/errors";
 import { type GameDetail, VisibilityMode } from "@/api/friendarazzi-api";
 import { useBenutzerQuery, useFriendarazziMutations } from "@/api/hooks";
+import {
+  type DeadlinePresetKey,
+  DraftDeadlinePicker,
+  formatDeadlineShort,
+  toLocalDateTimeInputValue,
+} from "@/components/friendarazzi/draft-deadline-picker";
 import { InviteShareCard } from "@/components/friendarazzi/invite-share-card";
 import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
@@ -63,6 +69,15 @@ export function LobbyPhase({
   const [visibilityMode, setVisibilityMode] = useState<VisibilityMode>(
     game.visibilityMode,
   );
+  const [draftDeadlineAt, setDraftDeadlineAt] = useState<string | null>(
+    game.draftDeadlineAt ?? null,
+  );
+  const [deadlinePreset, setDeadlinePreset] = useState<DeadlinePresetKey>(
+    game.draftDeadlineAt ? "custom" : "none",
+  );
+  const [deadlineCustomLocal, setDeadlineCustomLocal] = useState(() =>
+    toLocalDateTimeInputValue(game.draftDeadlineAt),
+  );
   const [justSaved, setJustSaved] = useState(false);
   const [hasPendingDebounce, setHasPendingDebounce] = useState(false);
 
@@ -74,30 +89,40 @@ export function LobbyPhase({
     title: game.title,
     gridSize: String(game.gridSize),
     visibilityMode: game.visibilityMode,
+    draftDeadlineAt: game.draftDeadlineAt ?? null,
   });
   const savedSettingsRef = useRef({
     title: game.title,
     gridSize: String(game.gridSize),
     visibilityMode: game.visibilityMode,
+    draftDeadlineAt: game.draftDeadlineAt ?? null,
   });
   const lastSavedRef = useRef(savedSettingsRef.current);
 
   useEffect(() => {
+    const serverDeadline = game.draftDeadlineAt ?? null;
     if (!isEditingTitleRef.current) {
       setTitle(game.title);
       latestValuesRef.current.title = game.title;
     }
     setGridSize(String(game.gridSize));
     setVisibilityMode(game.visibilityMode);
+    setDraftDeadlineAt(serverDeadline);
+    setDeadlinePreset((prev) =>
+      serverDeadline === null ? "none" : prev === "none" ? "custom" : prev,
+    );
+    setDeadlineCustomLocal(toLocalDateTimeInputValue(serverDeadline));
     latestValuesRef.current.gridSize = String(game.gridSize);
     latestValuesRef.current.visibilityMode = game.visibilityMode;
+    latestValuesRef.current.draftDeadlineAt = serverDeadline;
     savedSettingsRef.current = {
       title: game.title,
       gridSize: String(game.gridSize),
       visibilityMode: game.visibilityMode,
+      draftDeadlineAt: serverDeadline,
     };
     lastSavedRef.current = savedSettingsRef.current;
-  }, [game.title, game.gridSize, game.visibilityMode]);
+  }, [game.title, game.gridSize, game.visibilityMode, game.draftDeadlineAt]);
 
   useEffect(() => {
     if (!justSaved) return;
@@ -106,7 +131,12 @@ export function LobbyPhase({
   }, [justSaved]);
 
   const commitSettings = useCallback(
-    (nextTitle: string, nextGridSize: string, nextMode: VisibilityMode) => {
+    (
+      nextTitle: string,
+      nextGridSize: string,
+      nextMode: VisibilityMode,
+      nextDeadline: string | null = latestValuesRef.current.draftDeadlineAt,
+    ) => {
       setHasPendingDebounce(false);
       const trimmedTitle = nextTitle.trim();
       if (!trimmedTitle) return settingsSaveRef.current;
@@ -114,12 +144,14 @@ export function LobbyPhase({
         title: trimmedTitle,
         gridSize: nextGridSize,
         visibilityMode: nextMode,
+        draftDeadlineAt: nextDeadline,
       };
       const prev = lastSavedRef.current;
       if (
         prev.title === next.title &&
         prev.gridSize === next.gridSize &&
-        prev.visibilityMode === next.visibilityMode
+        prev.visibilityMode === next.visibilityMode &&
+        prev.draftDeadlineAt === next.draftDeadlineAt
       ) {
         return settingsSaveRef.current;
       }
@@ -133,6 +165,7 @@ export function LobbyPhase({
               title: next.title,
               gridSize: Number(next.gridSize),
               visibilityMode: next.visibilityMode,
+              draftDeadlineAt: next.draftDeadlineAt,
             },
           });
           savedSettingsRef.current = next;
@@ -157,7 +190,12 @@ export function LobbyPhase({
     }
     isEditingTitleRef.current = false;
     const latest = latestValuesRef.current;
-    await commitSettings(latest.title, latest.gridSize, latest.visibilityMode);
+    await commitSettings(
+      latest.title,
+      latest.gridSize,
+      latest.visibilityMode,
+      latest.draftDeadlineAt,
+    );
   }, [commitSettings]);
 
   useEffect(() => {
@@ -172,6 +210,7 @@ export function LobbyPhase({
           latest.title,
           latest.gridSize,
           latest.visibilityMode,
+          latest.draftDeadlineAt,
         );
       }
     };
@@ -380,6 +419,38 @@ export function LobbyPhase({
                 </div>
               </fieldset>
 
+              <DraftDeadlinePicker
+                preset={deadlinePreset}
+                customLocalValue={deadlineCustomLocal}
+                currentIso={draftDeadlineAt}
+                onSelectPreset={(preset, nextIso) => {
+                  setDeadlinePreset(preset);
+                  setDraftDeadlineAt(nextIso);
+                  latestValuesRef.current.draftDeadlineAt = nextIso;
+                  if (nextIso || preset === "none") {
+                    void commitSettings(
+                      title,
+                      gridSize,
+                      visibilityMode,
+                      nextIso,
+                    );
+                  }
+                }}
+                onCustomChange={(local, nextIso) => {
+                  setDeadlineCustomLocal(local);
+                  setDraftDeadlineAt(nextIso);
+                  latestValuesRef.current.draftDeadlineAt = nextIso;
+                  if (nextIso) {
+                    void commitSettings(
+                      title,
+                      gridSize,
+                      visibilityMode,
+                      nextIso,
+                    );
+                  }
+                }}
+              />
+
               {mutations.updateSettings.isError ? (
                 <Alert variant="error">
                   {apiErrorMessage(mutations.updateSettings.error, {
@@ -416,6 +487,9 @@ export function LobbyPhase({
         <CalloutNote label="Warten auf Host" tone="yellow">
           Der Host startet die Entwurfsphase, sobald mindestens 3 Mitspieler
           dabei sind.
+          {game.draftDeadlineAt
+            ? ` Entwurfsfrist: ${formatDeadlineShort(game.draftDeadlineAt)}.`
+            : ""}
         </CalloutNote>
       )}
     </div>

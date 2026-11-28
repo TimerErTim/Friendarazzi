@@ -1,12 +1,13 @@
 //! Inbound request DTOs for Friendarazzi games, drafting, and user profiles.
 
+use chrono::{DateTime, Utc};
 use error_stack::{Report, ResultExt};
 use friendarazzi_core::{
-    domain::{BenutzerId, GameId, GridSize, InviteCode, NonEmptyString},
+    domain::{BenutzerId, GameId, GridSize, InviteCode, NonEmptyString, PromptText},
     service::{
         BenachrichtigungsEinstellungenAktualisieren, CreateGame, DraftPromptInput,
-        GameUseCaseError, JoinGame, ProfileUseCaseError, SaveDraftPrompts, SpielBeobachtungSetzen,
-        UpdateGameSettings, UpdateProfile,
+        GameUseCaseError, HostFillRemainingDrafts, JoinGame, ProfileUseCaseError, SaveDraftPrompts,
+        SetDraftDeadline, SpielBeobachtungSetzen, UpdateGameSettings, UpdateProfile,
     },
 };
 use uuid::Uuid;
@@ -26,6 +27,8 @@ pub struct CreateGameRequest {
     pub grid_size: u8,
     /// Proof visibility mode.
     pub visibility_mode: VisibilityMode,
+    /// Optional drafting auto-close deadline.
+    pub draft_deadline_at: Option<DateTime<Utc>>,
 }
 
 impl CreateGameRequest {
@@ -37,6 +40,7 @@ impl CreateGameRequest {
             title,
             grid_size,
             visibility_mode: self.visibility_mode.into(),
+            draft_deadline_at: self.draft_deadline_at,
         })
     }
 }
@@ -54,6 +58,8 @@ pub struct UpdateGameSettingsRequest {
     pub grid_size: u8,
     /// Proof visibility mode.
     pub visibility_mode: VisibilityMode,
+    /// Optional drafting auto-close deadline.
+    pub draft_deadline_at: Option<DateTime<Utc>>,
 }
 
 impl UpdateGameSettingsRequest {
@@ -69,6 +75,7 @@ impl UpdateGameSettingsRequest {
             title,
             grid_size,
             visibility_mode: self.visibility_mode.into(),
+            draft_deadline_at: self.draft_deadline_at,
         })
     }
 }
@@ -125,8 +132,7 @@ impl SaveDraftPromptsRequest {
     ) -> Result<SaveDraftPrompts, Report<GameUseCaseError>> {
         let mut prompts = Vec::with_capacity(self.prompts.len());
         for item in self.prompts {
-            let text =
-                NonEmptyString::neu(item.text).change_context(GameUseCaseError::BadRequest)?;
+            let text = PromptText::new(item.text).change_context(GameUseCaseError::BadRequest)?;
             prompts.push(DraftPromptInput {
                 target_user_id: BenutzerId(item.target_user_id),
                 text,
@@ -134,6 +140,47 @@ impl SaveDraftPromptsRequest {
             });
         }
         Ok(SaveDraftPrompts { game_id, prompts })
+    }
+}
+
+/// Host request to auto-fill remaining open prompt slots from starter decks.
+#[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostFillDraftsRequest {
+    /// When true, skip the 60s countdown and deal boards immediately.
+    #[serde(default)]
+    pub start_immediately: bool,
+}
+
+impl HostFillDraftsRequest {
+    pub fn into_use_case(self, game_id: GameId) -> HostFillRemainingDrafts {
+        HostFillRemainingDrafts {
+            game_id,
+            start_immediately: self.start_immediately,
+        }
+    }
+}
+
+/// Host request to configure or clear the drafting auto-close deadline.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetDraftDeadlineRequest {
+    /// Drafting auto-close deadline (null clears the deadline).
+    pub draft_deadline_at: Option<DateTime<Utc>>,
+}
+
+impl SetDraftDeadlineRequest {
+    pub fn into_use_case(self, game_id: GameId) -> SetDraftDeadline {
+        SetDraftDeadline {
+            game_id,
+            draft_deadline_at: self.draft_deadline_at,
+        }
     }
 }
 

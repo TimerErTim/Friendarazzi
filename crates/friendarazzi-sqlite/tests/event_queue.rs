@@ -242,6 +242,7 @@ async fn unsubscribe_token_survives_process_restart_with_fresh_random_signing_ke
                     title: friendarazzi_core::domain::NonEmptyString::neu("Restart Test").unwrap(),
                     grid_size: friendarazzi_core::domain::GridSize::Three,
                     visibility_mode: friendarazzi_core::domain::VisibilityMode::LiveFeed,
+                    draft_deadline_at: None,
                     created_at: test_time(),
                 })
                 .await?;

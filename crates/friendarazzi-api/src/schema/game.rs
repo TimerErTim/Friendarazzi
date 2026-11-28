@@ -156,6 +156,8 @@ pub struct GameSummary {
     pub needs_action: bool,
     /// Shared countdown deadline once all players are ready during Drafting.
     pub draft_closes_at: Option<DateTime<Utc>>,
+    /// Optional host-configured drafting deadline after which missing prompts auto-fill.
+    pub draft_deadline_at: Option<DateTime<Utc>>,
     /// Server clock timestamp when this summary was generated.
     pub server_now: DateTime<Utc>,
     /// Winner badge if completed.
@@ -195,6 +197,8 @@ pub struct GameDetail {
     pub playable_tile_count: u32,
     /// Shared countdown deadline once all players are ready during Drafting.
     pub draft_closes_at: Option<DateTime<Utc>>,
+    /// Optional host-configured drafting deadline after which missing prompts auto-fill.
+    pub draft_deadline_at: Option<DateTime<Utc>>,
     /// Server clock timestamp when this detail was generated.
     pub server_now: DateTime<Utc>,
     /// Timestamp when active play started.

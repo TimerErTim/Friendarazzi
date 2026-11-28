@@ -262,9 +262,9 @@ export function LoginPage() {
   const failure = authFailure(auth.login.error, {
     unauthorized: "E-Mail-Adresse oder Passwort sind falsch.",
     tooManyRequests:
-      "Zu viele Anmeldeversuche. Bitte warten Sie und versuchen Sie es erneut.",
+      "Zu viele Anmeldeversuche. Bitte warte kurz und versuche es erneut.",
     fallback:
-      "Die Anmeldung konnte nicht verarbeitet werden. Bitte versuchen Sie es später erneut.",
+      "Die Anmeldung konnte nicht verarbeitet werden. Bitte versuche es später erneut.",
   });
 
   function submit(event: FormEvent) {
@@ -345,22 +345,22 @@ export function RegistrationPage() {
   );
 
   const startFailure = authFailure(auth.registerStart.error, {
-    badRequest: "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+    badRequest: "Bitte gib eine gültige E-Mail-Adresse ein.",
     tooManyRequests:
-      "Zu viele Registrierungsversuche. Bitte warten Sie und versuchen Sie es erneut.",
+      "Zu viele Registrierungsversuche. Bitte warte kurz und versuche es erneut.",
     fallback:
-      "Die Registrierung konnte nicht gestartet werden. Bitte versuchen Sie es später erneut.",
+      "Die Registrierung konnte nicht gestartet werden. Bitte versuche es später erneut.",
   });
 
   const finishFailure = authFailure(auth.registerFinish.error, {
     invalidLink: passwordWithinPolicy(password)
-      ? "Der Bestätigungslink ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen Link an."
+      ? "Der Bestätigungslink ist ungültig oder abgelaufen. Bitte fordere einen neuen Link an."
       : undefined,
     badRequest: "Das Passwort muss 8 bis 128 Zeichen lang sein.",
     tooManyRequests:
-      "Zu viele Registrierungsversuche. Bitte warten Sie und versuchen Sie es erneut.",
+      "Zu viele Registrierungsversuche. Bitte warte kurz und versuche es erneut.",
     fallback:
-      "Das Konto konnte nicht erstellt werden. Bitte versuchen Sie es später erneut.",
+      "Das Konto konnte nicht erstellt werden. Bitte versuche es später erneut.",
   });
 
   function start(event: FormEvent) {
@@ -422,7 +422,7 @@ export function RegistrationPage() {
           {sent ? (
             <AuthAlert
               variant="success"
-              message="Sie erhalten eine E-Mail mit dem Bestätigungslink."
+              message="Du erhältst eine E-Mail mit dem Bestätigungslink."
             />
           ) : null}
 
@@ -501,22 +501,22 @@ export function PasswordPage() {
   const resetting = Boolean(token);
 
   const requestFailure = authFailure(auth.forgotPassword.error, {
-    badRequest: "Bitte geben Sie eine gültige E-Mail-Adresse ein.",
+    badRequest: "Bitte gib eine gültige E-Mail-Adresse ein.",
     tooManyRequests:
-      "Zu viele Anfragen. Bitte warten Sie und versuchen Sie es erneut.",
+      "Zu viele Anfragen. Bitte warte kurz und versuche es erneut.",
     fallback:
-      "Die Anfrage konnte nicht verarbeitet werden. Bitte versuchen Sie es später erneut.",
+      "Die Anfrage konnte nicht verarbeitet werden. Bitte versuche es später erneut.",
   });
 
   const resetFailure = authFailure(auth.resetPassword.error, {
     invalidLink: passwordWithinPolicy(password)
-      ? "Der Wiederherstellungslink ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen Link an."
+      ? "Der Wiederherstellungslink ist ungültig oder abgelaufen. Bitte fordere einen neuen Link an."
       : undefined,
     badRequest: "Das Passwort muss 8 bis 128 Zeichen lang sein.",
     tooManyRequests:
-      "Zu viele Anfragen. Bitte warten Sie und versuchen Sie es erneut.",
+      "Zu viele Anfragen. Bitte warte kurz und versuche es erneut.",
     fallback:
-      "Das Passwort konnte nicht geändert werden. Bitte versuchen Sie es später erneut.",
+      "Das Passwort konnte nicht geändert werden. Bitte versuche es später erneut.",
   });
 
   function request(event: FormEvent) {
@@ -555,7 +555,7 @@ export function PasswordPage() {
         <form className="space-y-5" onSubmit={request}>
           <Field
             label="E-Mail-Adresse"
-            hint="Falls ein Konto zu dieser Adresse gehört, erhalten Sie eine E-Mail."
+            hint="Falls ein Konto zu dieser Adresse gehört, erhältst du eine E-Mail."
           >
             <Input
               autoComplete="email"
@@ -569,7 +569,7 @@ export function PasswordPage() {
           {sent ? (
             <AuthAlert
               variant="success"
-              message="Falls ein Konto zu dieser Adresse gehört, erhalten Sie eine E-Mail mit weiteren Schritten."
+              message="Falls ein Konto zu dieser Adresse gehört, erhältst du eine E-Mail mit weiteren Schritten."
             />
           ) : null}
 

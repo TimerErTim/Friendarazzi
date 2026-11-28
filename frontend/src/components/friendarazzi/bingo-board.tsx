@@ -15,6 +15,8 @@ type BingoBoardProps = {
   board: BoardView;
   gridSize: number;
   feed?: CaptureFeedItem[];
+  matchingTileIds?: ReadonlySet<string>;
+  pinnedTargetIds?: ReadonlySet<string>;
   onEmptyTileSelect?: (tile: BoardTileView) => void;
   onViewCapture?: (capture: CaptureFeedItem) => void;
 };
@@ -93,6 +95,8 @@ export function BingoBoard({
   board,
   gridSize,
   feed = [],
+  matchingTileIds,
+  pinnedTargetIds,
   onEmptyTileSelect,
   onViewCapture,
 }: BingoBoardProps) {
@@ -113,6 +117,11 @@ export function BingoBoard({
           const canOpenCapture = Boolean(captureItem && onViewCapture);
           const canUpload = !tile.isCaptured && interactiveUpload;
           const isClickable = canOpenCapture || canUpload;
+          const isDimmed =
+            matchingTileIds !== undefined && !matchingTileIds.has(tile.id);
+          const isPinnedTarget =
+            !tile.isCaptured &&
+            (pinnedTargetIds?.has(tile.targetUser.id) ?? false);
 
           const tileAriaLabel = `${tile.targetUser.displayName}: ${tile.promptText}${
             tile.isCaptured
@@ -221,8 +230,10 @@ export function BingoBoard({
                   }
                 }}
                 className={cn(
-                  "group flex aspect-square min-h-24 w-full cursor-pointer overflow-hidden text-left transition-colors",
+                  "group flex aspect-square min-h-24 w-full cursor-pointer overflow-hidden text-left transition-all",
                   cellPadding,
+                  isPinnedTarget && "bg-primary-subtle/60",
+                  isDimmed && "opacity-35",
                   "hover:bg-primary-subtle/50 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
                 )}
               >
@@ -235,8 +246,9 @@ export function BingoBoard({
             <div
               key={tile.id}
               className={cn(
-                "flex aspect-square min-h-24 w-full overflow-hidden text-left",
+                "flex aspect-square min-h-24 w-full overflow-hidden text-left transition-opacity",
                 cellPadding,
+                isDimmed && "opacity-35",
               )}
             >
               {cellContent}

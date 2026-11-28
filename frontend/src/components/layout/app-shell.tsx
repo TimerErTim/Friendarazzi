@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Award,
   Bell,
   CircleAlert,
   LogIn,
@@ -126,7 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ) : null}
 
           {/* Right action cluster */}
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             {isAuthenticated && benutzer.data ? (
               <>
                 <Link
@@ -138,49 +137,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }
                   title="Benachrichtigungen"
                   className={cn(
-                    "brutal-shadow-sm relative inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-sm border-2 border-strong px-2.5 py-1 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-                    isNavItemActive(pathname, paths.benachrichtigungen, true)
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-surface text-ink hover:bg-surface-muted",
+                    "relative inline-flex size-12 shrink-0 items-center justify-center rounded-sm border-2 border-transparent text-ink transition-colors hover:border-control hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                    isNavItemActive(pathname, paths.benachrichtigungen, true) &&
+                      "border-control bg-surface-muted",
                   )}
                 >
-                  <Bell className="size-4" aria-hidden="true" />
-                  {unreadCount > 0 ? (
-                    <span className="inline-flex min-w-5 items-center justify-center rounded-sm border border-strong bg-pink px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-pink-foreground tabular-nums">
-                      {unreadCount > 99 ? "99+" : unreadCount}
-                    </span>
-                  ) : null}
-                </Link>
-                <Link
-                  href={paths.profil}
-                  className="brutal-shadow-sm hidden min-h-11 items-center gap-1.5 rounded-sm border-2 border-strong bg-primary px-3 py-1 text-xs font-bold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:inline-flex"
-                  title="Goldmedaillen"
-                >
-                  <Award className="size-4" aria-hidden="true" />
-                  <span className="font-mono tabular-nums">
-                    {benutzer.data.goldMedalCount}
+                  <span className="relative inline-flex items-center justify-center">
+                    <Bell className="size-5.5" aria-hidden="true" />
+                    {unreadCount > 0 ? (
+                      <span className="brutal-shadow-sm absolute -right-1.5 -bottom-1 inline-flex min-w-4.5 items-center justify-center rounded-full border-2 border-strong bg-pink px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-pink-foreground tabular-nums">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    ) : null}
                   </span>
                 </Link>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
-                      size="md"
-                      variant="secondary"
+                      size="icon"
+                      variant="ghost"
                       aria-label="Profilmenü öffnen"
                       disabled={
                         auth.logout.isPending || auth.deleteAccount.isPending
                       }
-                      className="gap-2 pl-1.5"
+                      className="size-12 p-0"
                     >
                       <PlayerAvatar
                         user={benutzer.data}
-                        size="sm"
+                        size="md"
                         linkToProfile={false}
-                        showMedalBadge={false}
+                        showMedalBadge
+                        alwaysShowMedalBadge
                       />
-                      <span className="hidden max-w-28 truncate sm:inline">
-                        {benutzer.data.displayName}
-                      </span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
@@ -196,12 +184,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuItem asChild>
                       <Link href={paths.profil}>
                         <UserRound aria-hidden="true" /> Mein Profil
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href={paths.benachrichtigungen}>
-                        <Bell aria-hidden="true" /> Benachrichtigungen
-                        {unreadCount > 0 ? ` (${unreadCount})` : ""}
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
@@ -262,8 +244,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto w-full max-w-6xl px-4 pt-6 sm:px-6">
             <Alert variant="warning" icon={<CircleAlert aria-hidden="true" />}>
               <p>
-                Ihre Sitzung konnte nicht überprüft werden. Bitte laden Sie die
-                Seite erneut oder melden Sie sich an.
+                Deine Sitzung konnte nicht überprüft werden. Bitte lade die
+                Seite erneut oder melde dich an.
               </p>
             </Alert>
           </div>
@@ -275,7 +257,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {isAuthenticated ? (
         <nav
           aria-label="Mobile Navigation"
-          className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t-[2.5px] border-strong bg-surface md:hidden"
+          className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-3 border-t-[2.5px] border-strong bg-surface md:hidden"
         >
           {primaryNavItems.map((item) => {
             const Icon = item.icon;

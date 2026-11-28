@@ -1,5 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+
+import { useDocumentVisible } from "@/lib/use-document-visible";
 
 import { useAuth } from "../auth-provider";
 import { useFriendarazziApi } from "../provider";
@@ -38,11 +40,12 @@ export function useDecksQuery() {
 export function useGamesQuery() {
   const { api } = useFriendarazziApi();
   const phase = useAuth();
+  const visible = useDocumentVisible();
   return useQuery({
     queryKey: friendarazziKeys.games.all(),
     queryFn: () => api.gamesList(),
     enabled: phase.status === "authenticated",
-    refetchInterval: 5000,
+    refetchInterval: visible ? 5000 : false,
     retry: false,
   });
 }
@@ -61,13 +64,30 @@ export function useGameByCodeQuery(code: string | null) {
 export function useGameDetailQuery(gameId: string | null) {
   const { api } = useFriendarazziApi();
   const phase = useAuth();
+  const visible = useDocumentVisible();
   return useQuery({
     queryKey: friendarazziKeys.games.detail(gameId ?? ""),
     queryFn: () => api.gameDetail(gameId ?? ""),
     enabled: phase.status === "authenticated" && Boolean(gameId),
     refetchInterval: (query) =>
-      query.state.data?.status === "Completed" ? false : 5000,
+      !visible || query.state.data?.status === "Completed" ? false : 5000,
     retry: false,
+  });
+}
+
+export function useGameDetailsQueries(gameIds: readonly string[]) {
+  const { api } = useFriendarazziApi();
+  const phase = useAuth();
+  const visible = useDocumentVisible();
+  return useQueries({
+    queries: gameIds.map((gameId) => ({
+      queryKey: friendarazziKeys.games.detail(gameId),
+      queryFn: () => api.gameDetail(gameId),
+      enabled: phase.status === "authenticated" && Boolean(gameId),
+      refetchInterval: (query: { state: { data?: { status?: string } } }) =>
+        !visible || query.state.data?.status === "Completed" ? false : 5000,
+      retry: false,
+    })),
   });
 }
 
@@ -96,11 +116,12 @@ export function useUserGalleryQuery(userId: string | null) {
 export function useNotificationsQuery() {
   const { api } = useFriendarazziApi();
   const phase = useAuth();
+  const visible = useDocumentVisible();
   return useQuery({
     queryKey: friendarazziKeys.notifications.inbox(),
     queryFn: () => api.notificationsList(),
     enabled: phase.status === "authenticated",
-    refetchInterval: 10_000,
+    refetchInterval: visible ? 10_000 : false,
     retry: false,
   });
 }

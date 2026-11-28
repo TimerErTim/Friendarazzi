@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, CheckCircle2, Lock } from "lucide-react";
+import { Camera, CheckCircle2, Lock, Pin } from "lucide-react";
 
 import type {
   BoardTileView,
@@ -15,6 +15,8 @@ type BingoBoardProps = {
   board: BoardView;
   gridSize: number;
   feed?: CaptureFeedItem[];
+  matchingTileIds?: ReadonlySet<string>;
+  pinnedTileIds?: ReadonlySet<string>;
   onEmptyTileSelect?: (tile: BoardTileView) => void;
   onViewCapture?: (capture: CaptureFeedItem) => void;
 };
@@ -93,6 +95,8 @@ export function BingoBoard({
   board,
   gridSize,
   feed = [],
+  matchingTileIds,
+  pinnedTileIds,
   onEmptyTileSelect,
   onViewCapture,
 }: BingoBoardProps) {
@@ -113,15 +117,25 @@ export function BingoBoard({
           const canOpenCapture = Boolean(captureItem && onViewCapture);
           const canUpload = !tile.isCaptured && interactiveUpload;
           const isClickable = canOpenCapture || canUpload;
+          const isDimmed =
+            matchingTileIds !== undefined && !matchingTileIds.has(tile.id);
+          const isPinned =
+            !tile.isCaptured && (pinnedTileIds?.has(tile.id) ?? false);
 
           const tileAriaLabel = `${tile.targetUser.displayName}: ${tile.promptText}${
             tile.isCaptured
               ? canOpenCapture
                 ? " (erfasst — Foto öffnen)"
                 : " (erfasst)"
-              : canUpload
-                ? " (Foto aufnehmen)"
-                : ""
+              : `${canUpload ? " (Foto aufnehmen" : ""}${
+                  isPinned
+                    ? canUpload
+                      ? ", angeheftet)"
+                      : " (angeheftet)"
+                    : canUpload
+                      ? ")"
+                      : ""
+                }`
           }`;
 
           const cellContent =
@@ -172,7 +186,7 @@ export function BingoBoard({
                 <div className="flex items-center justify-between gap-1">
                   <span
                     className={cn(
-                      "max-w-full truncate rounded-[2px] border border-strong px-1 py-0.5 font-mono text-[9px] leading-none font-bold sm:text-[10px]",
+                      "min-w-0 truncate rounded-[2px] border border-strong px-1 py-0.5 font-mono text-[9px] leading-none font-bold sm:text-[10px]",
                       interactiveUpload
                         ? "bg-primary text-primary-foreground"
                         : "bg-surface-muted text-secondary",
@@ -180,11 +194,22 @@ export function BingoBoard({
                   >
                     {tile.targetUser.displayName}
                   </span>
-                  {interactiveUpload ? (
-                    <Camera
-                      className="size-3.5 shrink-0 text-secondary transition-transform group-hover:scale-110 group-hover:text-ink"
-                      aria-hidden="true"
-                    />
+                  {isPinned || interactiveUpload ? (
+                    <span className="inline-flex shrink-0 items-center gap-1">
+                      {isPinned ? (
+                        <Pin
+                          data-testid="pinned-tile-icon"
+                          className="size-3.5 shrink-0 rotate-45 fill-info text-info"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      {interactiveUpload ? (
+                        <Camera
+                          className="size-3.5 shrink-0 text-secondary transition-transform group-hover:scale-110 group-hover:text-ink"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </span>
                   ) : null}
                 </div>
                 <p
@@ -221,8 +246,10 @@ export function BingoBoard({
                   }
                 }}
                 className={cn(
-                  "group flex aspect-square min-h-24 w-full cursor-pointer overflow-hidden text-left transition-colors",
+                  "group flex aspect-square min-h-24 w-full cursor-pointer overflow-hidden text-left transition-all",
                   cellPadding,
+                  isPinned && "border-2 border-info",
+                  isDimmed && "opacity-35",
                   "hover:bg-primary-subtle/50 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
                 )}
               >
@@ -235,8 +262,10 @@ export function BingoBoard({
             <div
               key={tile.id}
               className={cn(
-                "flex aspect-square min-h-24 w-full overflow-hidden text-left",
+                "flex aspect-square min-h-24 w-full overflow-hidden text-left transition-opacity",
                 cellPadding,
+                isPinned && "border-2 border-info",
+                isDimmed && "opacity-35",
               )}
             >
               {cellContent}

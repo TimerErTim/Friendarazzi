@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Camera, Home, Settings2, Ticket, UserRound } from "lucide-react";
+import { Camera, Home, Settings2, Trophy, UserRound } from "lucide-react";
 
 import { BASE_PATH, withBasePath } from "./invite-url";
 
@@ -48,6 +48,7 @@ export function absoluteUrl(appPath: string): string {
 export const paths = {
   home: "/",
   games: "/games",
+  collections: "/collections",
   join: "/join",
   profil: "/profil",
   users: "/users",
@@ -58,6 +59,10 @@ export const paths = {
 
 export function gameHref(gameId: string): string {
   return `${paths.games}?id=${encodeURIComponent(gameId)}`;
+}
+
+export function gameTileHref(gameId: string, tileId: string): string {
+  return `${paths.games}?id=${encodeURIComponent(gameId)}&tile=${encodeURIComponent(tileId)}`;
 }
 
 export function captureHref(gameId: string, captureId: string): string {
@@ -75,30 +80,23 @@ export function userProfileHref(userId: string): string {
 export const primaryNavItems: NavItem[] = [
   {
     id: "home",
-    label: "Lobbys",
+    label: "Home",
     href: paths.home,
     icon: Home,
     recursive: false,
   },
   {
     id: "games",
-    label: "Match",
+    label: "Lobbys",
     href: paths.games,
     icon: Camera,
     recursive: true,
   },
   {
-    id: "join",
-    label: "Beitreten",
-    href: paths.join,
-    icon: Ticket,
-    recursive: true,
-  },
-  {
-    id: "profil",
-    label: "Profil",
-    href: paths.profil,
-    icon: UserRound,
+    id: "collections",
+    label: "Collections",
+    href: paths.collections,
+    icon: Trophy,
     recursive: true,
   },
 ];
@@ -109,16 +107,16 @@ export const sidebarCategories: NavCategory[] = [
     items: [
       {
         id: "games",
-        label: "Aktuelles Spiel",
+        label: "Lobbys",
         href: paths.games,
         icon: Camera,
         recursive: true,
       },
       {
-        id: "join",
-        label: "Mit Code beitreten",
-        href: paths.join,
-        icon: Ticket,
+        id: "collections",
+        label: "Collections",
+        href: paths.collections,
+        icon: Trophy,
         recursive: true,
       },
     ],
@@ -146,7 +144,7 @@ export const sidebarCategories: NavCategory[] = [
 
 export const homeNavItem: NavItem = {
   id: "home",
-  label: "Spiele",
+  label: "Home",
   href: paths.home,
   icon: Home,
   recursive: false,
@@ -158,7 +156,8 @@ type BreadcrumbSegment = {
 };
 
 const routeLabels: Record<string, string> = {
-  games: "Spiel",
+  games: "Lobbys",
+  collections: "Collections",
   join: "Beitreten",
   users: "Profil",
   anmeldung: "Anmelden",
@@ -176,7 +175,7 @@ export function breadcrumbsForPathname(
 ): BreadcrumbSegment[] {
   const segments = pathname.split("/").filter(Boolean);
   if (segments.length === 0) {
-    return [{ label: "Spiele", href: paths.home }];
+    return [{ label: "Home", href: paths.home }];
   }
 
   const crumbs: BreadcrumbSegment[] = [];

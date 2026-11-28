@@ -7,9 +7,7 @@ import {
   CheckCheck,
   Crown,
   Play,
-  Settings2,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
@@ -149,25 +147,17 @@ export default function NotificationsPage() {
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {unreadCount > 0 ? (
-            <Button
-              type="button"
-              size="sm"
-              disabled={mutations.markAllNotificationsRead.isPending}
-              onClick={() => mutations.markAllNotificationsRead.mutate()}
-            >
-              <CheckCheck className="size-4" aria-hidden="true" />
-              Alle gelesen
-            </Button>
-          ) : null}
-          <Button variant="secondary" size="sm" asChild>
-            <Link href={paths.optionen}>
-              <Settings2 className="size-4" aria-hidden="true" />
-              Einstellungen
-            </Link>
+        {unreadCount > 0 ? (
+          <Button
+            type="button"
+            size="sm"
+            disabled={mutations.markAllNotificationsRead.isPending}
+            onClick={() => mutations.markAllNotificationsRead.mutate()}
+          >
+            <CheckCheck className="size-4" aria-hidden="true" />
+            Alle gelesen
           </Button>
-        </div>
+        ) : null}
       </div>
 
       {inbox.isError ? (
@@ -193,7 +183,7 @@ export default function NotificationsPage() {
                 key={item.id}
                 className={cn(
                   "overflow-hidden transition-colors",
-                  isUnread ? "border-strong" : "opacity-85",
+                  isUnread ? "border-strong bg-surface" : "bg-surface-muted",
                 )}
               >
                 <CardContent className="flex items-start gap-3 p-4">

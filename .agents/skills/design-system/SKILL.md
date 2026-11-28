@@ -65,7 +65,7 @@ class. The one collision: "primary" belongs to the brand, so ink is **`text-ink`
 | `--semantic-impact` | `text-impact`, `bg-impact`, `border-impact`, `outline-impact`, `border-l-impact` | Destructive actions, errors, critical failures |
 | `--semantic-warning` | `text-warning`, `bg-warning`, `border-warning` | Warnings, pending player counts, medal/trophy accents |
 | `--semantic-success` | `text-success`, `bg-success`, `border-success` | Confirmations, captured Bingo tiles, locked readiness |
-| `--semantic-info` | `text-info`, `bg-info`, `border-info` | System/helper status notes |
+| `--semantic-info` | `text-info`, `bg-info`, `border-info` | System/helper status notes, focused/pinned Bingo tiles |
 
 | Mechanics | Use for |
 |----|----|

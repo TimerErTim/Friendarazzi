@@ -1,9 +1,9 @@
 "use client";
 
-import { ArrowRight, Bell, BellOff, ChevronDown, Plus } from "lucide-react";
+import { ArrowRight, Bell, BellOff } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
@@ -17,9 +17,7 @@ import {
   ActivePlayPhase,
   CompletedPhase,
   DraftingPhase,
-  type FlushPendingSaveFn,
   LobbyPhase,
-  visibilityLabel,
 } from "@/components/friendarazzi/game-phases";
 import { GameRulesDialog } from "@/components/friendarazzi/game-rules-dialog";
 import { SetBreadcrumbLabel } from "@/components/layout/page-chrome";
@@ -28,14 +26,6 @@ import { Badge } from "@/components/ui/badge";
 import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
 import {
@@ -83,8 +73,6 @@ export default function GamePage() {
   const gamesList = useGamesQuery();
   const detail = useGameDetailQuery(id);
   const mutations = useFriendarazziMutations();
-  const flushPendingSaveRef = useRef<FlushPendingSaveFn | null>(null);
-  const [isSwitching, setIsSwitching] = useState(false);
   const [lastGameHintId, setLastGameHintId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,17 +99,6 @@ export default function GamePage() {
       // Ignore storage errors
     }
   }, [id]);
-
-  async function handleSwitchGame(targetId: string) {
-    if (targetId === id || isSwitching) return;
-    setIsSwitching(true);
-    try {
-      await flushPendingSaveRef.current?.();
-    } finally {
-      setIsSwitching(false);
-      router.push(gameHref(targetId));
-    }
-  }
 
   if (id === null || detail.isLoading || (id === "" && gamesList.isLoading)) {
     return (
@@ -217,7 +194,7 @@ export default function GamePage() {
           })}
         </Alert>
         <Button variant="secondary" asChild>
-          <Link href={paths.home}>Zurück zur Spielzentrale</Link>
+          <Link href={paths.home}>Zurück zu Home</Link>
         </Button>
       </div>
     );
@@ -225,132 +202,23 @@ export default function GamePage() {
 
   const game = detail.data;
   const activeIdx = PHASES.findIndex((p) => p.status === game.status);
-  const runningGames = sortActiveGames(
-    (gamesList.data ?? []).filter((g) => g.status !== GameStatus.Completed),
-  );
-  const hasOtherActionNeeded = runningGames.some(
-    (g) => g.id !== game.id && g.needsAction,
-  );
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-3 px-3 pt-3 pb-6 sm:space-y-4 sm:p-6">
       <SetBreadcrumbLabel label={game.title} />
 
-      {/* Compact single-header block with inline 4-step phase indicator */}
-      <header className="space-y-1.5 border-b-2 border-strong pb-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="truncate font-display text-lg tracking-tight text-ink sm:text-2xl">
-              {game.title}
-            </h1>
-            <Badge variant="primary" className="shrink-0">
-              {shortStatusLabel(game.status)}
-            </Badge>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1.5">
-            <GameRulesDialog
-              status={game.status}
-              visibilityMode={game.visibilityMode}
-            />
-            <Button
-              type="button"
-              variant={game.watching ? "secondary" : "ghost"}
-              size="sm"
-              aria-pressed={game.watching}
-              aria-label={
-                game.watching
-                  ? "Benachrichtigungen für dieses Spiel stummschalten"
-                  : "Benachrichtigungen für dieses Spiel aktivieren"
-              }
-              title={
-                game.watching
-                  ? "Benachrichtigungen aktiv"
-                  : "Benachrichtigungen stumm"
-              }
-              disabled={mutations.setGameWatch.isPending}
-              onClick={() =>
-                mutations.setGameWatch.mutate({
-                  gameId: game.id,
-                  watching: !game.watching,
-                })
-              }
-              className="shrink-0 gap-1.5"
-            >
-              {game.watching ? (
-                <Bell className="size-4" aria-hidden="true" />
-              ) : (
-                <BellOff className="size-4" aria-hidden="true" />
-              )}
-              <span className="hidden sm:inline">
-                {game.watching ? "Benachrichtigungen" : "Stumm"}
-              </span>
-            </Button>
-
-            {runningGames.length > 1 ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={isSwitching}
-                    className="shrink-0 gap-1"
-                  >
-                    <span>Runden ({runningGames.length})</span>
-                    {hasOtherActionNeeded ? (
-                      <>
-                        <span
-                          aria-hidden="true"
-                          className="size-2 rounded-full border border-strong bg-primary"
-                        />
-                        <span className="sr-only">
-                          (Aktion in anderem Spiel nötig)
-                        </span>
-                      </>
-                    ) : null}
-                    <ChevronDown className="size-4" aria-hidden="true" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuLabel>Parallele Spiele</DropdownMenuLabel>
-                  {runningGames.map((item) => {
-                    const isCurrent = item.id === game.id;
-                    return (
-                      <DropdownMenuItem
-                        key={item.id}
-                        disabled={isCurrent || isSwitching}
-                        onSelect={() => void handleSwitchGame(item.id)}
-                        className="justify-between gap-2"
-                      >
-                        <span className="truncate font-bold">{item.title}</span>
-                        <span className="shrink-0 font-mono text-[11px] text-secondary">
-                          {isCurrent
-                            ? "Aktiv"
-                            : item.needsAction
-                              ? "Aktion"
-                              : shortStatusLabel(item.status)}
-                        </span>
-                      </DropdownMenuItem>
-                    );
-                  })}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href={paths.games}>
-                      <Plus className="size-4" aria-hidden="true" />
-                      Alle Lobbys
-                    </Link>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11px] font-bold text-secondary sm:text-xs">
+      {/* Single-line match header */}
+      <header className="flex items-center justify-between gap-2 border-b-2 border-strong pb-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate font-display text-lg tracking-tight text-ink sm:text-2xl">
+            {game.title}
+          </h1>
+          <Badge variant="primary" className="shrink-0">
+            {shortStatusLabel(game.status)}
+          </Badge>
           <ol
             aria-label="Spielphasen"
-            className="inline-flex items-center gap-0.5"
+            className="hidden items-center gap-0.5 sm:inline-flex"
           >
             {PHASES.map((step, idx) => {
               const isCurrent = idx === activeIdx;
@@ -377,30 +245,56 @@ export default function GamePage() {
               );
             })}
           </ol>
-          <span className="truncate">
-            {game.gridSize}×{game.gridSize} ·{" "}
-            {visibilityLabel(game.visibilityMode)} · {game.players.length}{" "}
-            Spieler
-          </span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <GameRulesDialog
+            status={game.status}
+            visibilityMode={game.visibilityMode}
+          />
+          <Button
+            type="button"
+            variant={game.watching ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={game.watching}
+            aria-label={
+              game.watching
+                ? "Benachrichtigungen für dieses Spiel stummschalten"
+                : "Benachrichtigungen für dieses Spiel aktivieren"
+            }
+            title={
+              game.watching
+                ? "Benachrichtigungen aktiv"
+                : "Benachrichtigungen stumm"
+            }
+            disabled={mutations.setGameWatch.isPending}
+            onClick={() =>
+              mutations.setGameWatch.mutate({
+                gameId: game.id,
+                watching: !game.watching,
+              })
+            }
+            className="shrink-0 gap-1.5"
+          >
+            {game.watching ? (
+              <Bell className="size-4" aria-hidden="true" />
+            ) : (
+              <BellOff className="size-4" aria-hidden="true" />
+            )}
+            <span className="hidden sm:inline">
+              {game.watching ? "Benachrichtigungen" : "Stumm"}
+            </span>
+          </Button>
         </div>
       </header>
 
       {game.status === GameStatus.Lobby ? (
-        <LobbyPhase
-          key={game.id}
-          game={game}
-          registerFlush={(fn) => {
-            flushPendingSaveRef.current = fn;
-          }}
-        />
+        <LobbyPhase key={game.id} game={game} />
       ) : game.status === GameStatus.Drafting ? (
         <DraftingPhase
           key={game.id}
           game={game}
           detailUpdatedAt={detail.dataUpdatedAt}
-          registerFlush={(fn) => {
-            flushPendingSaveRef.current = fn;
-          }}
         />
       ) : game.status === GameStatus.Active ? (
         <ActivePlayPhase

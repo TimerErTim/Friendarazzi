@@ -41,7 +41,7 @@ import { Wordmark } from "@/components/brand/wordmark";
 import { BingoBoard } from "@/components/friendarazzi/bingo-board";
 import { CaptureTileDialog } from "@/components/friendarazzi/capture-tile-dialog";
 import { PhotoLightbox } from "@/components/friendarazzi/photo-lightbox";
-import { TargetGroupedBoard } from "@/components/friendarazzi/target-grouped-board";
+import { CrossGameTargetGroupedBoard } from "@/components/friendarazzi/target-grouped-board";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -750,7 +750,10 @@ function AuthenticatedHome() {
       {pinnedTasks.length > 0 || isLoadingPinned ? (
         <section className="space-y-2.5">
           <div className="flex items-center gap-2">
-            <Pin className="size-4 rotate-45 text-ink" aria-hidden="true" />
+            <Pin
+              className="size-4 rotate-45 fill-info text-info"
+              aria-hidden="true"
+            />
             <h2 className="font-display text-lg tracking-tight text-ink sm:text-xl">
               Angeheftete Aufgaben ({pinnedTasks.length})
             </h2>
@@ -765,12 +768,12 @@ function AuthenticatedHome() {
               {pinnedTasks.map(({ game, tile }) => (
                 <Card
                   key={`${game.id}-${tile.id}`}
-                  className="flex items-stretch overflow-hidden"
+                  className="flex items-stretch overflow-hidden border-info"
                 >
                   <button
                     type="button"
                     onClick={() => setCaptureTarget({ gameId: game.id, tile })}
-                    className="flex min-h-14 min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-primary-subtle/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                    className="flex min-h-14 min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-info/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
                   >
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -795,7 +798,7 @@ function AuthenticatedHome() {
                     aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
                     title="Aus Fokus entfernen"
                     onClick={() => handleTogglePinTile(game.id, tile.id)}
-                    className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-strong bg-surface-muted px-3 text-ink transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                    className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-info bg-info/10 px-3 text-ink transition-colors hover:bg-info/20 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
                   >
                     <X className="size-4" aria-hidden="true" />
                   </button>
@@ -806,11 +809,13 @@ function AuthenticatedHome() {
         </section>
       ) : null}
 
-      {/* Central Playing Hub: All Running Bingo Boards */}
+      {/* Central Playing Hub: All Running Bingo Boards or Unified Target List */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-lg tracking-tight text-ink sm:text-xl">
-            Aktive Bretter ({runningActiveGames.length})
+            {boardViewMode === "list"
+              ? "Offene Ziele"
+              : `Aktive Bretter (${runningActiveGames.length})`}
           </h2>
           {runningActiveGames.length > 0 ? (
             <ToggleGroup
@@ -856,6 +861,38 @@ function AuthenticatedHome() {
               ) : null}
             </div>
           </CalloutNote>
+        ) : boardViewMode === "list" ? (
+          activeDetailsQueries.some((q) => q.isLoading && !q.data) ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <Skeleton className="h-48 w-full" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : (
+            <CrossGameTargetGroupedBoard
+              games={runningActiveGames.flatMap((game, index) => {
+                const detail = activeDetailsQueries[index]?.data;
+                const board = detail?.myBoard;
+                if (!detail || !board) return [];
+                const gamePinnedSet = new Set(
+                  (pinnedByGame[game.id] ?? []).filter((id) =>
+                    board.tiles.some((t) => t.id === id && !t.isCaptured),
+                  ),
+                );
+                return [
+                  {
+                    id: detail.id,
+                    title: detail.title,
+                    tiles: board.tiles,
+                    pinnedTileIds: gamePinnedSet,
+                  },
+                ];
+              })}
+              onEmptyTileSelect={(gameId, tile) =>
+                setCaptureTarget({ gameId, tile })
+              }
+              onTogglePinTile={handleTogglePinTile}
+            />
+          )
         ) : (
           <div className="space-y-4">
             {runningActiveGames.map((game, index) => {
@@ -882,10 +919,6 @@ function AuthenticatedHome() {
                 );
               }
 
-              const capturedCount = board.tiles.filter(
-                (t) => t.isCaptured,
-              ).length;
-              const totalCount = board.tiles.length;
               const gamePinnedSet = new Set(
                 (pinnedByGame[game.id] ?? []).filter((id) =>
                   board.tiles.some((t) => t.id === id && !t.isCaptured),
@@ -905,37 +938,18 @@ function AuthenticatedHome() {
                         aria-hidden="true"
                       />
                     </Link>
-                    <span className="shrink-0 font-mono text-xs font-bold text-secondary tabular-nums">
-                      {capturedCount}/{totalCount}
-                    </span>
                   </div>
 
-                  {boardViewMode === "list" ? (
-                    <TargetGroupedBoard
-                      board={board}
-                      feed={detail.feed}
-                      pinnedTileIds={gamePinnedSet}
-                      onTogglePinTile={(tileId) =>
-                        handleTogglePinTile(detail.id, tileId)
-                      }
-                      hideCaptured
-                      onEmptyTileSelect={(tile) =>
-                        setCaptureTarget({ gameId: detail.id, tile })
-                      }
-                      onViewCapture={(cap) => setLightboxCapture(cap)}
-                    />
-                  ) : (
-                    <BingoBoard
-                      board={board}
-                      gridSize={detail.gridSize}
-                      feed={detail.feed}
-                      pinnedTileIds={gamePinnedSet}
-                      onEmptyTileSelect={(tile) =>
-                        setCaptureTarget({ gameId: detail.id, tile })
-                      }
-                      onViewCapture={(cap) => setLightboxCapture(cap)}
-                    />
-                  )}
+                  <BingoBoard
+                    board={board}
+                    gridSize={detail.gridSize}
+                    feed={detail.feed}
+                    pinnedTileIds={gamePinnedSet}
+                    onEmptyTileSelect={(tile) =>
+                      setCaptureTarget({ gameId: detail.id, tile })
+                    }
+                    onViewCapture={(cap) => setLightboxCapture(cap)}
+                  />
                 </div>
               );
             })}

@@ -166,11 +166,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       disabled={
                         auth.logout.isPending || auth.deleteAccount.isPending
                       }
-                      className="size-11 p-0"
+                      className="size-12 p-0"
                     >
                       <PlayerAvatar
                         user={benutzer.data}
-                        size="sm"
+                        size="md"
                         linkToProfile={false}
                         showMedalBadge
                         alwaysShowMedalBadge

@@ -34,7 +34,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Progress } from "@/components/ui/progress";
 import { SearchInput } from "@/components/ui/search-input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -179,10 +178,6 @@ export function ActivePlayPhase({
   }
 
   const capturedCount = board.tiles.filter((t) => t.isCaptured).length;
-  const totalCount = board.tiles.length;
-  const pct =
-    totalCount > 0 ? Math.round((capturedCount / totalCount) * 100) : 0;
-
   const newestFirstFeed = newestCapturesFirst(game.feed);
   const visibleFeed = showAllFeed
     ? newestFirstFeed
@@ -191,7 +186,7 @@ export function ActivePlayPhase({
 
   return (
     <div className="grid items-start gap-4 lg:grid-cols-[1.5fr_0.75fr] lg:gap-5">
-      {/* Left: Single compact control bar + slim progress directly above the hero board */}
+      {/* Left: Single compact control bar + always-visible Focus strip directly above the hero board */}
       <div className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <ToggleGroup
@@ -211,55 +206,6 @@ export function ActivePlayPhase({
           </ToggleGroup>
 
           <div className="flex items-center gap-1.5">
-            {pinnedTiles.length > 0 ? (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    aria-label={`Fokus (${pinnedTiles.length})`}
-                    className="gap-1.5"
-                  >
-                    <Pin className="size-3.5 rotate-45" aria-hidden="true" />
-                    <span>Fokus ({pinnedTiles.length})</span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 space-y-2 p-3">
-                  <p className="font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
-                    Angeheftete Aufträge ({pinnedTiles.length})
-                  </p>
-                  <ul className="space-y-1.5">
-                    {pinnedTiles.map((tile) => (
-                      <li
-                        key={tile.id}
-                        className="flex items-stretch overflow-hidden rounded-sm border-2 border-strong bg-surface"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setSelectedTile(tile)}
-                          className="min-h-11 min-w-0 flex-1 cursor-pointer px-2.5 py-1.5 text-left text-xs font-bold text-ink hover:bg-primary-subtle/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                        >
-                          <span className="mr-1.5 inline-block rounded-[2px] border border-strong bg-primary px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground">
-                            {tile.targetUser.displayName}
-                          </span>
-                          <span>{tile.promptText}</span>
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
-                          onClick={() => handleTogglePinTile(tile.id)}
-                          className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-strong text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                        >
-                          <X className="size-3.5" aria-hidden="true" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </PopoverContent>
-              </Popover>
-            ) : null}
-
             <Popover>
               <PopoverTrigger asChild>
                 <Button
@@ -323,16 +269,44 @@ export function ActivePlayPhase({
           />
         ) : null}
 
-        <div className="flex items-center gap-2.5">
-          <Progress
-            value={pct}
-            aria-label="Brett-Fortschritt"
-            className="h-2 flex-1"
-          />
-          <span className="shrink-0 font-mono text-xs font-bold text-ink tabular-nums">
-            {capturedCount} / {totalCount}
-          </span>
-        </div>
+        {pinnedTiles.length > 0 ? (
+          <div className="flex items-center gap-1.5 overflow-x-auto rounded-md border-2 border-info bg-surface px-2.5 py-1.5">
+            <Pin
+              className="size-3.5 shrink-0 rotate-45 fill-info text-info"
+              aria-hidden="true"
+            />
+            <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-info uppercase">
+              Fokus
+            </span>
+            <div className="flex items-center gap-1.5">
+              {pinnedTiles.map((tile) => (
+                <div
+                  key={tile.id}
+                  className="inline-flex shrink-0 items-center overflow-hidden rounded-sm border-2 border-info bg-info/10"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTile(tile)}
+                    className="relative inline-flex h-8 max-w-52 cursor-pointer items-center gap-1 px-2 text-left text-xs font-bold text-ink before:absolute before:inset-x-0 before:-inset-y-[6px] before:content-[''] hover:bg-info/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <span className="shrink-0 font-mono text-[10px] font-bold uppercase">
+                      {tile.targetUser.displayName}:
+                    </span>
+                    <span className="truncate">{tile.promptText}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
+                    onClick={() => handleTogglePinTile(tile.id)}
+                    className="relative inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center border-l border-info text-ink before:absolute before:-inset-[6px] before:content-[''] hover:bg-info/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {viewMode === "list" ? (
           <TargetGroupedBoard

@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
+  groupActiveGamesByTarget,
   groupTilesByTarget,
   type MatchTargetAggregate,
   tileToCaptureFeedItem,
@@ -30,6 +31,78 @@ type TargetGroupedBoardProps = {
   onEmptyTileSelect?: (tile: BoardTileView) => void;
   onViewCapture?: (capture: CaptureFeedItem) => void;
 };
+
+function OpenTaskRow({
+  tile,
+  subtitle,
+  isPinned,
+  onSelect,
+  onTogglePin,
+}: {
+  tile: BoardTileView;
+  subtitle?: string;
+  isPinned: boolean;
+  onSelect: () => void;
+  onTogglePin?: () => void;
+}) {
+  const uploadButton = (
+    <button
+      type="button"
+      aria-label={`${tile.targetUser.displayName}: ${tile.promptText} (Foto aufnehmen)`}
+      onClick={onSelect}
+      className={cn(
+        "brutal-press flex min-h-12 min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 rounded-sm border-2 bg-surface px-3 py-2.5 text-left hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+        isPinned ? "border-info" : "border-control",
+      )}
+    >
+      <span className="min-w-0 flex-1 space-y-0.5">
+        <span className="block text-sm leading-snug font-bold text-ink">
+          {tile.promptText}
+        </span>
+        {subtitle ? (
+          <span className="block truncate font-mono text-[11px] font-semibold text-secondary">
+            {subtitle}
+          </span>
+        ) : null}
+      </span>
+      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border border-strong bg-primary text-primary-foreground">
+        <Camera className="size-4" aria-hidden="true" />
+      </span>
+    </button>
+  );
+
+  if (!onTogglePin) {
+    return <div className="flex">{uploadButton}</div>;
+  }
+
+  return (
+    <div className="flex items-stretch gap-2">
+      {uploadButton}
+      <Button
+        type="button"
+        variant="secondary"
+        size="icon"
+        className={cn(
+          "h-auto min-h-12 w-11 shrink-0",
+          isPinned && "border-info bg-info/15 text-ink hover:bg-info/25",
+        )}
+        aria-pressed={isPinned}
+        aria-label={
+          isPinned
+            ? `Auftrag „${tile.promptText}“ aus Fokus entfernen`
+            : `Auftrag „${tile.promptText}“ anheften`
+        }
+        title={isPinned ? "Aus Fokus entfernen" : "Im Fokus anheften"}
+        onClick={onTogglePin}
+      >
+        <Pin
+          className={cn("size-4 rotate-45", isPinned && "fill-info text-info")}
+          aria-hidden="true"
+        />
+      </Button>
+    </div>
+  );
+}
 
 /**
  * Target-grouped alternative representation of a Bingo board (#26):
@@ -168,58 +241,18 @@ export function TargetGroupedBoard({
               }
 
               if (canUpload) {
-                const uploadButton = (
-                  <button
-                    type="button"
-                    aria-label={tileAriaLabel}
-                    onClick={() => onEmptyTileSelect?.(tile)}
-                    className="brutal-press flex min-h-12 min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 rounded-sm border-2 border-control bg-surface px-3 py-2.5 text-left hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                  >
-                    <span className="min-w-0 flex-1 text-sm leading-snug font-bold text-ink">
-                      {tile.promptText}
-                    </span>
-                    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border border-strong bg-primary text-primary-foreground">
-                      <Camera className="size-4" aria-hidden="true" />
-                    </span>
-                  </button>
-                );
-
-                if (!onTogglePinTile) {
-                  return (
-                    <div key={tile.id} className="flex">
-                      {uploadButton}
-                    </div>
-                  );
-                }
-
                 return (
-                  <div key={tile.id} className="flex items-stretch gap-2">
-                    {uploadButton}
-                    <Button
-                      type="button"
-                      variant={isPinned ? "primary" : "secondary"}
-                      size="icon"
-                      className="h-auto min-h-12 w-11 shrink-0"
-                      aria-pressed={isPinned}
-                      aria-label={
-                        isPinned
-                          ? `Auftrag „${tile.promptText}“ aus Fokus entfernen`
-                          : `Auftrag „${tile.promptText}“ anheften`
-                      }
-                      title={
-                        isPinned ? "Aus Fokus entfernen" : "Im Fokus anheften"
-                      }
-                      onClick={() => onTogglePinTile(tile.id)}
-                    >
-                      <Pin
-                        className={cn(
-                          "size-4 rotate-45",
-                          isPinned && "fill-current",
-                        )}
-                        aria-hidden="true"
-                      />
-                    </Button>
-                  </div>
+                  <OpenTaskRow
+                    key={tile.id}
+                    tile={tile}
+                    isPinned={isPinned}
+                    onSelect={() => onEmptyTileSelect?.(tile)}
+                    onTogglePin={
+                      onTogglePinTile
+                        ? () => onTogglePinTile(tile.id)
+                        : undefined
+                    }
+                  />
                 );
               }
 
@@ -235,6 +268,69 @@ export function TargetGroupedBoard({
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Unified target-grouped open task list across all running games on Home.
+ */
+export function CrossGameTargetGroupedBoard({
+  games,
+  onEmptyTileSelect,
+  onTogglePinTile,
+}: {
+  games: ReadonlyArray<{
+    id: string;
+    title: string;
+    tiles: readonly BoardTileView[];
+    pinnedTileIds?: ReadonlySet<string>;
+  }>;
+  onEmptyTileSelect: (gameId: string, tile: BoardTileView) => void;
+  onTogglePinTile: (gameId: string, tileId: string) => void;
+}) {
+  const groups = groupActiveGamesByTarget(games);
+
+  if (groups.length === 0) {
+    return (
+      <div className="brutal-shadow-sm rounded-md border-2 border-strong bg-surface p-6 text-center">
+        <p className="text-sm font-bold text-ink">Alle Aufträge erledigt!</p>
+        <p className="mt-1 text-xs font-medium text-secondary">
+          In deinen laufenden Spielen sind aktuell keine offenen Aufgaben übrig.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {groups.map((group) => (
+        <Card key={group.target.id} className="overflow-hidden">
+          <CardHeader className="bg-cyan-subtle px-4 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <PlayerBadgeLink user={group.target} compact />
+              </div>
+              <span className="shrink-0 rounded-sm border border-strong bg-surface px-2 py-0.5 font-mono text-xs font-bold text-ink tabular-nums">
+                {group.openCount} offen
+              </span>
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-2 p-3 sm:p-4">
+            {group.entries.map(({ gameId, gameTitle, tile, isPinned }) => (
+              <OpenTaskRow
+                key={`${gameId}-${tile.id}`}
+                tile={tile}
+                subtitle={gameTitle}
+                isPinned={isPinned}
+                onSelect={() => onEmptyTileSelect(gameId, tile)}
+                onTogglePin={() => onTogglePinTile(gameId, tile.id)}
+              />
+            ))}
           </CardContent>
         </Card>
       ))}

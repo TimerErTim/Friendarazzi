@@ -137,6 +137,7 @@ describe("BingoBoard", () => {
     expect(
       openButton.querySelector("[data-testid='pinned-tile-icon']"),
     ).not.toBeNull();
+    expect(openButton.className).toContain("border-2 border-info");
     expect(openButton.className).toContain("bg-surface");
     expect(openButton.className).not.toContain("bg-primary-subtle/60");
     expect(screen.getAllByTestId("pinned-tile-icon")).toHaveLength(1);

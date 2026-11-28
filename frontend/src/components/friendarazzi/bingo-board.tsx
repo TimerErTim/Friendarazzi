@@ -199,7 +199,7 @@ export function BingoBoard({
                       {isPinned ? (
                         <Pin
                           data-testid="pinned-tile-icon"
-                          className="size-3.5 shrink-0 rotate-45 fill-primary text-ink"
+                          className="size-3.5 shrink-0 rotate-45 fill-info text-info"
                           aria-hidden="true"
                         />
                       ) : null}
@@ -248,6 +248,7 @@ export function BingoBoard({
                 className={cn(
                   "group flex aspect-square min-h-24 w-full cursor-pointer overflow-hidden text-left transition-all",
                   cellPadding,
+                  isPinned && "border-2 border-info",
                   isDimmed && "opacity-35",
                   "hover:bg-primary-subtle/50 focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
                 )}
@@ -263,6 +264,7 @@ export function BingoBoard({
               className={cn(
                 "flex aspect-square min-h-24 w-full overflow-hidden text-left transition-opacity",
                 cellPadding,
+                isPinned && "border-2 border-info",
                 isDimmed && "opacity-35",
               )}
             >

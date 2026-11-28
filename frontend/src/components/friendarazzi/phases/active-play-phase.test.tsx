@@ -140,6 +140,9 @@ describe("ActivePlayPhase", () => {
     expect(
       screen.queryByRole("button", { name: /Nur offene/i }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("progressbar", { name: "Brett-Fortschritt" }),
+    ).not.toBeInTheDocument();
 
     expect(
       screen.getByRole("radio", { name: "Raster-Ansicht" }),
@@ -163,14 +166,12 @@ describe("ActivePlayPhase", () => {
         name: "Auftrag „Trinkt Wasser“ anheften",
       }),
     );
+    expect(screen.getByText("Fokus")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Fokus (1)" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
+      screen.getAllByRole("button", {
         name: "Auftrag „Trinkt Wasser“ aus Fokus entfernen",
       }),
-    ).toHaveAttribute("aria-pressed", "true");
+    ).toHaveLength(2);
 
     fireEvent.click(
       screen.getByRole("button", {

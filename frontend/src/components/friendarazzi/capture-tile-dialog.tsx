@@ -117,8 +117,12 @@ export function CaptureTileDialog({
                 </span>
                 <Button
                   type="button"
-                  variant={isPinned ? "primary" : "secondary"}
+                  variant="secondary"
                   size="icon"
+                  className={cn(
+                    isPinned &&
+                      "border-info bg-info/15 text-ink hover:bg-info/25",
+                  )}
                   aria-pressed={isPinned}
                   aria-label={
                     isPinned
@@ -131,7 +135,7 @@ export function CaptureTileDialog({
                   <Pin
                     className={cn(
                       "size-4 rotate-45",
-                      isPinned && "fill-current",
+                      isPinned && "fill-info text-info",
                     )}
                     aria-hidden="true"
                   />

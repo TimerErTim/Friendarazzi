@@ -9,6 +9,7 @@ import type {
 
 import {
   aggregateMatchByTarget,
+  groupActiveGamesByTarget,
   groupTilesByTarget,
   loadPinnedTiles,
   savePinnedTiles,
@@ -151,5 +152,33 @@ describe("board-grouping", () => {
     expect(summary[0]?.totalCount).toBe(2);
     expect(summary[0]?.entries[0]?.boardOwner.id).toBe("u-lena");
     expect(summary[0]?.entries[0]?.capture?.id).toBe("cap-t1");
+  });
+
+  it("groups open tasks across multiple active games by target buddy", () => {
+    const groups = groupActiveGamesByTarget([
+      {
+        id: "g-1",
+        title: "Freitagabend",
+        tiles: [
+          tile("t1", 0, 0, max, "Bestellt Dessert", true),
+          tile("t2", 0, 1, max, "Winkt jemandem zu", false),
+        ],
+      },
+      {
+        id: "g-2",
+        title: "Urlaub",
+        tiles: [
+          tile("t3", 0, 0, max, "Vergisst Sonnenbrille", false),
+          tile("t4", 0, 1, lena, "Lacht laut", false),
+        ],
+        pinnedTileIds: new Set(["t3"]),
+      },
+    ]);
+
+    expect(groups.map((g) => g.target.id)).toEqual(["u-max", "u-lena"]);
+    expect(groups[0]?.openCount).toBe(2);
+    expect(groups[0]?.hasPinnedTile).toBe(true);
+    expect(groups[0]?.entries.map((e) => e.tile.id)).toEqual(["t3", "t2"]);
+    expect(groups[0]?.entries[0]?.gameTitle).toBe("Urlaub");
   });
 });

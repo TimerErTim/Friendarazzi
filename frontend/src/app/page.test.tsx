@@ -251,7 +251,15 @@ describe("HomePage", () => {
     fireEvent.click(
       screen.getByRole("radio", { name: "Liste nach Zielperson" }),
     );
+    expect(screen.getByText("Offene Ziele")).toBeInTheDocument();
     expect(screen.queryByText("Schon erledigt")).not.toBeInTheDocument();
+    // In Nach Ziel view, open tasks from both games appear under their buddy cards without game-board splitting
+    expect(screen.getAllByText("Freitagabend").length).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(screen.getAllByText("Urlaubs-Jagd").length).toBeGreaterThanOrEqual(
+      1,
+    );
 
     const unpinButton = screen.getAllByRole("button", {
       name: "Auftrag „Bestellt Espresso“ aus Fokus entfernen",

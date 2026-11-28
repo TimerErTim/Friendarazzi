@@ -20,6 +20,22 @@ export type TargetGroup = {
   hasPinnedTile: boolean;
 };
 
+export type CrossGameTileEntry = {
+  gameId: string;
+  gameTitle: string;
+  tile: BoardTileView;
+  isPinned: boolean;
+};
+
+export type CrossGameTargetGroup = {
+  target: PlayerBadge;
+  entries: CrossGameTileEntry[];
+  totalCount: number;
+  capturedCount: number;
+  openCount: number;
+  hasPinnedTile: boolean;
+};
+
 export type MatchTargetAggregate = {
   target: PlayerBadge;
   entries: Array<{
@@ -145,6 +161,92 @@ export function groupTilesByTarget(
       capturedCount,
       openCount: totalCount - capturedCount,
       hasPinnedTile,
+    });
+  }
+
+  groups.sort((a, b) => {
+    if (a.hasPinnedTile !== b.hasPinnedTile) {
+      return a.hasPinnedTile ? -1 : 1;
+    }
+    if (a.openCount !== b.openCount) {
+      return b.openCount - a.openCount;
+    }
+    return a.target.displayName.localeCompare(b.target.displayName, "de");
+  });
+
+  return groups;
+}
+
+export function groupActiveGamesByTarget(
+  games: ReadonlyArray<{
+    id: string;
+    title: string;
+    tiles: readonly BoardTileView[];
+    pinnedTileIds?: ReadonlySet<string>;
+  }>,
+  query = "",
+): CrossGameTargetGroup[] {
+  const byTarget = new Map<
+    string,
+    {
+      target: PlayerBadge;
+      totalCount: number;
+      capturedCount: number;
+      entries: CrossGameTileEntry[];
+    }
+  >();
+
+  for (const game of games) {
+    for (const tile of game.tiles) {
+      let bucket = byTarget.get(tile.targetUser.id);
+      if (!bucket) {
+        bucket = {
+          target: tile.targetUser,
+          totalCount: 0,
+          capturedCount: 0,
+          entries: [],
+        };
+        byTarget.set(tile.targetUser.id, bucket);
+      }
+
+      bucket.totalCount += 1;
+      if (tile.isCaptured) {
+        bucket.capturedCount += 1;
+        continue;
+      }
+
+      if (filterTileMatches(tile, { hideCaptured: true, query })) {
+        bucket.entries.push({
+          gameId: game.id,
+          gameTitle: game.title,
+          tile,
+          isPinned: game.pinnedTileIds?.has(tile.id) ?? false,
+        });
+      }
+    }
+  }
+
+  const groups: CrossGameTargetGroup[] = [];
+  for (const bucket of byTarget.values()) {
+    if (bucket.entries.length === 0) continue;
+
+    bucket.entries.sort((a, b) => {
+      if (a.isPinned !== b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+      const gameDiff = a.gameTitle.localeCompare(b.gameTitle, "de");
+      if (gameDiff !== 0) return gameDiff;
+      if (a.tile.row !== b.tile.row) return a.tile.row - b.tile.row;
+      return a.tile.col - b.tile.col;
+    });
+
+    groups.push({
+      target: bucket.target,
+      entries: bucket.entries,
+      totalCount: bucket.totalCount,
+      capturedCount: bucket.capturedCount,
+      openCount: bucket.totalCount - bucket.capturedCount,
+      hasPinnedTile: bucket.entries.some((entry) => entry.isPinned),
     });
   }
 

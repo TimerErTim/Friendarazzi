@@ -30,6 +30,7 @@ export function apiErrorMessage(
   messages: {
     unauthorized?: string;
     badRequest?: string;
+    conflict?: string;
     tooManyRequests?: string;
     fallback: string;
   },
@@ -37,6 +38,7 @@ export function apiErrorMessage(
   if (!error) return null;
 
   if (error instanceof ApiError) {
+    if (error.status === 409 && messages.conflict) return messages.conflict;
     const message = error.structured?.message?.trim();
     const genericMessage =
       message?.toLocaleLowerCase("de-DE") === "die anfrage ist ungültig" ||

@@ -25,6 +25,8 @@ pub struct AuthenticatedBenutzer {
     pub gold_medal_count: u32,
     /// Effective rank title displayed on badges.
     pub effective_title: String,
+    /// Whether the Benutzer has confirmed ownership of its e-mail address.
+    pub email_verified: bool,
 }
 
 /// A known Benutzer.
@@ -52,6 +54,7 @@ impl From<domain::Benutzer> for Benutzer {
 impl From<domain::Benutzer> for AuthenticatedBenutzer {
     fn from(benutzer: domain::Benutzer) -> Self {
         let effective_title = benutzer.effective_title().to_owned();
+        let email_verified = benutzer.ist_verifiziert();
         Self {
             id: benutzer.id().0,
             e_mail_adresse: benutzer.email_address().clone().into(),
@@ -59,6 +62,7 @@ impl From<domain::Benutzer> for AuthenticatedBenutzer {
             avatar_storage_key: benutzer.avatar_storage_key().map(str::to_owned),
             gold_medal_count: benutzer.gold_medal_count(),
             effective_title,
+            email_verified,
         }
     }
 }

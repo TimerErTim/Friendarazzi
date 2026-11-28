@@ -318,15 +318,19 @@ export function useAuthMutations() {
       ...SITE_HANDLED,
       onSuccess: loggedIn,
     }),
-    registerStart: useMutation({
-      mutationFn: api.registrierungStarten.bind(api),
-      ...SITE_HANDLED,
-    }),
-    registerFinish: useMutation({
-      mutationFn: ({ token, passwort }: { token: string; passwort: string }) =>
-        api.registrierungAbschliessen(token, passwort),
+    register: useMutation({
+      mutationFn: api.registrieren.bind(api),
       ...SITE_HANDLED,
       onSuccess: loggedIn,
+    }),
+    confirmEmail: useMutation({
+      mutationFn: (token: string) => api.emailBestaetigen(token),
+      ...SITE_HANDLED,
+      onSuccess: loggedIn,
+    }),
+    resendVerificationEmail: useMutation({
+      mutationFn: () => api.emailBestaetigungErneutSenden(),
+      ...SITE_HANDLED,
     }),
     forgotPassword: useMutation({
       mutationFn: api.passwortVergessen.bind(api),

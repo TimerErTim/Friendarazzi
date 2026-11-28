@@ -69,11 +69,10 @@ export function useGamesQuery() {
 
 export function useGameByCodeQuery(code: string | null) {
   const { api } = useFriendarazziApi();
-  const phase = useAuth();
   return useQuery({
     queryKey: friendarazziKeys.games.byCode(code ?? ""),
     queryFn: () => api.gameByInviteCode(code ?? ""),
-    enabled: phase.status === "authenticated" && Boolean(code?.trim()),
+    enabled: Boolean(code?.trim()),
     retry: false,
   });
 }

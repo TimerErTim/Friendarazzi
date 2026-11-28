@@ -3,7 +3,14 @@
 import { Camera, CheckCircle2, CircleAlert, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { ApiError, apiErrorMessage } from "@/api/errors";
 import { useAuthMutations } from "@/api/hooks";
@@ -51,15 +58,6 @@ function clearStoredRedirect() {
   }
 }
 
-function persistRedirect(path: string) {
-  if (typeof window === "undefined" || !path || path === "/") return;
-  try {
-    window.sessionStorage.setItem(POST_AUTH_REDIRECT_KEY, path);
-  } catch {
-    // Ignore storage errors
-  }
-}
-
 function passwordWithinPolicy(password: string) {
   const length = Array.from(password).length;
   return length >= PASSWORD_MIN && length <= PASSWORD_MAX;
@@ -73,6 +71,7 @@ type AuthFailure = {
 type AuthFailureMessages = {
   unauthorized?: string;
   badRequest?: string;
+  conflict?: string;
   tooManyRequests?: string;
   invalidLink?: string;
   fallback: string;
@@ -325,16 +324,77 @@ export function LoginPage() {
   );
 }
 
+export function EmailVerificationPage() {
+  const token = useMailToken();
+  const redirectTarget = useRedirectTarget();
+  const auth = useAuthMutations();
+  const { mutate, isPending, isSuccess, isError, error } = auth.confirmEmail;
+  const triggeredForRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!token || triggeredForRef.current === token) return;
+    triggeredForRef.current = token;
+    mutate(token);
+  }, [token, mutate]);
+
+  const confirmFailure = authFailure(error, {
+    badRequest:
+      "Der Bestätigungslink ist ungültig oder abgelaufen. Du kannst im Menü jederzeit eine neue Bestätigungs-Mail anfordern.",
+    tooManyRequests:
+      "Zu viele Versuche. Bitte warte kurz und versuche es erneut.",
+    fallback:
+      "Die E-Mail-Adresse konnte nicht bestätigt werden. Bitte versuche es erneut.",
+  });
+
+  return (
+    <AuthStudio
+      mode="password"
+      title="E-Mail-Adresse bestätigen"
+      description="Wir schalten dein Konto für beliebig viele Runden und E-Mail-Hinweise frei."
+      redirectTarget={redirectTarget}
+    >
+      <div className="space-y-4">
+        {!token ? (
+          <AuthAlert
+            variant="error"
+            message="Dieser Bestätigungslink enthält kein gültiges Token."
+          />
+        ) : isPending ? (
+          <p className="font-mono text-sm font-bold text-ink">
+            Bestätige deine E-Mail-Adresse …
+          </p>
+        ) : isError ? (
+          <AuthAlert
+            variant="error"
+            message={
+              confirmFailure?.message ??
+              "Der Bestätigungslink ist ungültig oder abgelaufen."
+            }
+          />
+        ) : isSuccess ? (
+          <AuthAlert
+            variant="success"
+            message="Deine E-Mail-Adresse ist bestätigt! Du kannst jetzt unbegrenzt viele Spiele starten und beitreten."
+          />
+        ) : null}
+
+        <Button size="field" className="w-full" asChild>
+          <Link href={redirectTarget || "/"}>Weiter zu Friendarazzi</Link>
+        </Button>
+      </div>
+    </AuthStudio>
+  );
+}
+
 export function RegistrationPage() {
   const router = useRouter();
   const redirectTarget = useRedirectTarget();
   const auth = useAuthMutations();
   const token = useMailToken();
   const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [sent, setSent] = useState(false);
-  const finishing = Boolean(token);
 
   const mismatch = useMemo(
     () =>
@@ -344,36 +404,30 @@ export function RegistrationPage() {
     [password, confirmation],
   );
 
-  const startFailure = authFailure(auth.registerStart.error, {
-    badRequest: "Bitte gib eine gültige E-Mail-Adresse ein.",
-    tooManyRequests:
-      "Zu viele Registrierungsversuche. Bitte warte kurz und versuche es erneut.",
-    fallback:
-      "Die Registrierung konnte nicht gestartet werden. Bitte versuche es später erneut.",
-  });
-
-  const finishFailure = authFailure(auth.registerFinish.error, {
-    invalidLink: passwordWithinPolicy(password)
-      ? "Der Bestätigungslink ist ungültig oder abgelaufen. Bitte fordere einen neuen Link an."
-      : undefined,
-    badRequest: "Das Passwort muss 8 bis 128 Zeichen lang sein.",
+  const registerFailure = authFailure(auth.register.error, {
+    conflict: "Diese E-Mail-Adresse ist bereits vergeben.",
+    badRequest:
+      "Bitte prüfe deine Eingaben (Passwort 8 bis 128 Zeichen, gültige E-Mail).",
     tooManyRequests:
       "Zu viele Registrierungsversuche. Bitte warte kurz und versuche es erneut.",
     fallback:
       "Das Konto konnte nicht erstellt werden. Bitte versuche es später erneut.",
   });
 
-  function start(event: FormEvent) {
-    event.preventDefault();
-    persistRedirect(redirectTarget);
-    auth.registerStart.mutate(email, { onSuccess: () => setSent(true) });
+  if (token) {
+    return <EmailVerificationPage />;
   }
 
-  function finish(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
     if (mismatch) return;
-    auth.registerFinish.mutate(
-      { token, passwort: password },
+    const trimmedName = displayName.trim();
+    auth.register.mutate(
+      {
+        eMailAdresse: email,
+        passwort: password,
+        ...(trimmedName ? { displayName: trimmedName } : {}),
+      },
       {
         onSuccess: () => {
           clearStoredRedirect();
@@ -386,107 +440,74 @@ export function RegistrationPage() {
   return (
     <AuthStudio
       mode="register"
-      title={finishing ? "Registrierung abschließen" : "Konto erstellen"}
-      description={
-        finishing
-          ? "Deine E-Mail-Adresse ist bestätigt. Lege jetzt dein Passwort fest."
-          : "In zwei Schritten: Adresse bestätigen, dann Passwort festlegen."
-      }
+      title="Konto erstellen"
+      description="In einem Schritt registrieren und direkt losspielen – deine E-Mail bestätigst du ganz bequem danach."
       redirectTarget={redirectTarget}
-      pageError={finishFailure?.scope === "page" ? finishFailure.message : null}
-      footer={
-        finishing ? (
-          <AuthLink
-            href={authHrefWithRedirect("/registrierung", redirectTarget)}
-          >
-            Neuen Bestätigungslink anfordern
-          </AuthLink>
-        ) : undefined
-      }
     >
-      {!finishing ? (
-        <form className="space-y-5" onSubmit={start}>
-          <Field
-            label="E-Mail-Adresse"
-            hint="Du erhältst einen Link zur Bestätigung."
-          >
-            <Input
-              autoComplete="email"
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </Field>
+      <form className="space-y-4" onSubmit={submit}>
+        <Field label="E-Mail-Adresse">
+          <Input
+            autoComplete="email"
+            type="email"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </Field>
 
-          {sent ? (
-            <AuthAlert
-              variant="success"
-              message="Du erhältst eine E-Mail mit dem Bestätigungslink."
-            />
-          ) : null}
+        <Field
+          label="Anzeigename (optional)"
+          hint="Wird deinen Freunden in der Lobby angezeigt."
+        >
+          <Input
+            autoComplete="nickname"
+            type="text"
+            maxLength={60}
+            placeholder="z. B. Lena"
+            value={displayName}
+            onChange={(event) => setDisplayName(event.target.value)}
+          />
+        </Field>
 
-          {startFailure ? (
-            <AuthAlert variant="error" message={startFailure.message} />
-          ) : null}
+        <Field label="Passwort" hint="8 bis 128 Zeichen.">
+          <PasswordInput
+            autoComplete="new-password"
+            minLength={PASSWORD_MIN}
+            maxLength={PASSWORD_MAX}
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </Field>
 
-          <Button
-            type="submit"
-            size="field"
-            className="w-full"
-            disabled={auth.registerStart.isPending}
-          >
-            {auth.registerStart.isPending
-              ? "Wird gesendet …"
-              : "Bestätigungslink anfordern"}
-          </Button>
-        </form>
-      ) : (
-        <form className="space-y-5" onSubmit={finish}>
-          <Field label="Passwort" hint="8 bis 128 Zeichen.">
-            <PasswordInput
-              autoComplete="new-password"
-              minLength={PASSWORD_MIN}
-              maxLength={PASSWORD_MAX}
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </Field>
+        <Field
+          label="Passwort bestätigen"
+          error={mismatch ? "Die Passwörter stimmen nicht überein." : undefined}
+        >
+          <PasswordInput
+            autoComplete="new-password"
+            minLength={PASSWORD_MIN}
+            maxLength={PASSWORD_MAX}
+            required
+            aria-invalid={mismatch || undefined}
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+        </Field>
 
-          <Field
-            label="Passwort bestätigen"
-            error={
-              mismatch ? "Die Passwörter stimmen nicht überein." : undefined
-            }
-          >
-            <PasswordInput
-              autoComplete="new-password"
-              minLength={PASSWORD_MIN}
-              maxLength={PASSWORD_MAX}
-              required
-              aria-invalid={mismatch || undefined}
-              value={confirmation}
-              onChange={(event) => setConfirmation(event.target.value)}
-            />
-          </Field>
+        {registerFailure ? (
+          <AuthAlert variant="error" message={registerFailure.message} />
+        ) : null}
 
-          {finishFailure?.scope === "form" ? (
-            <AuthAlert variant="error" message={finishFailure.message} />
-          ) : null}
-
-          <Button
-            type="submit"
-            size="field"
-            className="w-full"
-            disabled={auth.registerFinish.isPending || mismatch}
-          >
-            {auth.registerFinish.isPending
-              ? "Wird erstellt …"
-              : "Konto erstellen"}
-          </Button>
-        </form>
-      )}
+        <Button
+          type="submit"
+          size="field"
+          className="w-full"
+          disabled={auth.register.isPending || mismatch}
+        >
+          {auth.register.isPending ? "Wird erstellt …" : "Konto erstellen"}
+        </Button>
+      </form>
     </AuthStudio>
   );
 }

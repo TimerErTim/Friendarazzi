@@ -14,8 +14,8 @@ use friendarazzi_core::{
     },
     ports::{ClientKey, Clock, RepositoryError},
     service::{
-        CreateGame, DraftPromptInput, HostFillRemainingDrafts, JoinGame, LockDraftPrompts,
-        RegistrierungAbschließen, RegistrierungStarten, SaveDraftPrompts, StartDrafting,
+        CreateGame, DraftPromptInput, EmailBestätigen, HostFillRemainingDrafts, JoinGame,
+        LockDraftPrompts, Registrieren, SaveDraftPrompts, StartDrafting,
     },
     uow::UnitOfWorkProvider,
 };
@@ -29,32 +29,33 @@ pub fn test_time() -> DateTime<Utc> {
 
 async fn register(app: &App, mail: &FakeMailSender, email: &str) -> AuthContext {
     let client_key = ClientKey::new("127.0.0.1".parse().unwrap(), email.to_owned());
-    app.execute(
-        AuthContext::Anonymous,
-        RegistrierungStarten {
-            email: EmailAdresse::normalisiert(email).unwrap(),
-            client_key: client_key.clone(),
-        },
-    )
-    .await
-    .unwrap();
+    let session = app
+        .execute(
+            AuthContext::Anonymous,
+            Registrieren {
+                email: EmailAdresse::normalisiert(email).unwrap(),
+                passwort: KlartextPasswort::neu("korrekt-pferd-batterie").unwrap(),
+                display_name: None,
+                client_key: client_key.clone(),
+            },
+        )
+        .await
+        .unwrap();
     let text = mail.latest().text("https://friendarazzi.app");
     let start = text.find("token=").unwrap() + "token=".len();
     let token_str: String = text[start..]
         .chars()
         .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .collect();
-    let session = app
-        .execute(
-            AuthContext::Anonymous,
-            RegistrierungAbschließen {
-                token: SecretToken::try_from(token_str.as_str()).unwrap(),
-                passwort: KlartextPasswort::neu("korrekt-pferd-batterie").unwrap(),
-                client_key,
-            },
-        )
-        .await
-        .unwrap();
+    app.execute(
+        AuthContext::Anonymous,
+        EmailBestätigen {
+            token: SecretToken::try_from(token_str.as_str()).unwrap(),
+            client_key,
+        },
+    )
+    .await
+    .unwrap();
     AuthContext::Authenticated {
         session_id: SessionId(Uuid::new_v4()),
         benutzer_id: session.benutzer.id(),

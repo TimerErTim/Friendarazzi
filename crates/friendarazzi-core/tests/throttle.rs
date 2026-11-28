@@ -11,7 +11,7 @@ use friendarazzi_core::{
     application::{AuthContext, IdentityProviderConfiguration},
     domain::{EmailAdresse, konto::KlartextPasswort},
     ports::ClientKey,
-    service::{Anmeldung, AnmeldungFehler, RegistrierungStarten, RegistrierungStartenFehler},
+    service::{Anmeldung, AnmeldungFehler, Registrieren, RegistrierenFehler},
 };
 use friendarazzi_fakes::FakeUnitOfWorkProvider;
 
@@ -103,8 +103,10 @@ async fn ac15_drossel_greift_erst_nach_zwanzig_fehlversuchen_pro_client() {
     let different_action = app
         .execute(
             AuthContext::Anonymous,
-            RegistrierungStarten {
+            Registrieren {
                 email: adresse("person@muster.at"),
+                passwort: passwort(),
+                display_name: None,
                 client_key: client.clone(),
             },
         )
@@ -138,8 +140,10 @@ async fn ac16_registrierung_ist_auf_fünf_pro_stunde_gedrosselt() {
     for nummer in 0..5 {
         app.execute(
             AuthContext::Anonymous,
-            RegistrierungStarten {
+            Registrieren {
                 email: adresse(&format!("person{nummer}@muster.at")),
+                passwort: passwort(),
+                display_name: None,
                 client_key: client.clone(),
             },
         )
@@ -150,14 +154,16 @@ async fn ac16_registrierung_ist_auf_fünf_pro_stunde_gedrosselt() {
     let sechste = app
         .execute(
             AuthContext::Anonymous,
-            RegistrierungStarten {
+            Registrieren {
                 email: adresse("person6@muster.at"),
+                passwort: passwort(),
+                display_name: None,
                 client_key: client,
             },
         )
         .await;
     assert_eq!(
         text(sechste.unwrap_err()),
-        RegistrierungStartenFehler::Gedrosselt.to_string()
+        RegistrierenFehler::Gedrosselt.to_string()
     );
 }

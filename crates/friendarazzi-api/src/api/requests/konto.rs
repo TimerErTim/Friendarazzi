@@ -7,37 +7,39 @@ use friendarazzi_core::{
     domain,
     ports::ClientKey,
     service::{
-        Anmeldung, AnmeldungFehler, BenutzerLöschen, BenutzerLöschenFehler, PasswortVergessen,
-        PasswortVergessenFehler, PasswortWiederherstellen, PasswortWiederherstellenFehler,
-        RegistrierungAbschliessenFehler, RegistrierungAbschließen, RegistrierungStarten,
-        RegistrierungStartenFehler,
+        Anmeldung, AnmeldungFehler, BenutzerLöschen, BenutzerLöschenFehler, EmailBestätigen,
+        EmailBestätigenFehler, PasswortVergessen, PasswortVergessenFehler,
+        PasswortWiederherstellen, PasswortWiederherstellenFehler, Registrieren, RegistrierenFehler,
     },
 };
 
 use crate::schema::EmailAdresse;
 
-/// Registration step 1: the address to confirm.
+/// Single-step registration with e-mail address, password, and optional display name.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
 #[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RegistrierungStartRequest {
-    /// The address to send the confirmation mail to. Its format is validated.
+pub struct RegistrierungRequest {
+    /// E-mail address of the new account.
     pub e_mail_adresse: EmailAdresse,
+    /// Chosen account password (checked against the password policy).
+    pub passwort: String,
+    /// Optional display name shown in lobbies and boards.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
-/// Registration step 2: the mailed token and the chosen password.
+/// Confirm the caller's e-mail address with the single-use verification token.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
 #[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RegistrierungAbschlussRequest {
-    /// The single-use token from the confirmation mail.
+pub struct EmailBestaetigenRequest {
+    /// The single-use verification token from the confirmation mail.
     pub token: String,
-    /// The password to set. It is checked against the password policy.
-    pub passwort: String,
 }
 
 /// Sign-in with the account's e-mail address and password.
@@ -90,31 +92,39 @@ pub struct BenutzerLoeschungRequest {
     pub bestaetigt: bool,
 }
 
-impl RegistrierungStartRequest {
+impl RegistrierungRequest {
     pub fn in_use_case(
         self,
         client_key: ClientKey,
-    ) -> Result<RegistrierungStarten, Report<RegistrierungStartenFehler>> {
+    ) -> Result<Registrieren, Report<RegistrierenFehler>> {
         let email = domain::EmailAdresse::try_from(self.e_mail_adresse)
-            .change_context(RegistrierungStartenFehler::UngültigeAnfrage)?;
-        Ok(RegistrierungStarten { email, client_key })
+            .change_context(RegistrierenFehler::UngültigeAnfrage)?;
+        let passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
+            .change_context(RegistrierenFehler::UngültigeAnfrage)?;
+        let display_name = match self.display_name {
+            Some(raw) if !raw.trim().is_empty() => Some(
+                domain::NonEmptyString::neu(raw)
+                    .change_context(RegistrierenFehler::UngültigeAnfrage)?,
+            ),
+            _ => None,
+        };
+        Ok(Registrieren {
+            email,
+            passwort,
+            display_name,
+            client_key,
+        })
     }
 }
 
-impl RegistrierungAbschlussRequest {
+impl EmailBestaetigenRequest {
     pub fn in_use_case(
         self,
         client_key: ClientKey,
-    ) -> Result<RegistrierungAbschließen, Report<RegistrierungAbschliessenFehler>> {
+    ) -> Result<EmailBestätigen, Report<EmailBestätigenFehler>> {
         let token = domain::konto::SecretToken::try_from(self.token)
-            .change_context(RegistrierungAbschliessenFehler::UngültigeAnfrage)?;
-        let passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
-            .change_context(RegistrierungAbschliessenFehler::UngültigeAnfrage)?;
-        Ok(RegistrierungAbschließen {
-            token,
-            passwort,
-            client_key,
-        })
+            .change_context(EmailBestätigenFehler::UngültigerLink)?;
+        Ok(EmailBestätigen { token, client_key })
     }
 }
 

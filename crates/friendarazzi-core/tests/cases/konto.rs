@@ -10,14 +10,15 @@ use chrono::Duration;
 use friendarazzi_core::{
     application::AuthContext,
     domain::{
-        BenutzerId, EmailAdresse, NeuerBenutzer,
+        BenachrichtigungArt, BenutzerId, EmailAdresse, GridSize, NeuerBenutzer, NonEmptyString,
+        VisibilityMode,
         konto::{ACCESS_TOKEN_LIFETIME, KlartextPasswort, SecretToken, SessionId, TokenId},
     },
     ports::{ClientKey, RepositoryError},
     service::{
-        Abmeldung, Anmeldung, BenutzerLöschen, Erneuerung, PasswortVergessen,
-        PasswortWiederherstellen, RegistrierungAbschliessenFehler, RegistrierungAbschließen,
-        RegistrierungStarten, SessionAusgestellt,
+        Abmeldung, Anmeldung, BenutzerLöschen, CreateGame, EmailBestätigen, EmailBestätigenFehler,
+        EmailBestätigungErneutSenden, Erneuerung, GameUseCaseError, JoinGame, PasswortVergessen,
+        PasswortWiederherstellen, Registrieren, RegistrierenFehler, SessionAusgestellt,
     },
 };
 
@@ -50,42 +51,45 @@ async fn harness() -> Harness {
     super::helpers::build(base_app_builder().await)
 }
 
-/// Run registration step 1 and return the mailed token.
-async fn registrierung_starten(
+/// Single-step register and return `(session, mailed_token)` (leaves email unverified).
+async fn registriere_unbestaetigt(
     harness: &Harness,
     email: &str,
     client_key: ClientKey,
-) -> SecretToken {
-    harness
+) -> (SessionAusgestellt, SecretToken) {
+    let session = harness
         .app()
         .execute(
             AuthContext::Anonymous,
-            RegistrierungStarten {
+            Registrieren {
                 email: adresse(email),
+                passwort: passwort(),
+                display_name: None,
                 client_key,
             },
         )
         .await
-        .expect("registration step 1 answers Ok");
+        .expect("single-step registration issues a session");
     let text = harness.letztes_token();
-    SecretToken::try_from(text.as_str()).expect("die Mail trägt ein SecretToken")
+    let token = SecretToken::try_from(text.as_str()).expect("die Mail trägt ein SecretToken");
+    (session, token)
 }
 
-/// Register fully and return the issued session.
+/// Register in one step and confirm e-mail so existing AC tests have a verified user.
 async fn registriere(harness: &Harness, email: &str) -> SessionAusgestellt {
-    let token = registrierung_starten(harness, email, client_key(1)).await;
+    let (session, token) = registriere_unbestaetigt(harness, email, client_key(1)).await;
     harness
         .app()
         .execute(
             AuthContext::Anonymous,
-            RegistrierungAbschließen {
+            EmailBestätigen {
                 token,
-                passwort: passwort(),
                 client_key: client_key(1),
             },
         )
         .await
-        .expect("registration step 2 issues a session")
+        .expect("email confirmation succeeds");
+    session
 }
 
 async fn anmelden(harness: &Harness, email: &str) -> SessionAusgestellt {
@@ -119,154 +123,230 @@ where
     report.current_context().to_string()
 }
 
-// ---------------------------------------------------------------- AC-1, AC-2, AC-20
+// ---------------------------------------------------------------- Single-step registration & verification
 
 #[test_log::test(pollster::test)]
-async fn ac1_registrierung_startet_ohne_benutzer_und_mailt_genau_einmal() {
+async fn ac1_registrierung_in_einem_schritt_eroeffnet_session_und_sendet_bestaetigungsmail() {
     let harness = harness().await;
 
-    let token = registrierung_starten(&harness, "anna@muster.at", client_key(1)).await;
+    let (ausgestellt, token) =
+        registriere_unbestaetigt(&harness, "anna@muster.at", client_key(1)).await;
 
     assert_eq!(harness.mail().sent().len(), 1);
-    assert_eq!(
-        token.base64url().len(),
-        43,
-        "das gemailte Token ist ein 256-bit Secret"
-    );
-
-    // AC-20: at this point no Benutzer exists, so nothing can be unconfirmed.
-    harness
-        .app()
-        .execute_fn::<_, _, RepositoryError>(AuthContext::Anonymous, async |ctx| {
-            let uow = ctx.enter().await?;
-            let benutzer = uow
-                .benutzer()
-                .find_by_id(BenutzerId(uuid::Uuid::new_v4()))
-                .await;
-            assert!(
-                benutzer.is_err(),
-                "zu diesem Zeitpunkt existiert kein Benutzer"
-            );
-            uow.commit().await
-        })
-        .await
-        .expect("reading an absent Benutzer is not an error at this level");
-}
-
-#[test_log::test(pollster::test)]
-async fn ac2_vergebene_adresse_antwortet_gleich_und_mailt_nicht() {
-    let harness = harness().await;
-    registriere(&harness, "belegt@muster.at").await;
-    harness.mail().clear();
-
-    let ergebnis = harness
-        .app()
-        .execute(
-            AuthContext::Anonymous,
-            RegistrierungStarten {
-                email: adresse("belegt@muster.at"),
-                client_key: client_key(3),
-            },
-        )
-        .await;
-
-    assert!(
-        ergebnis.is_ok(),
-        "die Antwort für eine vergebene Adresse ist Ok"
-    );
-    assert!(
-        harness.mail().sent().is_empty(),
-        "eine vergebene Adresse bekommt keine Mail"
-    );
-}
-
-// ------------------------------------------------------------------------- AC-3, AC-4
-
-#[test_log::test(pollster::test)]
-async fn ac3_abschluss_erzeugt_benutzer_konto_und_erste_session() {
-    let harness = harness().await;
-
-    let ausgestellt = registriere(&harness, "anna@muster.at").await;
-
-    assert_eq!(
-        ausgestellt.claims.sub,
-        ausgestellt.benutzer.id(),
-        "das Access-Token gehört dem neuen Benutzer"
-    );
+    assert_eq!(token.base64url().len(), 43);
+    assert!(!ausgestellt.benutzer.ist_verifiziert());
+    assert_eq!(ausgestellt.claims.sub, ausgestellt.benutzer.id());
     assert_eq!(ausgestellt.claims.sid, ausgestellt.session_id);
     assert_eq!(ausgestellt.refresh_token.base64url().len(), 43);
 }
 
 #[test_log::test(pollster::test)]
-async fn ac4_ungültiges_token_oder_kurzes_passwort_erzeugt_nichts() {
+async fn ac2_vergebene_adresse_wird_mit_konflikt_abgelehnt_und_mailt_nicht() {
     let harness = harness().await;
-    let token = registrierung_starten(&harness, "anna@muster.at", client_key(4)).await;
+    registriere(&harness, "belegt@muster.at").await;
+    harness.mail().clear();
 
-    // Too short: the DTO layer refuses it before the use case runs, so a usable token is
-    // never spent by the attempt.
-    assert!(
-        KlartextPasswort::neu("kurz").is_err(),
-        "die Längenregel greift bei der Konstruktion"
-    );
-
-    // An unknown token is refused too.
-    let unbekannt = harness
+    let err = harness
         .app()
         .execute(
             AuthContext::Anonymous,
-            RegistrierungAbschließen {
-                token: SecretToken::try_from("A".repeat(43).as_str())
-                    .expect("ein geformtes, aber unbekanntes Token"),
+            Registrieren {
+                email: adresse("belegt@muster.at"),
                 passwort: passwort(),
-                client_key: client_key(6),
-            },
-        )
-        .await;
-    assert!(unbekannt.is_err());
-
-    // The real token still works: the refusal spent nothing.
-    harness
-        .app()
-        .execute(
-            AuthContext::Anonymous,
-            RegistrierungAbschließen {
-                token,
-                passwort: passwort(),
-                client_key: client_key(7),
+                display_name: None,
+                client_key: client_key(3),
             },
         )
         .await
-        .expect("das unverbrauchte Token bleibt gültig");
+        .unwrap_err();
+
+    assert!(matches!(
+        err.current_context(),
+        RegistrierenFehler::EmailBereitsVergeben
+    ));
+    assert_eq!(text(err), "Diese E-Mail-Adresse ist bereits vergeben");
+    assert!(harness.mail().sent().is_empty());
 }
 
 #[test_log::test(pollster::test)]
-async fn ac4_verbrauchtes_token_wird_beim_zweiten_mal_abgelehnt() {
+async fn ac4_email_bestaetigung_prueft_token_und_erlaubt_resend() {
     let harness = harness().await;
-    let token = registrierung_starten(&harness, "anna@muster.at", client_key(8)).await;
-    registriere_abschließen(&harness, &token, client_key(8))
+    let (ausgestellt, old_token) =
+        registriere_unbestaetigt(&harness, "anna@muster.at", client_key(4)).await;
+
+    // Unknown token fails cleanly without verifying the account.
+    let err = harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            EmailBestätigen {
+                token: SecretToken::try_from("A".repeat(43).as_str()).unwrap(),
+                client_key: client_key(5),
+            },
+        )
         .await
-        .expect("erster Abschluss gelingt");
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        EmailBestätigenFehler::UngültigerLink
+    ));
 
-    let zweiter = registriere_abschließen(&harness, &token, client_key(9)).await;
-    assert!(zweiter.is_err(), "ein verbrauchtes Token ist unbrauchbar");
-}
+    // Resend invalidates old token and mails a fresh one.
+    harness
+        .app()
+        .execute(
+            auth_aus(&ausgestellt),
+            EmailBestätigungErneutSenden {
+                client_key: client_key(6),
+            },
+        )
+        .await
+        .expect("resend succeeds");
+    let new_token =
+        SecretToken::try_from(harness.letztes_token().as_str()).expect("fresh token mailed");
+    assert_ne!(old_token.base64url(), new_token.base64url());
 
-async fn registriere_abschließen(
-    harness: &Harness,
-    token: &SecretToken,
-    client_key: ClientKey,
-) -> Result<SessionAusgestellt, error_stack::Report<RegistrierungAbschliessenFehler>> {
+    let old_err = harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            EmailBestätigen {
+                token: old_token,
+                client_key: client_key(7),
+            },
+        )
+        .await;
+    assert!(old_err.is_err(), "superseded token must fail");
+
     harness
         .app()
         .execute(
             AuthContext::Anonymous,
-            RegistrierungAbschließen {
-                token: token.clone(),
-                passwort: passwort(),
-                client_key,
+            EmailBestätigen {
+                token: new_token.clone(),
+                client_key: client_key(8),
             },
         )
         .await
+        .expect("fresh token confirms address");
+
+    let reuse = harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            EmailBestätigen {
+                token: new_token,
+                client_key: client_key(9),
+            },
+        )
+        .await;
+    assert!(reuse.is_err(), "spent confirmation token cannot be reused");
+}
+
+#[test_log::test(pollster::test)]
+async fn unverified_user_allowed_one_game_blocked_on_second_until_verified() {
+    let harness = harness().await;
+    let (session, token) =
+        registriere_unbestaetigt(&harness, "trial@muster.at", client_key(11)).await;
+    let auth = auth_aus(&session);
+
+    // Unverified user suppresses game-event emails, then enables them once verified.
+    assert!(
+        !session
+            .benutzer
+            .allows_email(BenachrichtigungArt::SpielGestartet)
+    );
+
+    // 1st game creation succeeds.
+    harness
+        .app()
+        .execute(
+            auth,
+            CreateGame {
+                title: NonEmptyString::neu("Erste Runde").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: None,
+            },
+        )
+        .await
+        .expect("unverified player can create 1 game");
+
+    // 2nd game create & join fail with EmailVerificationRequired.
+    let err = harness
+        .app()
+        .execute(
+            auth,
+            CreateGame {
+                title: NonEmptyString::neu("Zweite Runde").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        GameUseCaseError::EmailVerificationRequired
+    ));
+
+    // Verified host creates a game; unverified player cannot join a second game.
+    let host = registriere(&harness, "host-other@muster.at").await;
+    let host_game = harness
+        .app()
+        .execute(
+            auth_aus(&host),
+            CreateGame {
+                title: NonEmptyString::neu("Fremde Runde").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    let join_err = harness
+        .app()
+        .execute(
+            auth,
+            JoinGame {
+                invite_code: host_game.invite_code().clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        join_err.current_context(),
+        GameUseCaseError::EmailVerificationRequired
+    ));
+
+    // Confirm email -> limit lifts permanently and game emails re-enable.
+    harness
+        .app()
+        .execute(
+            AuthContext::Anonymous,
+            EmailBestätigen {
+                token,
+                client_key: client_key(12),
+            },
+        )
+        .await
+        .unwrap();
+
+    harness
+        .app()
+        .execute(
+            auth,
+            JoinGame {
+                invite_code: host_game.invite_code().clone(),
+            },
+        )
+        .await
+        .expect("verified user can join a second game");
 }
 
 // ------------------------------------------------------------------------- AC-5, AC-6
@@ -633,10 +713,7 @@ async fn ac12_löschung_entfernt_identität_und_gibt_die_adresse_frei() {
     );
 
     // The freed address can register again (rule 8).
-    let token = registrierung_starten(&harness, "anna@muster.at", client_key(22)).await;
-    registriere_abschließen(&harness, &token, client_key(23))
-        .await
-        .expect("die freigegebene Adresse kann sich neu registrieren");
+    registriere(&harness, "anna@muster.at").await;
 }
 
 #[test_log::test(pollster::test)]
@@ -773,7 +850,7 @@ async fn ac18_abgelaufenes_access_token_wird_abgelehnt() {
 async fn ac19_die_mail_trägt_einen_aufrufbaren_link() {
     let harness = harness().await;
 
-    registrierung_starten(&harness, "anna@muster.at", client_key(40)).await;
+    registriere_unbestaetigt(&harness, "anna@muster.at", client_key(40)).await;
 
     let mail = harness.mail().single();
     assert_eq!(mail.betreff(), "Bestätige deine E-Mail-Adresse");

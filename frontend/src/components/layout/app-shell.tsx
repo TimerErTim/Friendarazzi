@@ -128,35 +128,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex shrink-0 items-center gap-1.5">
             {isAuthenticated && benutzer.data ? (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  asChild
+                <Link
+                  href={paths.benachrichtigungen}
+                  aria-label={
+                    unreadCount > 0
+                      ? `Benachrichtigungen (${unreadCount} ungelesen)`
+                      : "Benachrichtigungen"
+                  }
+                  title="Benachrichtigungen"
                   className={cn(
-                    "size-12",
+                    "relative inline-flex size-12 shrink-0 items-center justify-center rounded-sm border-2 border-transparent text-ink transition-colors hover:border-control hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                     isNavItemActive(pathname, paths.benachrichtigungen, true) &&
                       "border-control bg-surface-muted",
                   )}
                 >
-                  <Link
-                    href={paths.benachrichtigungen}
-                    aria-label={
-                      unreadCount > 0
-                        ? `Benachrichtigungen (${unreadCount} ungelesen)`
-                        : "Benachrichtigungen"
-                    }
-                    title="Benachrichtigungen"
-                  >
-                    <span className="relative inline-flex items-center justify-center">
-                      <Bell className="size-6" aria-hidden="true" />
-                      {unreadCount > 0 ? (
-                        <span className="brutal-shadow-sm absolute -right-1.5 -bottom-1 inline-flex min-w-4.5 items-center justify-center rounded-full border-2 border-strong bg-pink px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-pink-foreground tabular-nums">
-                          {unreadCount > 99 ? "99+" : unreadCount}
-                        </span>
-                      ) : null}
-                    </span>
-                  </Link>
-                </Button>
+                  <span className="relative inline-flex items-center justify-center">
+                    <Bell className="size-7" aria-hidden="true" />
+                    {unreadCount > 0 ? (
+                      <span className="brutal-shadow-sm absolute -right-1.5 -bottom-1 inline-flex min-w-4.5 items-center justify-center rounded-full border-2 border-strong bg-pink px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-pink-foreground tabular-nums">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    ) : null}
+                  </span>
+                </Link>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button

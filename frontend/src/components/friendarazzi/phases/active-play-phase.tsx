@@ -270,41 +270,41 @@ export function ActivePlayPhase({
         ) : null}
 
         {pinnedTiles.length > 0 ? (
-          <div className="flex items-center gap-1.5 overflow-x-auto rounded-md border-2 border-info bg-surface px-2.5 py-1.5">
-            <Pin
-              className="size-3.5 shrink-0 rotate-45 fill-info text-info"
-              aria-hidden="true"
-            />
-            <span className="shrink-0 font-mono text-[10px] font-bold tracking-wider text-info uppercase">
-              Fokus
-            </span>
-            <div className="flex items-center gap-1.5">
+          <div className="border-l-2 border-info pl-2.5">
+            <p className="mb-0.5 flex items-center gap-1 font-mono text-[10px] font-bold tracking-wider text-info uppercase">
+              <Pin
+                className="size-3 rotate-45 fill-info text-info"
+                aria-hidden="true"
+              />
+              <span>Fokus</span>
+            </p>
+            <ul className="space-y-0.5">
               {pinnedTiles.map((tile) => (
-                <div
+                <li
                   key={tile.id}
-                  className="inline-flex shrink-0 items-center overflow-hidden rounded-sm border-2 border-info bg-info/10"
+                  className="flex items-center justify-between gap-2 text-xs leading-snug"
                 >
                   <button
                     type="button"
                     onClick={() => setSelectedTile(tile)}
-                    className="relative inline-flex h-8 max-w-52 cursor-pointer items-center gap-1 px-2 text-left text-xs font-bold text-ink before:absolute before:inset-x-0 before:-inset-y-[6px] before:content-[''] hover:bg-info/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                    className="relative min-w-0 flex-1 cursor-pointer py-0.5 text-left text-ink before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                   >
-                    <span className="shrink-0 font-mono text-[10px] font-bold uppercase">
+                    <span className="font-mono font-bold">
                       {tile.targetUser.displayName}:
-                    </span>
-                    <span className="truncate">{tile.promptText}</span>
+                    </span>{" "}
+                    <span className="font-medium">{tile.promptText}</span>
                   </button>
                   <button
                     type="button"
                     aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
                     onClick={() => handleTogglePinTile(tile.id)}
-                    className="relative inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center border-l border-info text-ink before:absolute before:-inset-[6px] before:content-[''] hover:bg-info/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                    className="relative inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-secondary before:absolute before:-inset-2 before:content-[''] hover:bg-info/15 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                   >
                     <X className="size-3.5" aria-hidden="true" />
                   </button>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         ) : null}
 

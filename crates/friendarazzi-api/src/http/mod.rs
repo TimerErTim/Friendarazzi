@@ -4,7 +4,7 @@ use error_stack::ResultExt;
 use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
-    domain::{BenachrichtigungId, BenutzerId, BoardTileId, GameId},
+    domain::{BenachrichtigungId, BenutzerId, BoardTileId, CaptureId, GameId},
     service::{
         AbmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError,
         PasswortWiederherstellenFehler, ProfileUseCaseError,
@@ -454,6 +454,30 @@ impl FriendarazziApiSpec {
         };
         self.app_api
             .capture_submit(auth, GameId(game_id.0), BoardTileId(tile_id.0), bytes)
+            .await
+            .into()
+    }
+
+    /// Retract the caller's own capture in an active game so the tile can be photographed again.
+    ///
+    /// Clears the tile capture link, deletes the capture row and stored media, and returns the updated game state.
+    #[oai(
+        path = "/games/:game_id/captures/:capture_id",
+        method = "delete",
+        tag = "ApiTag::Captures"
+    )]
+    async fn capture_retract(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+        capture_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .capture_retract(auth, GameId(game_id.0), CaptureId(capture_id.0))
             .await
             .into()
     }

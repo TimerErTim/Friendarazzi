@@ -570,6 +570,11 @@ impl CaptureRepository for FakeCaptureRepository {
             .cloned()
             .ok_or_else(|| Report::new(RepositoryError::NotFound))
     }
+
+    async fn delete(&self, capture: Versioned<Capture>) -> RepositoryResult<()> {
+        let mut captures = self.datastore.captures();
+        store_delete(&mut captures, capture.id(), &capture)
+    }
 }
 
 pub struct FakeDeckRepository {

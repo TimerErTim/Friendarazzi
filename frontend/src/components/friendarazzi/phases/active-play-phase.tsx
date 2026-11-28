@@ -1,15 +1,20 @@
 "use client";
 
 import {
+  Camera,
   ChevronDown,
   ChevronUp,
+  Download,
   EyeOff,
   LayoutGrid,
   List,
   Pin,
   PinOff,
+  RefreshCw,
+  Trash2,
   Upload,
   Users,
+  WifiOff,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -19,9 +24,10 @@ import {
   type BoardTileView,
   type CaptureFeedItem,
   type GameDetail,
+  GameStatus,
   VisibilityMode,
 } from "@/api/friendarazzi-api";
-import { useFriendarazziMutations } from "@/api/hooks";
+import { useBenutzerQuery, useFriendarazziMutations } from "@/api/hooks";
 import { BingoBoard } from "@/components/friendarazzi/bingo-board";
 import { CaptureUploadControl } from "@/components/friendarazzi/capture-upload-control";
 import { AuthenticatedImage } from "@/components/friendarazzi/media-image";
@@ -30,6 +36,7 @@ import {
   PlayerAvatar,
   PlayerBadgeLink,
 } from "@/components/friendarazzi/player-avatar";
+import { QuickCaptureSheet } from "@/components/friendarazzi/quick-capture-sheet";
 import { TargetGroupedBoard } from "@/components/friendarazzi/target-grouped-board";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +74,8 @@ import {
 import { newestCapturesFirst } from "@/lib/capture-feed";
 import { cn } from "@/lib/cn";
 import { normalizeImageForUpload } from "@/lib/media-capture";
+import type { CachedBoardTile } from "@/lib/offline-capture-queue";
+import { useOfflineCaptureQueue } from "@/lib/use-offline-capture-queue";
 
 const INITIAL_FEED_ITEMS = 3;
 
@@ -79,9 +88,13 @@ export function ActivePlayPhase({
   initialCaptureId?: string | null;
   onConsumeInitialCapture?: () => void;
 }) {
+  const me = useBenutzerQuery();
   const mutations = useFriendarazziMutations();
+  const queue = useOfflineCaptureQueue(game);
   const [selectedTile, setSelectedTile] = useState<BoardTileView | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [quickSheetOpen, setQuickSheetOpen] = useState(false);
+  const [initialTrayId, setInitialTrayId] = useState<string | null>(null);
   const [isPreparingUpload, setIsPreparingUpload] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [lightboxCapture, setLightboxCapture] =
@@ -212,6 +225,12 @@ export function ActivePlayPhase({
     if (!selectedTile || !selectedFile || isUploading) return;
     setIsPreparingUpload(true);
     try {
+      if (!queue.isOnline) {
+        await queue.enqueueForTile(selectedTile.id, selectedFile);
+        setSelectedTile(null);
+        setSelectedFile(null);
+        return;
+      }
       const normalized = await normalizeImageForUpload(selectedFile);
       await mutations.submitCapture.mutateAsync({
         gameId: game.id,
@@ -225,11 +244,24 @@ export function ActivePlayPhase({
     }
   }
 
+  const openTilesForQuickSheet: CachedBoardTile[] = (
+    board?.tiles.map((t) => ({
+      id: t.id,
+      promptText: t.promptText,
+      targetUserId: t.targetUser.id,
+      targetDisplayName: t.targetUser.displayName,
+      isCaptured: t.isCaptured,
+    })) ??
+    queue.cachedSnapshot?.tiles ??
+    []
+  ).filter((tile) => !tile.isCaptured);
+  const trayItems = queue.items.filter((item) => item.status === "tray");
+
   return (
     <div className="grid items-start gap-5 lg:grid-cols-[1.5fr_0.75fr]">
-      {/* Left: Compact progress + Crew popover directly above the hero board */}
+      {/* Left: Compact progress + Shutter CTA + Crew popover directly above the hero board */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <Progress
               value={pct}
@@ -241,68 +273,176 @@ export function ActivePlayPhase({
             </span>
           </div>
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="shrink-0 gap-1.5"
-              >
-                <Users className="size-4" aria-hidden="true" />
-                <span>Crew ({game.players.length})</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 p-3">
-              <p className="mb-2 font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
-                Mitspieler ({game.players.length})
-              </p>
-              <ul className="divide-y divide-subtle">
-                {game.players.map((p) => {
-                  const isBoardTarget = boardTargets.some(
-                    (target) => target.id === p.id,
-                  );
-                  const isPinned = pinnedTargetSet.has(p.id);
-                  return (
-                    <li
-                      key={p.id}
-                      className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <PlayerBadgeLink user={p} compact />
-                      </div>
-                      {isBoardTarget ? (
-                        <Button
-                          type="button"
-                          variant={isPinned ? "primary" : "ghost"}
-                          size="icon"
-                          aria-pressed={isPinned}
-                          aria-label={
-                            isPinned
-                              ? `${p.displayName} aus Fokus entfernen`
-                              : `${p.displayName} anheften`
-                          }
-                          title={
-                            isPinned
-                              ? "Aus Fokus entfernen"
-                              : "Im Fokus anheften"
-                          }
-                          onClick={() => handleTogglePin(p.id)}
-                        >
-                          {isPinned ? (
-                            <PinOff className="size-4" aria-hidden="true" />
-                          ) : (
-                            <Pin className="size-4" aria-hidden="true" />
-                          )}
-                        </Button>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </PopoverContent>
-          </Popover>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                setInitialTrayId(null);
+                setQuickSheetOpen(true);
+              }}
+            >
+              <Camera className="size-4" aria-hidden="true" />
+              <span>
+                Schnellfoto
+                {trayItems.length > 0 ? ` (${trayItems.length})` : ""}
+              </span>
+            </Button>
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0 gap-1.5"
+                >
+                  <Users className="size-4" aria-hidden="true" />
+                  <span>Crew ({game.players.length})</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-3">
+                <p className="mb-2 font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
+                  Mitspieler ({game.players.length})
+                </p>
+                <ul className="divide-y divide-subtle">
+                  {game.players.map((p) => {
+                    const isBoardTarget = boardTargets.some(
+                      (target) => target.id === p.id,
+                    );
+                    const isPinned = pinnedTargetSet.has(p.id);
+                    return (
+                      <li
+                        key={p.id}
+                        className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <PlayerBadgeLink user={p} compact />
+                        </div>
+                        {isBoardTarget ? (
+                          <Button
+                            type="button"
+                            variant={isPinned ? "primary" : "ghost"}
+                            size="icon"
+                            aria-pressed={isPinned}
+                            aria-label={
+                              isPinned
+                                ? `${p.displayName} aus Fokus entfernen`
+                                : `${p.displayName} anheften`
+                            }
+                            title={
+                              isPinned
+                                ? "Aus Fokus entfernen"
+                                : "Im Fokus anheften"
+                            }
+                            onClick={() => handleTogglePin(p.id)}
+                          >
+                            {isPinned ? (
+                              <PinOff className="size-4" aria-hidden="true" />
+                            ) : (
+                              <Pin className="size-4" aria-hidden="true" />
+                            )}
+                          </Button>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
+
+        {!queue.isOnline || queue.items.length > 0 ? (
+          <section
+            aria-label="Offline-Warteschlange und Foto-Ablage"
+            className="brutal-shadow-sm space-y-2 rounded-md border-2 border-strong bg-surface p-3"
+          >
+            {!queue.isOnline ? (
+              <p className="flex items-center gap-2 font-mono text-xs font-bold text-ink">
+                <WifiOff className="size-4 shrink-0" aria-hidden="true" />
+                Offline – Fotos bleiben lokal gespeichert und werden bei Netz
+                automatisch hochgeladen.
+              </p>
+            ) : null}
+
+            {queue.items.map((item) => {
+              const targetTile = board.tiles.find((t) => t.id === item.tileId);
+              return (
+                <div
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-sm border-2 border-subtle bg-surface-muted px-2.5 py-2 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-bold text-ink">
+                      {item.status === "tray"
+                        ? "Schnappschuss in Ablage (noch keinem Feld zugeordnet)"
+                        : (targetTile?.promptText ?? item.fileName)}
+                    </p>
+                    <p className="font-mono text-[11px] text-secondary">
+                      {item.status === "tray"
+                        ? "Bereit zum Zuordnen"
+                        : item.status === "pending"
+                          ? "Wartet auf Upload …"
+                          : item.status === "uploading"
+                            ? "Wird hochgeladen …"
+                            : (item.errorMessage ?? "Upload fehlgeschlagen")}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                    {item.status === "tray" ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setInitialTrayId(item.id);
+                          setQuickSheetOpen(true);
+                        }}
+                      >
+                        Zuordnen
+                      </Button>
+                    ) : null}
+                    {item.status === "conflict_ended" ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => queue.downloadItem(item)}
+                      >
+                        <Download className="size-3.5" aria-hidden="true" />
+                        Lokal speichern
+                      </Button>
+                    ) : null}
+                    {item.status === "error" ||
+                    (item.status === "pending" && queue.isOnline) ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void queue.retryItem(item.id)}
+                      >
+                        <RefreshCw className="size-3.5" aria-hidden="true" />
+                        Senden
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Lokales Foto entfernen"
+                      onClick={() => void queue.removeItem(item.id)}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        ) : null}
 
         {/* Hunt Toolbar: Grid/List toggle, Hide Captured, Search */}
         <div className="flex flex-wrap items-center gap-2">
@@ -658,6 +798,20 @@ export function ActivePlayPhase({
       <PhotoLightbox
         capture={lightboxCapture}
         open={Boolean(lightboxCapture)}
+        canRetract={Boolean(
+          lightboxCapture &&
+            lightboxCapture.catcher.id === me.data?.id &&
+            game.status === GameStatus.Active,
+        )}
+        isRetracting={mutations.retractCapture.isPending}
+        retractError={mutations.retractCapture.error}
+        onRetract={async (cap) => {
+          await mutations.retractCapture.mutateAsync({
+            gameId: game.id,
+            captureId: cap.id,
+          });
+          setLightboxCapture(null);
+        }}
         onOpenChange={(open) => {
           if (!open) {
             setLightboxCapture(null);
@@ -666,6 +820,19 @@ export function ActivePlayPhase({
             }
           }
         }}
+      />
+
+      <QuickCaptureSheet
+        open={quickSheetOpen}
+        onOpenChange={setQuickSheetOpen}
+        openTiles={openTilesForQuickSheet}
+        trayItems={trayItems}
+        initialSelectedTrayId={initialTrayId}
+        onAddTrayPhoto={(file) => queue.enqueueTrayPhoto(file)}
+        onAssignTrayItem={(itemId, tileId) =>
+          queue.assignAndEnqueue(itemId, tileId)
+        }
+        onDiscardTrayItem={(itemId) => queue.removeItem(itemId)}
       />
     </div>
   );

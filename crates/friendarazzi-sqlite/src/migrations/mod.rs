@@ -15,6 +15,7 @@ mod v0005_target_agnostic_starter_decks;
 mod v0006_draft_deadline_and_expanded_decks;
 mod v0007_game_deadline_and_completion_reason;
 mod v0008_email_verified_at;
+mod v0009_oidc_identity_providers;
 
 type Registry = MigrationRegistry<dyn UpMigration<libsql::Transaction, libsql::Error>>;
 
@@ -29,6 +30,7 @@ pub static MIGRATIONS: LazyLock<Registry> = LazyLock::new(|| {
     registry.add(v0006_draft_deadline_and_expanded_decks::Migration);
     registry.add(v0007_game_deadline_and_completion_reason::Migration);
     registry.add(v0008_email_verified_at::Migration);
+    registry.add(v0009_oidc_identity_providers::Migration);
     registry
 });
 

@@ -3,6 +3,8 @@ import {
   type components,
   GameStatus,
   NotificationKind,
+  OidcAccountActionMode,
+  OidcProviderKindSchema,
   PromptSource,
   SuperlativeKind,
   VisibilityMode,
@@ -12,6 +14,8 @@ export {
   CompletionReason,
   GameStatus,
   NotificationKind,
+  OidcAccountActionMode,
+  OidcProviderKindSchema,
   PromptSource,
   SuperlativeKind,
   VisibilityMode,
@@ -81,6 +85,16 @@ export interface FriendarazziApi {
   profileUploadAvatar(file: File): Promise<UserProfile>;
 
   // ---------------------------------------------------------------- Konto
+  authProviders(): Promise<OidcProvidersResponse>;
+  oidcLoginStartUrl(providerId: string, nextPath?: string): string;
+  oidcExchange(code: string): Promise<void>;
+  loginMethods(): Promise<LoginMethodsResponse>;
+  oidcStartAccountAction(
+    providerId: string,
+    mode: OidcAccountActionMode,
+  ): Promise<string>;
+  unlinkExternalIdentity(identityId: string): Promise<void>;
+  setInitialPassword(passwort: string): Promise<void>;
   registrieren(input: RegistrierungInput): Promise<void>;
   emailBestaetigen(token: string): Promise<void>;
   emailBestaetigungErneutSenden(): Promise<void>;
@@ -88,7 +102,7 @@ export interface FriendarazziApi {
   passwortVergessen(eMailAdresse: string): Promise<void>;
   passwortWiederherstellen(token: string, neuesPasswort: string): Promise<void>;
   benutzerAbrufen(): Promise<AuthenticatedBenutzer>;
-  benutzerLoeschen(passwort: string, bestaetigt: boolean): Promise<void>;
+  benutzerLoeschen(input: BenutzerLoeschungInput): Promise<void>;
 }
 
 export type AuthPhase =
@@ -106,6 +120,15 @@ export interface AuthSession {
 
 export type AuthenticatedBenutzer =
   components["schemas"]["AuthenticatedBenutzer"];
+export type OidcProviderItem = components["schemas"]["OidcProviderItem"];
+export type OidcProvidersResponse =
+  components["schemas"]["OidcProvidersResponse"];
+export type LinkedExternalIdentity =
+  components["schemas"]["LinkedExternalIdentity"];
+export type LoginMethodsResponse =
+  components["schemas"]["LoginMethodsResponse"];
+export type BenutzerLoeschungInput =
+  components["schemas"]["BenutzerLoeschungRequest"];
 export type PlayerBadge = components["schemas"]["PlayerBadge"];
 export type UserProfile = components["schemas"]["UserProfile"];
 export type StarterDeck = components["schemas"]["StarterDeck"];

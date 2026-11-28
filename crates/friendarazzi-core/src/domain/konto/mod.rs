@@ -38,6 +38,7 @@ use chrono::Duration;
 mod bestaetigung;
 mod claims;
 mod konto;
+mod oidc;
 mod passwort;
 mod passwort_wiederherstellung;
 mod session;
@@ -47,6 +48,13 @@ mod token;
 pub use bestaetigung::{BestätigungId, EmailBestätigung, NeueBestätigung};
 pub use claims::{AccessTokenClaims, TokenId};
 pub use konto::{Konto, KontoId, NeuesKonto};
+pub use oidc::{
+    ExternalIdentity, ExternalIdentityId, NeueExternalIdentity, NeuerOidcAuthState,
+    NeuerOidcExchangeCode, OIDC_AUTH_STATE_GÜLTIGKEIT, OIDC_EXCHANGE_CODE_GÜLTIGKEIT,
+    OidcAuthState, OidcAuthStateId, OidcExchangeCode, OidcExchangeCodeId, OidcExchangePurpose,
+    OidcFlowMode, OidcProviderDescriptor, OidcProviderId, OidcProviderKind, VerifiedOidcIdentity,
+    pkce_s256_challenge,
+};
 pub use passwort::{
     HashedPasswort, KlartextPasswort, dummy_verify, hash_password, verify_password,
 };
@@ -106,4 +114,6 @@ pub enum KontoFehler {
     SigningKeyUngültig,
     #[error("es konnte kein Zufall erzeugt werden")]
     ZufallFehlgeschlagen,
+    #[error("der OIDC-Anbieter ist ungültig")]
+    OidcProviderUngültig,
 }

@@ -88,9 +88,10 @@ carried on the `Benutzer`; everything else is an `AnlageVerwaltung` inside one `
 - Single-step registration (`email`, `Passwort`, optional `displayName`) with immediate `Session`, explicit duplicate-email conflict (`409`), async `E-Mail-Adresse-Bestätigung`, throttled resend, and a 1-game limit until verified (see [ADR-0006](../decisions/0006-single-step-signup-and-unverified-trial.md)).
 - Login, logout, and session renewal.
 - Password reset for a forgotten `Passwort` (email link).
+- OAuth/OIDC external identity providers (Google, Apple, and generic OIDC; [see below](#external-identity-providers), [ADR-0007](../decisions/0007-oidc-external-identity-providers.md), #41).
 - Self-service deletion of the own `Benutzer`.
 - Sending transaction mail through a configured SMTP server; Mailpit in development and tests.
-- The distinction between `Benutzer` and `Konto` with one `Konto` per `Benutzer` in MVP.
+- The distinction between `Benutzer` and `Konto` (password credentials alongside zero or more external provider identities, including passwordless OIDC accounts).
 - Account-level authority (`Benutzer`, `Systemadministrator`) and the superuser's cross-product
   reach.
 
@@ -102,7 +103,6 @@ further down and a delivery issue; nothing here is implementable until that sect
 
 - Changing the account email ([later](#email-change), #29).
 - Changing the `Passwort` while logged in and session management ([later](#account-security), #30).
-- OAuth or other login providers (PO decision 2026-10-23; [later](#external-identity-providers), #32).
 - 2FA / TOTP ([later](#mfa), #31) and passkeys ([later](#passkeys), #33).
 - Authentication audit log and new-device notices ([later](#auth-audit), #35).
 - Notification preferences ([later](#notifications), #50).
@@ -477,29 +477,18 @@ Open questions:
 
 ### External identity providers
 
-Issue: #32. Depends on [multiple credentials](#multiple-credentials-per-benutzer).
+Issue: #41 (delivered alongside [ADR-0007](../decisions/0007-oidc-external-identity-providers.md)).
 
 Rules:
 
-1. Login uses OpenID Connect authorization code flow with PKCE. Client secrets stay server-side;
-   the static frontend never receives them.
-2. A first sign-in creates a `Benutzer` with one provider `Konto` and no `Passwort`, and starts a
-   normal `Anmelde-Sitzung` per [ADR-0004](../decisions/0004-jwt-refresh-auth.md).
-3. Linking a provider identity to an existing `Benutzer` requires proving an existing `Konto` first.
-   A provider login whose address already belongs to a `Benutzer` never links silently.
-4. `email_verified` is trusted only when the provider asserts it; otherwise the address follows the
-   [email verification](#email-verification) rules.
-5. Apple private-relay addresses are accepted, count as unverified for linking, and never merge two
-   `Benutzer`.
-6. Unlinking is refused when it would leave the `Benutzer` without any login method.
-7. A provider outage returns a clear error and does not lock the account; the password path keeps
-   working.
-8. Linking and unlinking are audited with provider and subject identifier, never with tokens.
-
-Open questions:
-
-- [ ] Q-10: Which providers at launch, and is Apple mandatory?
-- [ ] Q-11: May an existing password `Konto` add a provider, or is that new-account only?
+1. Login uses OpenID Connect authorization code flow with PKCE (`S256`) and validated `state` + `nonce`. Client secrets and Apple ES256 signing keys stay server-side; the static frontend never receives them.
+2. Supported providers are Google, Apple (`response_mode=form_post`), and generic OIDC providers configured via deployment environment variables. Only configured providers are published via `GET /api/auth/providers`.
+3. A first sign-in for an unknown `(provider, subject)` whose verified email does not match any existing `Benutzer` creates a verified `Benutzer` (`email_verified_at = now`) and an `ExternalIdentity` without a password `Konto`, and starts a normal `Anmelde-Sitzung` via a short-lived single-use exchange code (`POST /api/auth/oidc/exchange`).
+4. **No silent email linking**: if an OIDC sign-in returns an email already held by another `Benutzer`, the login is refused with an explicit conflict message instructing the person to sign in with their existing method and link the provider under `/optionen`.
+5. `email_verified` must be asserted by the provider (`true`). Unverified provider emails are rejected. Apple private-relay addresses with `email_verified = true` are accepted cleanly.
+6. Linking a provider identity (`POST /api/konto/anmeldemethoden/{provider}/start`) requires an authenticated `Benutzer`, and fails cleanly if `(provider, subject)` is already linked to another `Benutzer`.
+7. Unlinking an `ExternalIdentity` is refused (`409 Conflict`) when it would leave the `Benutzer` with neither a password `Konto` nor another `ExternalIdentity`.
+8. Passwordless OIDC `Benutzer` can set an initial password once (`POST /api/konto/passwort`) or confirm self-service `Benutzer-Löschung` via fresh OIDC re-authentication (`deleteReauth` exchange code) instead of a password.
 
 ### Passkeys
 

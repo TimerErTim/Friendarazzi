@@ -9,7 +9,8 @@ use std::fmt::Debug;
 use crate::application::ThreadSafeError;
 use crate::ports::{
     BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
-    DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
+    DeckRepository, EmailBestätigungRepository, ExternalIdentityRepository, GameRepository,
+    KontoRepository, OidcAuthStateRepository, OidcExchangeCodeRepository,
     PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
 };
 
@@ -129,6 +130,18 @@ impl UnitOfWork<'_> {
         self.as_impl().benachrichtigungen()
     }
 
+    pub fn external_identities(&self) -> &dyn ExternalIdentityRepository {
+        self.as_impl().external_identities()
+    }
+
+    pub fn oidc_auth_states(&self) -> &dyn OidcAuthStateRepository {
+        self.as_impl().oidc_auth_states()
+    }
+
+    pub fn oidc_exchange_codes(&self) -> &dyn OidcExchangeCodeRepository {
+        self.as_impl().oidc_exchange_codes()
+    }
+
     fn take_impl(&mut self) -> Box<dyn UnitOfWorkImpl + '_> {
         self.implementation
             .take()
@@ -197,6 +210,18 @@ impl UnitOfWorkImpl for LockedUnitOfWorkImpl<'_> {
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
         self.inner.benachrichtigungen()
     }
+
+    fn external_identities(&self) -> &dyn ExternalIdentityRepository {
+        self.inner.external_identities()
+    }
+
+    fn oidc_auth_states(&self) -> &dyn OidcAuthStateRepository {
+        self.inner.oidc_auth_states()
+    }
+
+    fn oidc_exchange_codes(&self) -> &dyn OidcExchangeCodeRepository {
+        self.inner.oidc_exchange_codes()
+    }
 }
 
 /// UoW Provider
@@ -216,6 +241,9 @@ pub trait UnitOfWorkImpl: Send + Sync {
     fn bestätigungen(&self) -> &dyn EmailBestätigungRepository;
     fn wiederherstellungen(&self) -> &dyn PasswortWiederherstellungRepository;
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository;
+    fn external_identities(&self) -> &dyn ExternalIdentityRepository;
+    fn oidc_auth_states(&self) -> &dyn OidcAuthStateRepository;
+    fn oidc_exchange_codes(&self) -> &dyn OidcExchangeCodeRepository;
 }
 
 #[async_trait]

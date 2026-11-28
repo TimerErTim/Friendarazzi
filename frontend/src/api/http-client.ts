@@ -5,6 +5,7 @@ import type {
   AuthenticatedBenutzer,
   AuthPhase,
   AuthSession,
+  BenutzerLoeschungInput,
   CaptureOutcome,
   CreateGameInput,
   DraftPromptRequestItem,
@@ -12,8 +13,11 @@ import type {
   GameDetail,
   GameInvitePreview,
   GameSummary,
+  LoginMethodsResponse,
   NotificationPreferences,
   NotificationsInbox,
+  OidcAccountActionMode,
+  OidcProvidersResponse,
   RegistrierungInput,
   StarterDeck,
   UnsubscribeOutcome,
@@ -517,6 +521,67 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
 
   // ---------------------------------------------------------------- Konto
 
+  async authProviders(): Promise<OidcProvidersResponse> {
+    return unwrap(await this.client.GET("/auth/providers"));
+  }
+
+  oidcLoginStartUrl(providerId: string, nextPath?: string): string {
+    const base = `${this.baseUrl}/auth/oidc/${encodeURIComponent(providerId)}/start`;
+    if (nextPath) {
+      return `${base}?next=${encodeURIComponent(nextPath)}`;
+    }
+    return base;
+  }
+
+  async oidcExchange(code: string): Promise<void> {
+    const result = await unwrap(
+      await this.client.POST("/auth/oidc/exchange", {
+        body: { code },
+      }),
+    );
+    this.setAccessToken(result.accessToken);
+  }
+
+  async loginMethods(): Promise<LoginMethodsResponse> {
+    return this.authenticated(() =>
+      this.client.GET("/konto/anmeldemethoden", {
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async oidcStartAccountAction(
+    providerId: string,
+    mode: OidcAccountActionMode,
+  ): Promise<string> {
+    const res = await this.authenticated(() =>
+      this.client.POST("/konto/anmeldemethoden/{provider}/start", {
+        params: { path: { provider: providerId } },
+        body: { mode },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+    return res.authorizationUrl;
+  }
+
+  async unlinkExternalIdentity(identityId: string): Promise<void> {
+    await this.authenticated(() =>
+      this.client.DELETE("/konto/anmeldemethoden/{identity_id}", {
+        params: { path: { identity_id: identityId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async setInitialPassword(passwort: string): Promise<void> {
+    await this.authenticated(() =>
+      this.client.POST("/konto/passwort", {
+        body: { passwort },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
   async registrieren(input: RegistrierungInput): Promise<void> {
     const result = await unwrap(
       await this.client.POST("/registrierung", {
@@ -577,10 +642,10 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
     );
   }
 
-  async benutzerLoeschen(passwort: string, bestaetigt: boolean): Promise<void> {
+  async benutzerLoeschen(input: BenutzerLoeschungInput): Promise<void> {
     await this.authenticated(() =>
       this.client.POST("/benutzer/loeschung", {
-        body: { passwort, bestaetigt },
+        body: input,
         headers: this.authorizationHeaders(),
       }),
     );

@@ -8,12 +8,15 @@ use tracing::{instrument, trace};
 use crate::ResultReport;
 use crate::application::instrumented_repos::RepoStorage;
 use crate::application::uow::UnitOfWorkImpl;
+use crate::domain::konto::{OidcProviderDescriptor, OidcProviderId, VerifiedOidcIdentity};
 use crate::ports::{
     BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository, ClientKey,
-    DeckRepository, EmailBestätigungRepository, EventQueue, EventQueueError, GameRepository,
-    KontoRepository, Mail, MailError, MailSender, ObjectStore, ObjectStoreError, ObjectStream,
-    PasswortWiederherstellungRepository, PdfDokument, PdfRenderError, PdfRenderer,
-    RepositoryResult, RngSource, SessionRepository, Throttle, ThrottleAction, ThrottleError,
+    DeckRepository, EmailBestätigungRepository, EventQueue, EventQueueError,
+    ExternalIdentityRepository, GameRepository, KontoRepository, Mail, MailError, MailSender,
+    ObjectStore, ObjectStoreError, ObjectStream, OidcAuthStateRepository, OidcClientError,
+    OidcExchangeCodeRepository, OidcProviderClient, PasswortWiederherstellungRepository,
+    PdfDokument, PdfRenderError, PdfRenderer, RepositoryResult, RngSource, SessionRepository,
+    Throttle, ThrottleAction, ThrottleError,
 };
 use crate::service::Event;
 
@@ -207,6 +210,69 @@ impl UnitOfWorkImpl for InstrumentedUnitOfWork {
 
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
         &self.storage.benachrichtigungen
+    }
+
+    fn external_identities(&self) -> &dyn ExternalIdentityRepository {
+        &self.storage.external_identities
+    }
+
+    fn oidc_auth_states(&self) -> &dyn OidcAuthStateRepository {
+        &self.storage.oidc_auth_states
+    }
+
+    fn oidc_exchange_codes(&self) -> &dyn OidcExchangeCodeRepository {
+        &self.storage.oidc_exchange_codes
+    }
+}
+
+#[derive(Clone)]
+pub struct InstrumentedOidcProviderClient {
+    inner: Arc<dyn OidcProviderClient>,
+}
+
+impl InstrumentedOidcProviderClient {
+    pub fn new(inner: Arc<dyn OidcProviderClient>) -> Arc<dyn OidcProviderClient> {
+        Arc::new(Self { inner })
+    }
+}
+
+#[async_trait]
+impl OidcProviderClient for InstrumentedOidcProviderClient {
+    fn configured_providers(&self) -> Vec<OidcProviderDescriptor> {
+        self.inner.configured_providers()
+    }
+
+    #[instrument(skip(self, state, nonce, code_challenge), fields(provider = provider_id.as_str()), level = "debug", err(Debug))]
+    async fn build_authorization_url(
+        &self,
+        provider_id: &OidcProviderId,
+        state: &str,
+        nonce: &str,
+        code_challenge: &str,
+    ) -> ResultReport<String, OidcClientError> {
+        self.inner
+            .build_authorization_url(provider_id, state, nonce, code_challenge)
+            .await
+    }
+
+    #[instrument(skip(self, authorization_code, pkce_verifier, expected_nonce), fields(provider = provider_id.as_str()), level = "debug", err(Debug))]
+    async fn exchange_and_verify(
+        &self,
+        provider_id: &OidcProviderId,
+        authorization_code: &str,
+        pkce_verifier: &str,
+        expected_nonce: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> ResultReport<VerifiedOidcIdentity, OidcClientError> {
+        self.inner
+            .exchange_and_verify(
+                provider_id,
+                authorization_code,
+                pkce_verifier,
+                expected_nonce,
+                now,
+            )
+            .await
     }
 }
 

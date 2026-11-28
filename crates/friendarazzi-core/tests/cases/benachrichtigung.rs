@@ -435,7 +435,8 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
         .execute(
             dave,
             BenutzerLöschen {
-                passwort: KlartextPasswort::neu(super::helpers::TEST_PASSWORT).unwrap(),
+                passwort: Some(KlartextPasswort::neu(super::helpers::TEST_PASSWORT).unwrap()),
+                reauth_code: None,
                 bestätigt: true,
             },
         )

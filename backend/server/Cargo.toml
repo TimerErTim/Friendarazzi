@@ -12,6 +12,7 @@ friendarazzi-sqlite = { path = "../../crates/friendarazzi-sqlite", features = ["
 friendarazzi-scheduler = { path = "../scheduler", default-features = false }
 friendarazzi-api = { path = "../../crates/friendarazzi-api" }
 friendarazzi-filesystemstore = { path = "../../crates/friendarazzi-filesystemstore" }
+friendarazzi-oidc = { path = "../../crates/friendarazzi-oidc" }
 friendarazzi-smtp = { path = "../../crates/friendarazzi-smtp" }
 
 thiserror = { workspace = true }

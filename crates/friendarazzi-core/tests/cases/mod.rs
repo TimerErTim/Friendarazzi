@@ -6,4 +6,5 @@ mod benachrichtigung;
 mod capture;
 mod game;
 mod konto;
+mod oidc;
 mod profile;

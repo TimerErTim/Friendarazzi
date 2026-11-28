@@ -6,7 +6,8 @@ use friendarazzi_core::{
     ErrorReportExt, ResultReport,
     ports::{
         BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
-        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
+        DeckRepository, EmailBestätigungRepository, ExternalIdentityRepository, GameRepository,
+        KontoRepository, OidcAuthStateRepository, OidcExchangeCodeRepository,
         PasswortWiederherstellungRepository, RepositoryError, RepositoryResult, SessionRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
@@ -19,8 +20,9 @@ use crate::{
     repos::{
         SQLiteBenachrichtigungRepository, SQLiteBenutzerRepository, SQLiteBoardRepository,
         SQLiteCaptureRepository, SQLiteDeckRepository, SQLiteEmailBestätigungRepository,
-        SQLiteGameRepository, SQLiteKontoRepository, SQLitePasswortWiederherstellungRepository,
-        SQLiteSessionRepository,
+        SQLiteExternalIdentityRepository, SQLiteGameRepository, SQLiteKontoRepository,
+        SQLiteOidcAuthStateRepository, SQLiteOidcExchangeCodeRepository,
+        SQLitePasswortWiederherstellungRepository, SQLiteSessionRepository,
     },
 };
 
@@ -38,6 +40,9 @@ pub struct SQLiteUnitOfWork {
     bestätigung_repo: SQLiteEmailBestätigungRepository,
     wiederherstellung_repo: SQLitePasswortWiederherstellungRepository,
     benachrichtigung_repo: SQLiteBenachrichtigungRepository,
+    external_identity_repo: SQLiteExternalIdentityRepository,
+    oidc_auth_state_repo: SQLiteOidcAuthStateRepository,
+    oidc_exchange_code_repo: SQLiteOidcExchangeCodeRepository,
 }
 
 #[async_trait]
@@ -61,6 +66,9 @@ impl UnitOfWorkProvider for SQLiteInstance {
             bestätigung_repo: SQLiteEmailBestätigungRepository { tx: tx.clone() },
             wiederherstellung_repo: SQLitePasswortWiederherstellungRepository { tx: tx.clone() },
             benachrichtigung_repo: SQLiteBenachrichtigungRepository { tx: tx.clone() },
+            external_identity_repo: SQLiteExternalIdentityRepository { tx: tx.clone() },
+            oidc_auth_state_repo: SQLiteOidcAuthStateRepository { tx: tx.clone() },
+            oidc_exchange_code_repo: SQLiteOidcExchangeCodeRepository { tx: tx.clone() },
             tx,
         }))
     }
@@ -122,5 +130,17 @@ impl UnitOfWorkImpl for SQLiteUnitOfWork {
 
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
         &self.benachrichtigung_repo
+    }
+
+    fn external_identities(&self) -> &dyn ExternalIdentityRepository {
+        &self.external_identity_repo
+    }
+
+    fn oidc_auth_states(&self) -> &dyn OidcAuthStateRepository {
+        &self.oidc_auth_state_repo
+    }
+
+    fn oidc_exchange_codes(&self) -> &dyn OidcExchangeCodeRepository {
+        &self.oidc_exchange_code_repo
     }
 }

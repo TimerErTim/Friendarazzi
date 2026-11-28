@@ -32,6 +32,27 @@ export function useHealthQuery() {
   });
 }
 
+export function useAuthProvidersQuery() {
+  const { api } = useFriendarazziApi();
+  return useQuery({
+    queryKey: friendarazziKeys.authProviders(),
+    queryFn: () => api.authProviders(),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+export function useLoginMethodsQuery() {
+  const { api } = useFriendarazziApi();
+  const phase = useAuth();
+  return useQuery({
+    queryKey: friendarazziKeys.loginMethods(),
+    queryFn: () => api.loginMethods(),
+    enabled: phase.status === "authenticated",
+    retry: false,
+  });
+}
+
 export function useBenutzerQuery() {
   const { api } = useFriendarazziApi();
   const phase = useAuth();

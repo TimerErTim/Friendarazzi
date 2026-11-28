@@ -33,6 +33,7 @@ pub mod game;
 pub mod health;
 pub mod konto;
 pub mod mailpit;
+pub mod oidc;
 pub mod profile;
 pub mod spec;
 
@@ -52,7 +53,7 @@ pub fn test_signing_key() -> InMemorySigning {
 }
 
 pub fn test_konfiguration() -> IdentityProviderConfiguration {
-    IdentityProviderConfiguration::neu(ISSUER, AUDIENCE)
+    IdentityProviderConfiguration::neu(ISSUER, AUDIENCE).with_frontend_basis_url(FRONTEND_BASIS_URL)
 }
 
 /// A built app plus the fakes a test has to reach into.
@@ -68,6 +69,39 @@ impl E2eHarness {
     pub async fn new() -> Self {
         let database = Arc::new(TempDir::new("friendarazzi-e2e").unwrap());
         Self::mit_datenbank_in(Arc::clone(&database), Arc::new(test_signing_key())).await
+    }
+
+    pub async fn with_oidc(
+        oidc_client: Arc<dyn friendarazzi_core::ports::OidcProviderClient>,
+    ) -> Self {
+        let database = Arc::new(TempDir::new("friendarazzi-e2e").unwrap());
+        let path = database.path().join("friendarazzi.db");
+        let sqlite = SQLiteInstance::local(&path).await.unwrap();
+        sqlite.migrate_repos_to_latest().await.unwrap();
+
+        let clock = Arc::new(FixedClock::new(
+            DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+        ));
+        let mail = Arc::new(FakeMailSender::new());
+
+        let app = App::builder()
+            .uow_provider(Box::new(sqlite))
+            .object_store(Arc::new(FileSystemObjectStore::in_temp_dir().unwrap()))
+            .signing(Arc::new(test_signing_key()))
+            .throttle(Arc::new(InMemoryThrottle::new()))
+            .mail_sender(Arc::clone(&mail) as Arc<dyn friendarazzi_core::ports::MailSender>)
+            .oidc_client(oidc_client)
+            .konto(test_konfiguration())
+            .clock(Arc::clone(&clock) as Arc<dyn Clock>)
+            .rng(Arc::new(FixedRng::default()))
+            .build();
+
+        Self {
+            client: FriendarazziApiTestClient::new(app),
+            mail,
+            clock,
+            database,
+        }
     }
 
     /// A harness whose database survives this process, so `neustart_mit_anderem_schlüssel`

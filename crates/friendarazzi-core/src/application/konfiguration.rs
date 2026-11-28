@@ -13,6 +13,8 @@ pub struct IdentityProviderConfiguration {
     pub issuer: String,
     /// `aud` claim of every access token this deployment issues.
     pub audience: String,
+    /// Frontend origin where OIDC browser redirects land. `None` emits relative paths.
+    pub frontend_basis_url: Option<String>,
 }
 
 impl IdentityProviderConfiguration {
@@ -20,7 +22,14 @@ impl IdentityProviderConfiguration {
         Self {
             issuer: issuer.into(),
             audience: audience.into(),
+            frontend_basis_url: None,
         }
+    }
+
+    pub fn with_frontend_basis_url(mut self, url: impl Into<String>) -> Self {
+        let trimmed = url.into().trim_end_matches('/').to_owned();
+        self.frontend_basis_url = (!trimmed.is_empty()).then_some(trimmed);
+        self
     }
 }
 

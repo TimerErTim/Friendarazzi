@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- External OIDC sign-in & account linking: players can sign in with configured external identity providers (Google, Apple, and generic OIDC providers), manage linked login methods and set a local password for passwordless accounts in `/optionen`, and confirm passwordless account deletion via fresh provider re-authentication. Existing accounts with the same email are never merged silently and instead guide players to link providers from `/optionen`.
 - Single-step signup & immediate play: new players register in one step (email, password, optional display name) with explicit duplicate-email feedback, start playing immediately for one round while unverified (`email_verified_at`), and can confirm their email asynchronously via `/registrierung?token=...` or resend the link from the verification banner to unlock unlimited games and game-event emails.
 - Public invite ticket preview: guests opening `/join?code=...` see the safe game title, grid size, player count, and status before creating an account or signing in.
 - Full game & roster lifecycle controls: players can leave a game during Lobby or Drafting (with automatic host transfer if the host departs, and automatic return to Lobby if fewer than 3 players remain), hosts can remove disruptive players, transfer host ownership, or abandon a game cleanly without awarding Gold Medals, and latecomers can join an already active round to receive an instant starter-deck board.

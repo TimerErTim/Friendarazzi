@@ -7,12 +7,16 @@ use error_stack::{Report, ResultExt};
 use friendarazzi_api::{errors::InternalServerError, openapi_service};
 use friendarazzi_core::{
     App,
-    adapters::{InMemorySigning, InMemoryThrottle, NullMailSender},
+    adapters::{InMemorySigning, InMemoryThrottle, NullMailSender, NullOidcProviderClient},
     application::IdentityProviderConfiguration,
-    domain::EmailAdresse,
-    ports::MailSender,
+    domain::{EmailAdresse, konto::OidcProviderId},
+    ports::{MailSender, OidcProviderClient},
 };
 use friendarazzi_filesystemstore::FileSystemObjectStore;
+use friendarazzi_oidc::{
+    AppleOidcConfig, GenericOidcConfig, GoogleOidcConfig, HttpOidcProviderClient,
+    OidcProvidersConfig,
+};
 use friendarazzi_scheduler::{FriendarazziScheduler, FriendarazziSchedulerConfig};
 use friendarazzi_smtp::{SmtpKonfiguration, SmtpMailSender, Verschlüsselung};
 use friendarazzi_sqlite::{
@@ -260,6 +264,123 @@ fn ensure_database_directory(database_url: &str) -> Result<(), Report<BackendSer
     Ok(())
 }
 
+fn lade_oidc_client(
+    config: &config::ServerConfig,
+    callback_base_url: &str,
+) -> Result<Arc<dyn OidcProviderClient>, Report<BackendServerError>> {
+    let google = match (
+        config
+            .oidc_google_client_id
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+        config
+            .oidc_google_client_secret
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+    ) {
+        (Some(id), Some(secret)) => Some(GoogleOidcConfig::new(id, secret)),
+        (None, None) => None,
+        _ => {
+            return Err(Report::new(BackendServerError)
+                .attach("Google OIDC requires both client ID and client secret"));
+        }
+    };
+
+    let apple = match (
+        config
+            .oidc_apple_client_id
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+        config
+            .oidc_apple_team_id
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+        config
+            .oidc_apple_key_id
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+    ) {
+        (Some(client_id), Some(team_id), Some(key_id)) => {
+            let pem = if let Some(inline) = config
+                .oidc_apple_private_key_pem
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+            {
+                inline.to_owned()
+            } else if let Some(path) = &config.oidc_apple_private_key_path {
+                std::fs::read_to_string(path).map_err(|source| {
+                    Report::new(BackendServerError).attach(format!(
+                        "Apple OIDC key `{}` cannot be read ({source})",
+                        path.display()
+                    ))
+                })?
+            } else {
+                return Err(Report::new(BackendServerError)
+                    .attach("Apple OIDC requires private key PEM or path"));
+            };
+            Some(AppleOidcConfig::new(client_id, team_id, key_id, pem))
+        }
+        (None, None, None) => None,
+        _ => {
+            return Err(Report::new(BackendServerError)
+                .attach("Apple OIDC requires client_id, team_id, key_id, and private key"));
+        }
+    };
+
+    let mut generic = Vec::new();
+    match (
+        config.oidc_generic_id.as_deref().filter(|s| !s.is_empty()),
+        config
+            .oidc_generic_display_name
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+        config
+            .oidc_generic_issuer
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+        config
+            .oidc_generic_client_id
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+        config
+            .oidc_generic_client_secret
+            .as_deref()
+            .filter(|s| !s.is_empty()),
+    ) {
+        (Some(id_raw), display_opt, Some(issuer), Some(client_id), Some(client_secret)) => {
+            let id = OidcProviderId::parse(id_raw).map_err(|err| {
+                Report::new(BackendServerError).attach(format!(
+                    "invalid generic OIDC provider id `{id_raw}`: {err}"
+                ))
+            })?;
+            generic.push(GenericOidcConfig {
+                id,
+                display_name: display_opt.unwrap_or("SSO").to_owned(),
+                issuer_url: issuer.to_owned(),
+                client_id: client_id.to_owned(),
+                client_secret: client_secret.to_owned(),
+                scopes: config.oidc_generic_scopes.clone(),
+            });
+        }
+        (None, _, None, None, None) => {}
+        _ => {
+            return Err(Report::new(BackendServerError)
+                .attach("Generic OIDC requires id, issuer, client_id, and client_secret"));
+        }
+    }
+
+    if google.is_none() && apple.is_none() && generic.is_empty() {
+        return Ok(Arc::new(NullOidcProviderClient));
+    }
+
+    Ok(Arc::new(HttpOidcProviderClient::new(OidcProvidersConfig {
+        callback_base_url: callback_base_url.to_owned(),
+        google,
+        apple,
+        generic,
+    })))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Report<BackendServerError>> {
     let config = config::load().change_context(BackendServerError)?;
@@ -292,12 +413,22 @@ async fn main() -> Result<(), Report<BackendServerError>> {
     let object_store = FileSystemObjectStore::new(config.object_store_dir.clone())
         .change_context(BackendServerError)?;
 
+    let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
+    let api_url = config
+        .public_url
+        .as_deref()
+        .and_then(normalize_public_url)
+        .map(|public_url| public_url.api_url)
+        .unwrap_or_else(|| local_api_url.clone());
+
     let signing_key = build_signing_key(&config)?;
     let mail_sender = lade_mail_sender(&config)?;
+    let oidc_client = lade_oidc_client(&config, &api_url)?;
     let konto = IdentityProviderConfiguration::neu(
         config.token_issuer.clone(),
         config.token_audience.clone(),
-    );
+    )
+    .with_frontend_basis_url(config.frontend_basis_url.clone());
 
     let app = App::builder()
         .uow_provider(Box::new(sqlite.clone()))
@@ -305,6 +436,7 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .signing(Arc::new(signing_key))
         .throttle(Arc::new(InMemoryThrottle::new()))
         .mail_sender(mail_sender)
+        .oidc_client(oidc_client)
         .event_queue(Arc::clone(&event_queue))
         .konto(konto)
         .build();
@@ -323,13 +455,6 @@ async fn main() -> Result<(), Report<BackendServerError>> {
         .start_with_handle(FriendarazziSchedulerConfig::default());
     let sched_worker = tokio::spawn(sched_fut);
 
-    let local_api_url = format!("http://{}:{}/api", config.bind_address, config.bind_port);
-    let api_url = config
-        .public_url
-        .as_deref()
-        .and_then(normalize_public_url)
-        .map(|public_url| public_url.api_url)
-        .unwrap_or_else(|| local_api_url.clone());
     let api_service = openapi_service(app, [api_url.clone()]);
 
     let tracing = Tracing.combine(RequestId::new().reuse_id(ReuseId::Use));

@@ -5,7 +5,8 @@ use error_stack::Report;
 use friendarazzi_core::{
     ports::{
         BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
-        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
+        DeckRepository, EmailBestätigungRepository, ExternalIdentityRepository, GameRepository,
+        KontoRepository, OidcAuthStateRepository, OidcExchangeCodeRepository,
         PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
     },
     uow::{UnitOfWorkImpl, UnitOfWorkProvider},
@@ -14,8 +15,9 @@ use friendarazzi_core::{
 use crate::repository::{
     FakeBenachrichtigungRepository, FakeBenutzerRepository, FakeBoardRepository,
     FakeCaptureRepository, FakeDatastore, FakeDeckRepository, FakeEmailBestätigungRepository,
-    FakeGameRepository, FakeKontoRepository, FakePasswortWiederherstellungRepository,
-    FakeSessionRepository,
+    FakeExternalIdentityRepository, FakeGameRepository, FakeKontoRepository,
+    FakeOidcAuthStateRepository, FakeOidcExchangeCodeRepository,
+    FakePasswortWiederherstellungRepository, FakeSessionRepository,
 };
 
 pub struct FakeUnitOfWorkProvider {
@@ -68,6 +70,9 @@ pub struct FakeUnitOfWork {
     bestätigungen: FakeEmailBestätigungRepository,
     wiederherstellungen: FakePasswortWiederherstellungRepository,
     benachrichtigungen: FakeBenachrichtigungRepository,
+    external_identities: FakeExternalIdentityRepository,
+    oidc_auth_states: FakeOidcAuthStateRepository,
+    oidc_exchange_codes: FakeOidcExchangeCodeRepository,
 }
 
 impl FakeUnitOfWork {
@@ -92,6 +97,9 @@ impl FakeUnitOfWork {
                 transaction_datastore.clone(),
             ),
             benachrichtigungen: FakeBenachrichtigungRepository::new(transaction_datastore.clone()),
+            external_identities: FakeExternalIdentityRepository::new(transaction_datastore.clone()),
+            oidc_auth_states: FakeOidcAuthStateRepository::new(transaction_datastore.clone()),
+            oidc_exchange_codes: FakeOidcExchangeCodeRepository::new(transaction_datastore.clone()),
             snapshotted_datastore,
             transaction_datastore,
         }
@@ -165,6 +173,18 @@ impl UnitOfWorkImpl for FakeUnitOfWork {
 
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
         &self.benachrichtigungen
+    }
+
+    fn external_identities(&self) -> &dyn ExternalIdentityRepository {
+        &self.external_identities
+    }
+
+    fn oidc_auth_states(&self) -> &dyn OidcAuthStateRepository {
+        &self.oidc_auth_states
+    }
+
+    fn oidc_exchange_codes(&self) -> &dyn OidcExchangeCodeRepository {
+        &self.oidc_exchange_codes
     }
 }
 

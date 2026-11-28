@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type {
+  BenutzerLoeschungInput,
   CreateGameInput,
   DraftPromptRequestItem,
   GameDetail,
   NotificationsInbox,
+  OidcAccountActionMode,
   UpdateGameSettingsInput,
   UpdateNotificationPreferencesInput,
   UpdateProfileInput,
@@ -295,10 +297,17 @@ export function useFriendarazziMutations() {
 export function useAuthMutations() {
   const { api, authSession } = useFriendarazziApi();
   const queryClient = useQueryClient();
-  const loggedIn = () =>
-    queryClient.invalidateQueries({ queryKey: friendarazziKeys.benutzer() });
+  const loggedIn = () => {
+    void queryClient.invalidateQueries({
+      queryKey: friendarazziKeys.benutzer(),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: friendarazziKeys.loginMethods(),
+    });
+  };
   const clear = () => {
     queryClient.removeQueries({ queryKey: friendarazziKeys.benutzer() });
+    queryClient.removeQueries({ queryKey: friendarazziKeys.loginMethods() });
     queryClient.removeQueries({ queryKey: friendarazziKeys.games.all() });
     queryClient.removeQueries({ queryKey: friendarazziKeys.profiles.all() });
     queryClient.removeQueries({
@@ -317,6 +326,38 @@ export function useAuthMutations() {
       }) => api.anmelden(eMailAdresse, passwort),
       ...SITE_HANDLED,
       onSuccess: loggedIn,
+    }),
+    exchangeOidc: useMutation({
+      mutationFn: (code: string) => api.oidcExchange(code),
+      ...SITE_HANDLED,
+      onSuccess: loggedIn,
+    }),
+    startOidcAccountAction: useMutation({
+      mutationFn: ({
+        providerId,
+        mode,
+      }: {
+        providerId: string;
+        mode: OidcAccountActionMode;
+      }) => api.oidcStartAccountAction(providerId, mode),
+      ...SITE_HANDLED,
+    }),
+    unlinkExternalIdentity: useMutation({
+      mutationFn: (identityId: string) =>
+        api.unlinkExternalIdentity(identityId),
+      ...SITE_HANDLED,
+      onSuccess: () =>
+        queryClient.invalidateQueries({
+          queryKey: friendarazziKeys.loginMethods(),
+        }),
+    }),
+    setInitialPassword: useMutation({
+      mutationFn: (passwort: string) => api.setInitialPassword(passwort),
+      ...SITE_HANDLED,
+      onSuccess: () =>
+        queryClient.invalidateQueries({
+          queryKey: friendarazziKeys.loginMethods(),
+        }),
     }),
     register: useMutation({
       mutationFn: api.registrieren.bind(api),
@@ -352,13 +393,8 @@ export function useAuthMutations() {
       onSettled: clear,
     }),
     deleteAccount: useMutation({
-      mutationFn: ({
-        passwort,
-        bestaetigt,
-      }: {
-        passwort: string;
-        bestaetigt: boolean;
-      }) => api.benutzerLoeschen(passwort, bestaetigt),
+      mutationFn: (input: BenutzerLoeschungInput) =>
+        api.benutzerLoeschen(input),
       ...SITE_HANDLED,
       onSettled: clear,
     }),

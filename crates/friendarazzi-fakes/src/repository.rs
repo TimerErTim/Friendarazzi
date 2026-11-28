@@ -14,15 +14,18 @@ use friendarazzi_core::{
         CaptureId, EmailAdresse, Game, GameId, InviteCode, Konto, KontoId, NeueBenachrichtigung,
         NeuerBenutzer, NewBoard, NewCapture, NewGame, StarterDeck, builtin_starter_decks,
         konto::{
-            BestätigungId, EmailBestätigung, NeueBestätigung, NeuePasswortWiederherstellung,
-            NeueSession, NeuesKonto, PasswortWiederherstellung, PasswortWiederherstellungId,
-            RenewableSession, SecretTokenHash, Session, SessionId,
+            BestätigungId, EmailBestätigung, ExternalIdentity, ExternalIdentityId, NeueBestätigung,
+            NeueExternalIdentity, NeuePasswortWiederherstellung, NeueSession, NeuerOidcAuthState,
+            NeuerOidcExchangeCode, NeuesKonto, OidcAuthState, OidcAuthStateId, OidcExchangeCode,
+            OidcExchangeCodeId, OidcProviderId, PasswortWiederherstellung,
+            PasswortWiederherstellungId, RenewableSession, SecretTokenHash, Session, SessionId,
         },
     },
     ports::{
         BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
-        DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository, Mail,
-        MailError, MailSender, PasswortWiederherstellungRepository, RepositoryError,
+        DeckRepository, EmailBestätigungRepository, ExternalIdentityRepository, GameRepository,
+        KontoRepository, Mail, MailError, MailSender, OidcAuthStateRepository,
+        OidcExchangeCodeRepository, PasswortWiederherstellungRepository, RepositoryError,
         RepositoryResult, SessionRepository,
     },
 };
@@ -40,6 +43,9 @@ pub struct FakeDatastore {
     pub wiederherstellungen:
         Mutex<FxHashMap<PasswortWiederherstellungId, Versioned<PasswortWiederherstellung>>>,
     pub benachrichtigungen: Mutex<FxHashMap<BenachrichtigungId, Versioned<Benachrichtigung>>>,
+    pub external_identities: Mutex<FxHashMap<ExternalIdentityId, Versioned<ExternalIdentity>>>,
+    pub oidc_auth_states: Mutex<FxHashMap<OidcAuthStateId, Versioned<OidcAuthState>>>,
+    pub oidc_exchange_codes: Mutex<FxHashMap<OidcExchangeCodeId, Versioned<OidcExchangeCode>>>,
 }
 
 impl Clone for FakeDatastore {
@@ -55,6 +61,9 @@ impl Clone for FakeDatastore {
             bestätigungen: Mutex::new(self.bestätigungen().clone()),
             wiederherstellungen: Mutex::new(self.wiederherstellungen().clone()),
             benachrichtigungen: Mutex::new(self.benachrichtigungen().clone()),
+            external_identities: Mutex::new(self.external_identities().clone()),
+            oidc_auth_states: Mutex::new(self.oidc_auth_states().clone()),
+            oidc_exchange_codes: Mutex::new(self.oidc_exchange_codes().clone()),
         }
     }
 }
@@ -78,6 +87,9 @@ impl FakeDatastore {
             bestätigungen: Mutex::new(FxHashMap::default()),
             wiederherstellungen: Mutex::new(FxHashMap::default()),
             benachrichtigungen: Mutex::new(FxHashMap::default()),
+            external_identities: Mutex::new(FxHashMap::default()),
+            oidc_auth_states: Mutex::new(FxHashMap::default()),
+            oidc_exchange_codes: Mutex::new(FxHashMap::default()),
         }
     }
 
@@ -128,6 +140,24 @@ impl FakeDatastore {
         self.benachrichtigungen.lock().unwrap()
     }
 
+    pub fn external_identities(
+        &self,
+    ) -> MutexGuard<'_, FxHashMap<ExternalIdentityId, Versioned<ExternalIdentity>>> {
+        self.external_identities.lock().unwrap()
+    }
+
+    pub fn oidc_auth_states(
+        &self,
+    ) -> MutexGuard<'_, FxHashMap<OidcAuthStateId, Versioned<OidcAuthState>>> {
+        self.oidc_auth_states.lock().unwrap()
+    }
+
+    pub fn oidc_exchange_codes(
+        &self,
+    ) -> MutexGuard<'_, FxHashMap<OidcExchangeCodeId, Versioned<OidcExchangeCode>>> {
+        self.oidc_exchange_codes.lock().unwrap()
+    }
+
     pub fn replace_with(&self, other: &FakeDatastore) {
         *self.games() = other.games().clone();
         *self.boards() = other.boards().clone();
@@ -139,6 +169,9 @@ impl FakeDatastore {
         *self.bestätigungen() = other.bestätigungen().clone();
         *self.wiederherstellungen() = other.wiederherstellungen().clone();
         *self.benachrichtigungen() = other.benachrichtigungen().clone();
+        *self.external_identities() = other.external_identities().clone();
+        *self.oidc_auth_states() = other.oidc_auth_states().clone();
+        *self.oidc_exchange_codes() = other.oidc_exchange_codes().clone();
     }
 
     /// 3-way merge of `tx` against `reference` into `target`.
@@ -169,6 +202,9 @@ impl FakeDatastore {
         let mut target_bestätigungen = lock_map(&target.bestätigungen)?;
         let mut target_wiederherstellungen = lock_map(&target.wiederherstellungen)?;
         let mut target_benachrichtigungen = lock_map(&target.benachrichtigungen)?;
+        let mut target_external_identities = lock_map(&target.external_identities)?;
+        let mut target_oidc_auth_states = lock_map(&target.oidc_auth_states)?;
+        let mut target_oidc_exchange_codes = lock_map(&target.oidc_exchange_codes)?;
 
         let merged_games = Self::merge_single_aggregate(
             &target_games,
@@ -215,6 +251,21 @@ impl FakeDatastore {
             &*lock_map(&reference.benachrichtigungen)?,
             &*lock_map(&tx.benachrichtigungen)?,
         )?;
+        let merged_external_identities = Self::merge_single_aggregate(
+            &target_external_identities,
+            &*lock_map(&reference.external_identities)?,
+            &*lock_map(&tx.external_identities)?,
+        )?;
+        let merged_oidc_auth_states = Self::merge_single_aggregate(
+            &target_oidc_auth_states,
+            &*lock_map(&reference.oidc_auth_states)?,
+            &*lock_map(&tx.oidc_auth_states)?,
+        )?;
+        let merged_oidc_exchange_codes = Self::merge_single_aggregate(
+            &target_oidc_exchange_codes,
+            &*lock_map(&reference.oidc_exchange_codes)?,
+            &*lock_map(&tx.oidc_exchange_codes)?,
+        )?;
 
         *target_games = merged_games.clone();
         *target_boards = merged_boards.clone();
@@ -225,6 +276,9 @@ impl FakeDatastore {
         *target_bestätigungen = merged_bestätigungen.clone();
         *target_wiederherstellungen = merged_wiederherstellungen.clone();
         *target_benachrichtigungen = merged_benachrichtigungen.clone();
+        *target_external_identities = merged_external_identities.clone();
+        *target_oidc_auth_states = merged_oidc_auth_states.clone();
+        *target_oidc_exchange_codes = merged_oidc_exchange_codes.clone();
 
         Ok(FakeDatastore {
             games: Mutex::new(merged_games),
@@ -237,6 +291,9 @@ impl FakeDatastore {
             bestätigungen: Mutex::new(merged_bestätigungen),
             wiederherstellungen: Mutex::new(merged_wiederherstellungen),
             benachrichtigungen: Mutex::new(merged_benachrichtigungen),
+            external_identities: Mutex::new(merged_external_identities),
+            oidc_auth_states: Mutex::new(merged_oidc_auth_states),
+            oidc_exchange_codes: Mutex::new(merged_oidc_exchange_codes),
         })
     }
 
@@ -1065,6 +1122,261 @@ impl BenachrichtigungRepository for FakeBenachrichtigungRepository {
         self.datastore
             .benachrichtigungen()
             .retain(|_, n| n.empfänger_id() != empfänger_id);
+        Ok(())
+    }
+}
+
+pub struct FakeExternalIdentityRepository {
+    datastore: Arc<FakeDatastore>,
+}
+
+impl FakeExternalIdentityRepository {
+    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
+        Self { datastore }
+    }
+}
+
+#[async_trait]
+impl ExternalIdentityRepository for FakeExternalIdentityRepository {
+    async fn create(
+        &self,
+        identity: NeueExternalIdentity,
+    ) -> RepositoryResult<Versioned<ExternalIdentity>> {
+        let mut map = self.datastore.external_identities();
+        let duplicate = map.values().any(|existing| {
+            existing.provider_id() == identity.provider_id()
+                && existing.subject() == identity.subject()
+        });
+        if duplicate {
+            return Err(Report::new(RepositoryError::Conflict));
+        }
+        let id = ExternalIdentityId(Uuid::new_v4());
+        let entity = ExternalIdentity::from_parts(
+            id,
+            identity.benutzer_id(),
+            identity.provider_id().clone(),
+            identity.subject().to_owned(),
+            identity.provider_email().cloned(),
+            identity.created_at(),
+        );
+        let versioned = Versioned::init(entity);
+        map.insert(id, versioned.clone());
+        Ok(versioned)
+    }
+
+    async fn find_by_id(
+        &self,
+        id: ExternalIdentityId,
+    ) -> RepositoryResult<Versioned<ExternalIdentity>> {
+        self.datastore
+            .external_identities()
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn find_by_provider_subject(
+        &self,
+        provider_id: &OidcProviderId,
+        subject: &str,
+    ) -> RepositoryResult<Versioned<ExternalIdentity>> {
+        self.datastore
+            .external_identities()
+            .values()
+            .find(|existing| existing.provider_id() == provider_id && existing.subject() == subject)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn find_by_benutzer(
+        &self,
+        benutzer_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<ExternalIdentity>>> {
+        let mut list: Vec<_> = self
+            .datastore
+            .external_identities()
+            .values()
+            .filter(|existing| existing.benutzer_id() == benutzer_id)
+            .cloned()
+            .collect();
+        list.sort_by_key(|item| item.created_at());
+        Ok(list)
+    }
+
+    async fn delete(&self, identity: Versioned<ExternalIdentity>) -> RepositoryResult<()> {
+        let mut map = self.datastore.external_identities();
+        let Some(existing) = map.get(&identity.id()) else {
+            return Err(Report::new(RepositoryError::NotFound));
+        };
+        if existing.v() != identity.v() {
+            return Err(Report::new(RepositoryError::VersionMismatch {
+                expected: identity.v(),
+                actual: Some(existing.v()),
+            }));
+        }
+        map.remove(&identity.id());
+        Ok(())
+    }
+
+    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()> {
+        self.datastore
+            .external_identities()
+            .retain(|_, item| item.benutzer_id() != benutzer_id);
+        Ok(())
+    }
+}
+
+pub struct FakeOidcAuthStateRepository {
+    datastore: Arc<FakeDatastore>,
+}
+
+impl FakeOidcAuthStateRepository {
+    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
+        Self { datastore }
+    }
+}
+
+#[async_trait]
+impl OidcAuthStateRepository for FakeOidcAuthStateRepository {
+    async fn create(
+        &self,
+        state: NeuerOidcAuthState,
+    ) -> RepositoryResult<Versioned<OidcAuthState>> {
+        let mut map = self.datastore.oidc_auth_states();
+        if map
+            .values()
+            .any(|existing| existing.state_hash() == state.state_hash())
+        {
+            return Err(Report::new(RepositoryError::Conflict));
+        }
+        let id = OidcAuthStateId(Uuid::new_v4());
+        let entity = OidcAuthState::from_parts(
+            id,
+            state.provider_id().clone(),
+            state.state_hash().clone(),
+            state.nonce().to_owned(),
+            state.pkce_verifier().to_owned(),
+            state.mode(),
+            state.return_to().map(str::to_owned),
+            state.created_at(),
+            state.expires_at(),
+            None,
+        );
+        let versioned = Versioned::init(entity);
+        map.insert(id, versioned.clone());
+        Ok(versioned)
+    }
+
+    async fn find_by_state_hash(
+        &self,
+        state_hash: &SecretTokenHash,
+    ) -> RepositoryResult<Versioned<OidcAuthState>> {
+        self.datastore
+            .oidc_auth_states()
+            .values()
+            .find(|existing| existing.state_hash() == state_hash)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn update(&self, state: &mut Versioned<OidcAuthState>) -> RepositoryResult<()> {
+        let mut map = self.datastore.oidc_auth_states();
+        let Some(existing) = map.get(&state.id()) else {
+            return Err(Report::new(RepositoryError::NotFound));
+        };
+        if existing.v() != state.v() {
+            return Err(Report::new(RepositoryError::VersionMismatch {
+                expected: state.v(),
+                actual: Some(existing.v()),
+            }));
+        }
+        state.increment();
+        map.insert(state.id(), state.clone());
+        Ok(())
+    }
+
+    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()> {
+        self.datastore.oidc_auth_states().retain(|_, item| {
+            !matches!(
+                item.mode(),
+                friendarazzi_core::domain::konto::OidcFlowMode::Link { benutzer_id: id }
+                | friendarazzi_core::domain::konto::OidcFlowMode::DeleteReauth { benutzer_id: id }
+                if id == benutzer_id
+            )
+        });
+        Ok(())
+    }
+}
+
+pub struct FakeOidcExchangeCodeRepository {
+    datastore: Arc<FakeDatastore>,
+}
+
+impl FakeOidcExchangeCodeRepository {
+    pub fn new(datastore: Arc<FakeDatastore>) -> Self {
+        Self { datastore }
+    }
+}
+
+#[async_trait]
+impl OidcExchangeCodeRepository for FakeOidcExchangeCodeRepository {
+    async fn create(
+        &self,
+        code: NeuerOidcExchangeCode,
+    ) -> RepositoryResult<Versioned<OidcExchangeCode>> {
+        let mut map = self.datastore.oidc_exchange_codes();
+        if map
+            .values()
+            .any(|existing| existing.code_hash() == code.code_hash())
+        {
+            return Err(Report::new(RepositoryError::Conflict));
+        }
+        let id = OidcExchangeCodeId(Uuid::new_v4());
+        let entity = OidcExchangeCode::from_parts(
+            id,
+            code.code_hash().clone(),
+            code.benutzer_id(),
+            code.purpose(),
+            code.expires_at(),
+            None,
+        );
+        let versioned = Versioned::init(entity);
+        map.insert(id, versioned.clone());
+        Ok(versioned)
+    }
+
+    async fn find_by_code_hash(
+        &self,
+        code_hash: &SecretTokenHash,
+    ) -> RepositoryResult<Versioned<OidcExchangeCode>> {
+        self.datastore
+            .oidc_exchange_codes()
+            .values()
+            .find(|existing| existing.code_hash() == code_hash)
+            .cloned()
+            .ok_or_else(|| Report::new(RepositoryError::NotFound))
+    }
+
+    async fn update(&self, code: &mut Versioned<OidcExchangeCode>) -> RepositoryResult<()> {
+        let mut map = self.datastore.oidc_exchange_codes();
+        let Some(existing) = map.get(&code.id()) else {
+            return Err(Report::new(RepositoryError::NotFound));
+        };
+        if existing.v() != code.v() {
+            return Err(Report::new(RepositoryError::VersionMismatch {
+                expected: code.v(),
+                actual: Some(existing.v()),
+            }));
+        }
+        code.increment();
+        map.insert(code.id(), code.clone());
+        Ok(())
+    }
+
+    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()> {
+        self.datastore
+            .oidc_exchange_codes()
+            .retain(|_, item| item.benutzer_id() != benutzer_id);
         Ok(())
     }
 }

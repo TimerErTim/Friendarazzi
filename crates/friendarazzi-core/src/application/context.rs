@@ -2,12 +2,14 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     application::instrumented::{
-        InstrumentedMailSender, InstrumentedObjectStore, InstrumentedPdfRenderer,
-        InstrumentedRngSource, InstrumentedThrottle, InstrumentedUnitOfWork,
+        InstrumentedMailSender, InstrumentedObjectStore, InstrumentedOidcProviderClient,
+        InstrumentedPdfRenderer, InstrumentedRngSource, InstrumentedThrottle,
+        InstrumentedUnitOfWork,
     },
     application::uow::{UnitOfWork, UnitOfWorkImpl, UnitOfWorkProvider},
     ports::{
-        Clock, MailSender, ObjectStore, PdfRenderer, RepositoryResult, RngSource, Signing, Throttle,
+        Clock, MailSender, ObjectStore, OidcProviderClient, PdfRenderer, RepositoryResult,
+        RngSource, Signing, Throttle,
     },
     service::Event,
 };
@@ -67,6 +69,7 @@ pub struct ExecutionContext<'a> {
     pdf_renderer: Arc<dyn PdfRenderer>,
     throttle: Arc<dyn Throttle>,
     mail_sender: Arc<dyn MailSender>,
+    oidc_client: Arc<dyn OidcProviderClient>,
     events: EventCollector,
     identity_provider_conf: IdentityProviderConfiguration,
 }
@@ -82,6 +85,7 @@ pub(crate) struct ContextPorts {
     pub(crate) pdf_renderer: Arc<dyn PdfRenderer>,
     pub(crate) throttle: Arc<dyn Throttle>,
     pub(crate) mail_sender: Arc<dyn MailSender>,
+    pub(crate) oidc_client: Arc<dyn OidcProviderClient>,
     pub(crate) events: EventCollector,
     pub(crate) identity_provider_conf: IdentityProviderConfiguration,
 }
@@ -101,6 +105,7 @@ impl<'a> ExecutionContext<'a> {
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
             mail_sender: InstrumentedMailSender::new(ports.mail_sender),
+            oidc_client: InstrumentedOidcProviderClient::new(ports.oidc_client),
             events: ports.events,
             identity_provider_conf: ports.identity_provider_conf,
         }
@@ -117,6 +122,7 @@ impl<'a> ExecutionContext<'a> {
             pdf_renderer: InstrumentedPdfRenderer::new(ports.pdf_renderer),
             throttle: InstrumentedThrottle::new(ports.throttle),
             mail_sender: InstrumentedMailSender::new(ports.mail_sender),
+            oidc_client: InstrumentedOidcProviderClient::new(ports.oidc_client),
             events: ports.events,
             identity_provider_conf: ports.identity_provider_conf,
         }
@@ -146,6 +152,10 @@ impl<'a> ExecutionContext<'a> {
 
     pub fn mail_sender(&self) -> &dyn MailSender {
         self.mail_sender.as_ref()
+    }
+
+    pub fn oidc_client(&self) -> &dyn OidcProviderClient {
+        self.oidc_client.as_ref()
     }
 
     /// Staged event submission handle for the current execution.
@@ -183,6 +193,7 @@ impl<'a> ExecutionContext<'a> {
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),
                 mail_sender: Arc::clone(&self.mail_sender),
+                oidc_client: Arc::clone(&self.oidc_client),
                 events: self.events.clone(),
                 identity_provider_conf: self.identity_provider_conf.clone(),
             },

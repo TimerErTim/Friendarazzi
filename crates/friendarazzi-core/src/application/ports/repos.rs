@@ -3,9 +3,11 @@ use async_trait::async_trait;
 use crate::application::ResultReport;
 use crate::application::uow::Versioned;
 use crate::domain::konto::{
-    BestätigungId, EmailBestätigung, Konto, KontoId, NeueBestätigung,
-    NeuePasswortWiederherstellung, NeueSession, NeuesKonto, PasswortWiederherstellung,
-    PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
+    BestätigungId, EmailBestätigung, ExternalIdentity, ExternalIdentityId, Konto, KontoId,
+    NeueBestätigung, NeueExternalIdentity, NeuePasswortWiederherstellung, NeueSession,
+    NeuerOidcAuthState, NeuerOidcExchangeCode, NeuesKonto, OidcAuthState, OidcExchangeCode,
+    OidcProviderId, PasswortWiederherstellung, PasswortWiederherstellungId, SecretTokenHash,
+    Session, SessionId,
 };
 use crate::domain::{
     Benachrichtigung, BenachrichtigungId, Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId,
@@ -238,4 +240,64 @@ pub trait BenachrichtigungRepository: Send + Sync {
     async fn delete(&self, benachrichtigung: Versioned<Benachrichtigung>) -> RepositoryResult<()>;
 
     async fn delete_by_empfänger(&self, empfänger_id: BenutzerId) -> RepositoryResult<()>;
+}
+
+#[async_trait]
+pub trait ExternalIdentityRepository: Send + Sync {
+    async fn create(
+        &self,
+        identity: NeueExternalIdentity,
+    ) -> RepositoryResult<Versioned<ExternalIdentity>>;
+
+    async fn find_by_id(
+        &self,
+        id: ExternalIdentityId,
+    ) -> RepositoryResult<Versioned<ExternalIdentity>>;
+
+    async fn find_by_provider_subject(
+        &self,
+        provider_id: &OidcProviderId,
+        subject: &str,
+    ) -> RepositoryResult<Versioned<ExternalIdentity>>;
+
+    async fn find_by_benutzer(
+        &self,
+        benutzer_id: BenutzerId,
+    ) -> RepositoryResult<Vec<Versioned<ExternalIdentity>>>;
+
+    async fn delete(&self, identity: Versioned<ExternalIdentity>) -> RepositoryResult<()>;
+
+    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
+}
+
+#[async_trait]
+pub trait OidcAuthStateRepository: Send + Sync {
+    async fn create(&self, state: NeuerOidcAuthState)
+    -> RepositoryResult<Versioned<OidcAuthState>>;
+
+    async fn find_by_state_hash(
+        &self,
+        state_hash: &SecretTokenHash,
+    ) -> RepositoryResult<Versioned<OidcAuthState>>;
+
+    async fn update(&self, state: &mut Versioned<OidcAuthState>) -> RepositoryResult<()>;
+
+    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
+}
+
+#[async_trait]
+pub trait OidcExchangeCodeRepository: Send + Sync {
+    async fn create(
+        &self,
+        code: NeuerOidcExchangeCode,
+    ) -> RepositoryResult<Versioned<OidcExchangeCode>>;
+
+    async fn find_by_code_hash(
+        &self,
+        code_hash: &SecretTokenHash,
+    ) -> RepositoryResult<Versioned<OidcExchangeCode>>;
+
+    async fn update(&self, code: &mut Versioned<OidcExchangeCode>) -> RepositoryResult<()>;
+
+    async fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
 }

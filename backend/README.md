@@ -22,6 +22,14 @@ To run the standalone webserver:
 mise run dev:server
 ```
 
+To populate a database with sample development data (4 users with password `friendarazzi`, games across every lifecycle stage, boards, captures, and notifications):
+
+```bash
+cargo run -p friendarazzi-server -- seed
+# Or seed automatically before starting the server:
+mise run dev:server -- --seed
+```
+
 ### Configuration
 
 Resolution order: **config path → file → env → CLI**.

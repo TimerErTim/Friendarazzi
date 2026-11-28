@@ -16,15 +16,16 @@ use friendarazzi_core::{
     },
     ports::{ClientKey, ObjectStream, RepositoryError, ThrottleAction},
     service::{
-        Abmeldung, AbmeldungFehler, AlleBenachrichtigungenAlsGelesenMarkieren, Anmeldung,
-        AnmeldungFehler, BenachrichtigungAbbestellenMitToken, BenachrichtigungAlsGelesenMarkieren,
-        BenachrichtigungUseCaseError, BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen,
-        BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
-        HostFillRemainingDrafts, LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler,
-        PasswortWiederherstellen, PasswortWiederherstellenFehler, ProfileUseCaseError,
-        RegistrierungAbschliessenFehler, RegistrierungAbschließen, RegistrierungStarten,
-        RegistrierungStartenFehler, RetractCapture, SessionAusgestellt, SetDraftDeadline,
-        StartDrafting, SubmitCapture, UnlockDraftPrompts, UploadAvatar,
+        AbandonGame, Abmeldung, AbmeldungFehler, AlleBenachrichtigungenAlsGelesenMarkieren,
+        Anmeldung, AnmeldungFehler, BenachrichtigungAbbestellenMitToken,
+        BenachrichtigungAlsGelesenMarkieren, BenachrichtigungUseCaseError,
+        BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen, BenutzerLöschenFehler,
+        CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
+        HostFillRemainingDrafts, KickPlayer, LeaveGame, LockDraftPrompts, PasswortVergessen,
+        PasswortVergessenFehler, PasswortWiederherstellen, PasswortWiederherstellenFehler,
+        ProfileUseCaseError, RegistrierungAbschliessenFehler, RegistrierungAbschließen,
+        RegistrierungStarten, RegistrierungStartenFehler, RetractCapture, SessionAusgestellt,
+        SetDraftDeadline, StartDrafting, SubmitCapture, UnlockDraftPrompts, UploadAvatar,
     },
 };
 use tracing::warn;
@@ -142,14 +143,17 @@ impl FriendarazziAppApi {
                         let game = game.into_data();
                         let winner = match &game {
                             Game::Completed(c) => {
-                                let winner_id = c.winner_user_id();
-                                uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
-                                    badge_from_benutzer(
-                                        &b.into_data(),
-                                        false,
-                                        game.host_user_id() == winner_id,
-                                    )
-                                })
+                                if let Some(winner_id) = c.winner_user_id() {
+                                    uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
+                                        badge_from_benutzer(
+                                            &b.into_data(),
+                                            false,
+                                            game.host_user_id() == winner_id,
+                                        )
+                                    })
+                                } else {
+                                    None
+                                }
                             }
                             Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
                         };
@@ -218,14 +222,17 @@ impl FriendarazziAppApi {
                     };
                     let winner = match &game {
                         Game::Completed(c) => {
-                            let winner_id = c.winner_user_id();
-                            uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
-                                badge_from_benutzer(
-                                    &b.into_data(),
-                                    false,
-                                    game.host_user_id() == winner_id,
-                                )
-                            })
+                            if let Some(winner_id) = c.winner_user_id() {
+                                uow.benutzer().find_by_id(winner_id).await.ok().map(|b| {
+                                    badge_from_benutzer(
+                                        &b.into_data(),
+                                        false,
+                                        game.host_user_id() == winner_id,
+                                    )
+                                })
+                            } else {
+                                None
+                            }
                         }
                         Game::Lobby(_) | Game::Drafting(_) | Game::Active(_) => None,
                     };
@@ -360,6 +367,57 @@ impl FriendarazziAppApi {
         .await
     }
 
+    pub async fn game_leave(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<(), GameUseCaseError> {
+        self.app.execute(auth, LeaveGame { game_id }).await?;
+        Ok(())
+    }
+
+    pub async fn game_kick_player(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        target_user_id: BenutzerId,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let game = self
+            .app
+            .execute(
+                auth,
+                KickPlayer {
+                    game_id,
+                    target_user_id,
+                },
+            )
+            .await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_transfer_host(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::TransferHostRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc = req.into_use_case(game_id);
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_abandon(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let game = self.app.execute(auth, AbandonGame { game_id }).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
     async fn load_game_detail_after_write<E: friendarazzi_core::ThreadSafeError>(
         &self,
         auth: AuthContext,
@@ -422,7 +480,7 @@ impl FriendarazziAppApi {
                             None,
                             Some(c.started_at()),
                             Some(c.ended_at()),
-                            badges.get(&c.winner_user_id()).cloned(),
+                            c.winner_user_id().and_then(|wid| badges.get(&wid).cloned()),
                         ),
                     };
 
@@ -568,9 +626,11 @@ impl FriendarazziAppApi {
                         playable_tile_count: game.playable_tile_count() as u32,
                         draft_closes_at,
                         draft_deadline_at: game.draft_deadline_at(),
+                        ends_at: game.ends_at(),
                         server_now: now,
                         started_at,
                         ended_at,
+                        completion_reason: game.completion_reason().map(Into::into),
                         winner,
                         created_at: game.created_at(),
                         players: player_badges,
@@ -854,7 +914,8 @@ impl FriendarazziAppApi {
                                     Game::Completed(c) => (
                                         Some(c.started_at()),
                                         Some(c.ended_at()),
-                                        badges.get(&c.winner_user_id()).cloned(),
+                                        c.winner_user_id()
+                                            .and_then(|wid| badges.get(&wid).cloned()),
                                     ),
                                 };
                                 Some(GalleryGameGroup {
@@ -1380,10 +1441,12 @@ fn game_to_summary(
         needs_action,
         draft_closes_at,
         draft_deadline_at: game.draft_deadline_at(),
+        ends_at: game.ends_at(),
         server_now,
         winner,
         started_at,
         ended_at,
+        completion_reason: game.completion_reason().map(Into::into),
         created_at: game.created_at(),
     }
 }

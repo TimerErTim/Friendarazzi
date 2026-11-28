@@ -6,8 +6,8 @@ use tracing::error;
 use crate::{
     application::ExecutionContext,
     domain::{
-        BenachrichtigungArt, Benutzer, BenutzerId, CaptureId, Game, GameId, NeueBenachrichtigung,
-        VisibilityMode,
+        BenachrichtigungArt, Benutzer, BenutzerId, CaptureId, CompletionReason, Game, GameId,
+        NeueBenachrichtigung, VisibilityMode,
     },
     ports::{Mail, RepositoryError},
     service::{EventHandler, create_notification_idempotent},
@@ -36,11 +36,20 @@ pub struct CaptureUploaded {
     pub occurred_at: DateTime<Utc>,
 }
 
-/// Emitted after a winning capture transitions an active game to completed.
+/// Emitted after a capture puts its owner one tile away from Bingo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NearBingoReached {
+    pub game_id: GameId,
+    pub leader_id: BenutzerId,
+    pub occurred_at: DateTime<Utc>,
+}
+
+/// Emitted after an active or waiting game transitions to completed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GameFinished {
     pub game_id: GameId,
-    pub winner_id: BenutzerId,
+    pub winner_id: Option<BenutzerId>,
+    pub completion_reason: CompletionReason,
     pub finished_at: DateTime<Utc>,
 }
 
@@ -315,6 +324,57 @@ impl EventHandler for CaptureUploaded {
 }
 
 #[async_trait]
+impl EventHandler for NearBingoReached {
+    type Error = Report<GameEventError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<(), Self::Error> {
+        let read_uow = ctx
+            .enter()
+            .await
+            .change_context(GameEventError::Persistence)?;
+        let load_res = async {
+            let game = match read_uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g.into_data(),
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Ok(None);
+                }
+                Err(err) => return Err(err).change_context(GameEventError::Persistence),
+            };
+            if !matches!(game, Game::Active(_)) {
+                return Ok(None);
+            }
+            let recipients: Vec<BenutzerId> = game
+                .players()
+                .iter()
+                .filter(|p| p.user_id != self.leader_id && p.watching)
+                .map(|p| p.user_id)
+                .collect();
+            if recipients.is_empty() {
+                return Ok(None);
+            }
+            Ok::<_, Report<GameEventError>>(Some((game.id(), recipients)))
+        }
+        .await;
+
+        let Some((game_id, recipients)) = read_uow
+            .finish(load_res, GameEventError::Persistence)
+            .await?
+        else {
+            return Ok(());
+        };
+
+        notify_recipients(
+            &ctx,
+            game_id,
+            recipients,
+            |uid| NeueBenachrichtigung::fast_bingo(uid, game_id, self.leader_id, self.occurred_at),
+            |_user, _token| None,
+        )
+        .await
+    }
+}
+
+#[async_trait]
 impl EventHandler for GameFinished {
     type Error = Report<GameEventError>;
 
@@ -337,22 +397,28 @@ impl EventHandler for GameFinished {
             let recipients: Vec<BenutzerId> = completed
                 .players()
                 .iter()
-                .filter(|p| p.user_id != self.winner_id && p.watching)
+                .filter(|p| Some(p.user_id) != self.winner_id && p.watching)
                 .map(|p| p.user_id)
                 .collect();
             if recipients.is_empty() {
                 return Ok(None);
             }
-            let winner_name = read_uow
-                .benutzer()
-                .find_by_ids(&[self.winner_id])
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(GameEventError::Persistence)?
-                .into_iter()
-                .next()
-                .map(|u| u.display_name().as_str().to_owned())
-                .unwrap_or_else(|| "Spieler".to_owned());
+            let winner_name = if let Some(wid) = self.winner_id {
+                read_uow
+                    .benutzer()
+                    .find_by_ids(&[wid])
+                    .await
+                    .map_err(IntoReport::into_report)
+                    .change_context(GameEventError::Persistence)?
+                    .into_iter()
+                    .next()
+                    .map(|u| u.display_name().as_str().to_owned())
+                    .unwrap_or_else(|| "Spieler".to_owned())
+            } else if self.completion_reason == CompletionReason::Abandoned {
+                "Abgebrochen".to_owned()
+            } else {
+                "Unentschieden".to_owned()
+            };
 
             Ok::<_, Report<GameEventError>>(Some((
                 completed.id(),
@@ -370,6 +436,7 @@ impl EventHandler for GameFinished {
             return Ok(());
         };
 
+        let send_winner_mail = self.completion_reason != CompletionReason::Abandoned;
         notify_recipients(
             &ctx,
             game_id,
@@ -378,8 +445,8 @@ impl EventHandler for GameFinished {
                 NeueBenachrichtigung::spiel_beendet(uid, game_id, self.winner_id, self.finished_at)
             },
             |user, token| {
-                user.allows_email(BenachrichtigungArt::SpielBeendet)
-                    .then(|| {
+                (send_winner_mail && user.allows_email(BenachrichtigungArt::SpielBeendet)).then(
+                    || {
                         Mail::spiel_beendet(
                             user.email_address().clone(),
                             game_id,
@@ -387,7 +454,8 @@ impl EventHandler for GameFinished {
                             winner_name.clone(),
                             token.to_owned(),
                         )
-                    })
+                    },
+                )
             },
         )
         .await

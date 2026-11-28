@@ -36,8 +36,9 @@ use crate::{
             AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, HostFillDraftsRequest,
             JoinGameRequest, PasswortVergessenRequest, PasswortWiederherstellenRequest,
             RegistrierungAbschlussRequest, RegistrierungStartRequest, SaveDraftPromptsRequest,
-            SetDraftDeadlineRequest, SetGameWatchRequest, UnsubscribeNotificationRequest,
-            UpdateGameSettingsRequest, UpdateNotificationPreferencesRequest, UpdateProfileRequest,
+            SetDraftDeadlineRequest, SetGameWatchRequest, TransferHostRequest,
+            UnsubscribeNotificationRequest, UpdateGameSettingsRequest,
+            UpdateNotificationPreferencesRequest, UpdateProfileRequest,
         },
     },
     schema::{
@@ -416,6 +417,97 @@ impl FriendarazziApiSpec {
             .unwrap_or(AuthContext::Anonymous);
         self.app_api
             .game_set_watch(auth, GameId(game_id.0), body.0)
+            .await
+            .into()
+    }
+
+    /// Leave a game while in Lobby or Drafting.
+    ///
+    /// Auto-transfers host ownership to the earliest remaining player if the host departs.
+    #[oai(path = "/games/:game_id/leave", method = "post", tag = "ApiTag::Games")]
+    async fn game_leave(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<Ok> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_leave(auth, GameId(game_id.0))
+            .await
+            .map(|()| Ok { ok: true })
+            .into()
+    }
+
+    /// Host-only removal of a player during Lobby or Drafting.
+    ///
+    /// Clears any drafts targeting or authored by the removed player and reverts to Lobby if fewer than 3 remain.
+    #[oai(
+        path = "/games/:game_id/players/:user_id",
+        method = "delete",
+        tag = "ApiTag::Games"
+    )]
+    async fn game_kick_player(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+        user_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_kick_player(auth, GameId(game_id.0), BenutzerId(user_id.0))
+            .await
+            .into()
+    }
+
+    /// Host-only transfer of host role to another player in the game.
+    ///
+    /// Available during Lobby, Drafting, or Active play.
+    #[oai(
+        path = "/games/:game_id/transfer-host",
+        method = "post",
+        tag = "ApiTag::Games"
+    )]
+    async fn game_transfer_host(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+        body: Json<TransferHostRequest>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_transfer_host(auth, GameId(game_id.0), body.0)
+            .await
+            .into()
+    }
+
+    /// Host-only termination of a game without awarding a Gold Medal.
+    ///
+    /// Transitions Lobby, Drafting, or Active play to Completed with reason Abandoned.
+    #[oai(
+        path = "/games/:game_id/abandon",
+        method = "post",
+        tag = "ApiTag::Games"
+    )]
+    async fn game_abandon(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        game_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<GameDetail> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        self.app_api
+            .game_abandon(auth, GameId(game_id.0))
             .await
             .into()
     }

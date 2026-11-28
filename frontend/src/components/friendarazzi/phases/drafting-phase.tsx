@@ -9,17 +9,23 @@ import {
   Loader2,
   Lock,
   LockOpen,
+  LogOut,
+  Shield,
   Sparkles,
   Timer,
+  UserMinus,
   Users,
+  XCircle,
   Zap,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { apiErrorMessage } from "@/api/errors";
 import {
   type DraftPromptRequestItem,
   type GameDetail,
+  type PlayerBadge,
   PromptSource,
 } from "@/api/friendarazzi-api";
 import {
@@ -63,6 +69,7 @@ import {
   PROMPT_WARN_CHARS,
   rerollSingleSlot,
 } from "@/lib/draft-prompts";
+import { paths } from "@/lib/navigation";
 import { useGameCountdown } from "@/lib/use-game-countdown";
 
 import type { FlushPendingSaveFn } from "./shared";
@@ -111,6 +118,7 @@ export function DraftingPhase({
   detailUpdatedAt?: number;
   registerFlush?: (fn: FlushPendingSaveFn | null) => void;
 }) {
+  const router = useRouter();
   const me = useBenutzerQuery();
   const decks = useDecksQuery();
   const queryClient = useQueryClient();
@@ -129,6 +137,12 @@ export function DraftingPhase({
   const [focusedSlotKey, setFocusedSlotKey] = useState<string | null>(null);
   const [suggestionSeed, setSuggestionSeed] = useState(0);
   const [hostFillOpen, setHostFillOpen] = useState(false);
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [abandonConfirmOpen, setAbandonConfirmOpen] = useState(false);
+  const [kickTarget, setKickTarget] = useState<PlayerBadge | null>(null);
+  const [transferTarget, setTransferTarget] = useState<PlayerBadge | null>(
+    null,
+  );
   const [justSavedDraft, setJustSavedDraft] = useState(false);
   const [hasPendingDebounce, setHasPendingDebounce] = useState(false);
   const [deckNotice, setDeckNotice] = useState<string | null>(null);
@@ -606,32 +620,66 @@ export function DraftingPhase({
                 Crew-Bereitschaft ({readyCount}/{game.players.length})
               </p>
               <ul className="divide-y divide-subtle">
-                {game.players.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between gap-2 py-1.5 text-xs font-bold first:pt-0 last:pb-0"
-                  >
-                    <span className="flex min-w-0 items-center gap-2">
-                      <PlayerAvatar
-                        user={p}
-                        size="sm"
-                        linkToProfile={false}
-                        showMedalBadge={false}
-                      />
-                      <span className="truncate text-ink">{p.displayName}</span>
-                    </span>
-                    {p.draftLocked ? (
-                      <CheckCircle2
-                        className="size-4 shrink-0 text-success"
-                        aria-label="Bereit"
-                      />
-                    ) : (
-                      <span className="font-mono text-[11px] text-secondary">
-                        offen
+                {game.players.map((p) => {
+                  const canManage = isHost && p.id !== me.data?.id;
+                  return (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-2 py-1.5 text-xs font-bold first:pt-0 last:pb-0"
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-2">
+                        <PlayerAvatar
+                          user={p}
+                          size="sm"
+                          linkToProfile={false}
+                          showMedalBadge={false}
+                        />
+                        <span className="truncate text-ink">
+                          {p.displayName}
+                        </span>
                       </span>
-                    )}
-                  </li>
-                ))}
+                      <div className="flex shrink-0 items-center gap-1">
+                        {p.draftLocked ? (
+                          <CheckCircle2
+                            className="size-4 shrink-0 text-success"
+                            aria-label="Bereit"
+                          />
+                        ) : (
+                          <span className="font-mono text-[11px] text-secondary">
+                            offen
+                          </span>
+                        )}
+                        {canManage ? (
+                          <>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`${p.displayName} zum Host machen`}
+                              title="Host übergeben"
+                              onClick={() => setTransferTarget(p)}
+                            >
+                              <Shield className="size-3.5" aria-hidden="true" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`${p.displayName} entfernen`}
+                              title="Entfernen"
+                              onClick={() => setKickTarget(p)}
+                            >
+                              <UserMinus
+                                className="size-3.5"
+                                aria-hidden="true"
+                              />
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
             {isHost && readyCount < game.players.length ? (
@@ -648,6 +696,30 @@ export function DraftingPhase({
                 </Button>
               </div>
             ) : null}
+            <div className="space-y-1.5 border-t-2 border-subtle pt-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => setLeaveConfirmOpen(true)}
+              >
+                <LogOut className="size-4" aria-hidden="true" />
+                Runde verlassen
+              </Button>
+              {isHost ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full text-error hover:bg-error-subtle"
+                  onClick={() => setAbandonConfirmOpen(true)}
+                >
+                  <XCircle className="size-4" aria-hidden="true" />
+                  Spiel abbrechen
+                </Button>
+              ) : null}
+            </div>
           </PopoverContent>
         </Popover>
       </div>
@@ -925,6 +997,195 @@ export function DraftingPhase({
               onClick={() => setHostFillOpen(false)}
             >
               Abbrechen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={leaveConfirmOpen} onOpenChange={setLeaveConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Runde verlassen?</DialogTitle>
+            <DialogDescription>
+              {game.players.length <= 3
+                ? "Da weniger als 3 Personen übrig bleiben, kehrt das Spiel zurück in die Lobby. Deine bisherigen Entwürfe werden verworfen."
+                : "Deine bisherigen Entwürfe und Ziel-Zuordnungen für andere werden bereinigt."}
+              {isHost && game.players.length > 1
+                ? " Als Host wird deine Rolle automatisch an die nächste Person übertragen."
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.leaveGame.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.leaveGame.error, {
+                fallback: "Runde konnte nicht verlassen werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.leaveGame.isPending}
+              onClick={() => setLeaveConfirmOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={mutations.leaveGame.isPending}
+              onClick={() => {
+                void mutations.leaveGame.mutateAsync(game.id).then(() => {
+                  setLeaveConfirmOpen(false);
+                  router.replace(paths.home);
+                });
+              }}
+            >
+              {mutations.leaveGame.isPending ? "Verlässt …" : "Verlassen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(kickTarget)}
+        onOpenChange={(open) => {
+          if (!open) setKickTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{kickTarget?.displayName} entfernen?</DialogTitle>
+            <DialogDescription>
+              {game.players.length <= 3
+                ? "Danach sind weniger als 3 Personen im Spiel, sodass die Runde automatisch in die Lobby zurückkehrt."
+                : "Entwürfe von und für diese Person werden entfernt und die Quoten für alle neu berechnet."}
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.kickPlayer.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.kickPlayer.error, {
+                fallback: "Mitspieler konnte nicht entfernt werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.kickPlayer.isPending}
+              onClick={() => setKickTarget(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!kickTarget || mutations.kickPlayer.isPending}
+              onClick={() => {
+                if (!kickTarget) return;
+                void mutations.kickPlayer
+                  .mutateAsync({ gameId: game.id, userId: kickTarget.id })
+                  .then(() => setKickTarget(null));
+              }}
+            >
+              {mutations.kickPlayer.isPending ? "Entfernt …" : "Entfernen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(transferTarget)}
+        onOpenChange={(open) => {
+          if (!open) setTransferTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Host-Rolle an {transferTarget?.displayName} übergeben?
+            </DialogTitle>
+            <DialogDescription>
+              {transferTarget?.displayName} erhält damit alle Host-Rechte in
+              dieser Runde.
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.transferHost.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.transferHost.error, {
+                fallback: "Host-Rolle konnte nicht übergeben werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.transferHost.isPending}
+              onClick={() => setTransferTarget(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!transferTarget || mutations.transferHost.isPending}
+              onClick={() => {
+                if (!transferTarget) return;
+                void mutations.transferHost
+                  .mutateAsync({
+                    gameId: game.id,
+                    newHostUserId: transferTarget.id,
+                  })
+                  .then(() => setTransferTarget(null));
+              }}
+            >
+              {mutations.transferHost.isPending ? "Übergibt …" : "Übergeben"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={abandonConfirmOpen} onOpenChange={setAbandonConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Spiel abbrechen?</DialogTitle>
+            <DialogDescription>
+              Das Spiel wird sofort beendet, ohne dass eine Goldmedaille
+              vergeben wird.
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.abandonGame.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.abandonGame.error, {
+                fallback: "Spiel konnte nicht abgebrochen werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.abandonGame.isPending}
+              onClick={() => setAbandonConfirmOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={mutations.abandonGame.isPending}
+              onClick={() => {
+                void mutations.abandonGame.mutateAsync(game.id).then(() => {
+                  setAbandonConfirmOpen(false);
+                });
+              }}
+            >
+              {mutations.abandonGame.isPending
+                ? "Bricht ab …"
+                : "Spiel abbrechen"}
             </Button>
           </DialogFooter>
         </DialogContent>

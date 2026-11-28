@@ -12,13 +12,19 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { useAuth } from "@/api/auth-provider";
+import {
+  NotificationKind,
+  type NotificationView,
+} from "@/api/friendarazzi-api";
 import {
   useAuthMutations,
   useBenutzerQuery,
   useNotificationsQuery,
 } from "@/api/hooks";
 import { Wordmark } from "@/components/brand/wordmark";
+import { useToast } from "@/components/feedback/toast-provider";
 import { PlayerAvatar } from "@/components/friendarazzi/player-avatar";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -33,12 +39,58 @@ import {
 import { cn } from "@/lib/cn";
 import { isNavItemActive, paths, primaryNavItems } from "@/lib/navigation";
 
+function liveNotificationToastText(item: NotificationView): string {
+  switch (item.kind) {
+    case NotificationKind.GameStarted:
+      return `Spiel gestartet: „${item.gameTitle}“`;
+    case NotificationKind.CapturePosted:
+      return item.actor
+        ? `Neues Foto von ${item.actor.displayName} in „${item.gameTitle}“`
+        : `Neues Foto in „${item.gameTitle}“`;
+    case NotificationKind.NearBingo:
+      return `Fast Bingo! ${item.actor?.displayName ?? "Ein Mitspieler"} fehlt nur noch 1 Feld in „${item.gameTitle}“`;
+    case NotificationKind.DraftReminder:
+      return `Entwurfsfrist läuft ab in „${item.gameTitle}“`;
+    case NotificationKind.GameCompleted:
+      return item.actor
+        ? `${item.actor.displayName} hat „${item.gameTitle}“ gewonnen!`
+        : `Runde beendet: „${item.gameTitle}“`;
+  }
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const phase = useAuth();
   const benutzer = useBenutzerQuery();
   const notifications = useNotificationsQuery();
   const auth = useAuthMutations();
+  const toast = useToast();
+  const seenNotificationIdsRef = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    if (phase.status !== "authenticated") {
+      seenNotificationIdsRef.current = null;
+      return;
+    }
+    const items = notifications.data?.notifications;
+    if (!items) return;
+
+    if (seenNotificationIdsRef.current === null) {
+      seenNotificationIdsRef.current = new Set(items.map((n) => n.id));
+      return;
+    }
+
+    const unseen = items.filter(
+      (n) => !n.readAt && !seenNotificationIdsRef.current?.has(n.id),
+    );
+    for (const item of items) {
+      seenNotificationIdsRef.current.add(item.id);
+    }
+    if (unseen.length > 0) {
+      const latest = unseen[0];
+      toast.success(`notif-${latest.id}`, liveNotificationToastText(latest));
+    }
+  }, [notifications.data?.notifications, phase.status, toast]);
   const unreadCount = notifications.data?.unreadCount ?? 0;
   const normalizedPath = pathname.replace(/\/$/, "") || "/";
   const onAuthRoute = ["/anmeldung", "/registrierung", "/passwort"].includes(

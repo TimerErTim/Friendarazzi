@@ -4,6 +4,7 @@ import {
   Camera,
   ChevronDown,
   ChevronUp,
+  Clock,
   Download,
   EyeOff,
   LayoutGrid,
@@ -11,11 +12,13 @@ import {
   Pin,
   PinOff,
   RefreshCw,
+  Shield,
   Trash2,
   Upload,
   Users,
   WifiOff,
   X,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,11 +28,13 @@ import {
   type CaptureFeedItem,
   type GameDetail,
   GameStatus,
+  type PlayerBadge,
   VisibilityMode,
 } from "@/api/friendarazzi-api";
 import { useBenutzerQuery, useFriendarazziMutations } from "@/api/hooks";
 import { BingoBoard } from "@/components/friendarazzi/bingo-board";
 import { CaptureUploadControl } from "@/components/friendarazzi/capture-upload-control";
+import { formatDeadlineShort } from "@/components/friendarazzi/draft-deadline-picker";
 import { AuthenticatedImage } from "@/components/friendarazzi/media-image";
 import { PhotoLightbox } from "@/components/friendarazzi/photo-lightbox";
 import {
@@ -75,7 +80,17 @@ import { newestCapturesFirst } from "@/lib/capture-feed";
 import { cn } from "@/lib/cn";
 import { normalizeImageForUpload } from "@/lib/media-capture";
 import type { CachedBoardTile } from "@/lib/offline-capture-queue";
+import { useGameCountdown } from "@/lib/use-game-countdown";
 import { useOfflineCaptureQueue } from "@/lib/use-offline-capture-queue";
+
+function formatEndRemaining(seconds: number): string {
+  if (seconds < 60) return `${seconds} Sek.`;
+  const mins = Math.ceil(seconds / 60);
+  if (mins < 60) return `${mins} Min.`;
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hrs} Std. ${remMins} Min.` : `${hrs} Std.`;
+}
 
 const INITIAL_FEED_ITEMS = 3;
 
@@ -112,7 +127,25 @@ export function ActivePlayPhase({
   const [coachDismissed, setCoachDismissed] = useState(() =>
     hasDismissedCaptureCoachMark(),
   );
+  const [abandonConfirmOpen, setAbandonConfirmOpen] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<PlayerBadge | null>(
+    null,
+  );
+  const [syncedAtMs, setSyncedAtMs] = useState(() => Date.now());
   const openedCaptureRef = useRef<string | null>(null);
+  const isHost = me.data?.id === game.hostUserId;
+
+  useEffect(() => {
+    if (game.serverNow) {
+      setSyncedAtMs(Date.now());
+    }
+  }, [game.serverNow]);
+
+  const endsInSeconds = useGameCountdown(
+    game.endsAt,
+    game.serverNow,
+    syncedAtMs,
+  );
 
   useEffect(() => {
     setPinnedIds(loadPinnedTargets(game.id));
@@ -271,6 +304,17 @@ export function ActivePlayPhase({
             <span className="shrink-0 font-mono text-xs font-bold text-ink tabular-nums">
               {capturedCount} / {totalCount}
             </span>
+            {game.endsAt && endsInSeconds !== null ? (
+              <span
+                className="brutal-shadow-sm inline-flex shrink-0 items-center gap-1 rounded-sm border-2 border-strong bg-cyan-subtle px-2 py-0.5 font-mono text-[11px] font-bold text-ink tabular-nums"
+                title={`Spiel endet spätestens am ${formatDeadlineShort(game.endsAt)}`}
+              >
+                <Clock className="size-3.5" aria-hidden="true" />
+                {endsInSeconds === 0
+                  ? "Zeit abgelaufen"
+                  : `Noch ${formatEndRemaining(endsInSeconds)}`}
+              </span>
+            ) : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
@@ -321,35 +365,63 @@ export function ActivePlayPhase({
                         <div className="min-w-0 flex-1">
                           <PlayerBadgeLink user={p} compact />
                         </div>
-                        {isBoardTarget ? (
-                          <Button
-                            type="button"
-                            variant={isPinned ? "primary" : "ghost"}
-                            size="icon"
-                            aria-pressed={isPinned}
-                            aria-label={
-                              isPinned
-                                ? `${p.displayName} aus Fokus entfernen`
-                                : `${p.displayName} anheften`
-                            }
-                            title={
-                              isPinned
-                                ? "Aus Fokus entfernen"
-                                : "Im Fokus anheften"
-                            }
-                            onClick={() => handleTogglePin(p.id)}
-                          >
-                            {isPinned ? (
-                              <PinOff className="size-4" aria-hidden="true" />
-                            ) : (
-                              <Pin className="size-4" aria-hidden="true" />
-                            )}
-                          </Button>
-                        ) : null}
+                        <div className="flex shrink-0 items-center gap-1">
+                          {isBoardTarget ? (
+                            <Button
+                              type="button"
+                              variant={isPinned ? "primary" : "ghost"}
+                              size="icon"
+                              aria-pressed={isPinned}
+                              aria-label={
+                                isPinned
+                                  ? `${p.displayName} aus Fokus entfernen`
+                                  : `${p.displayName} anheften`
+                              }
+                              title={
+                                isPinned
+                                  ? "Aus Fokus entfernen"
+                                  : "Im Fokus anheften"
+                              }
+                              onClick={() => handleTogglePin(p.id)}
+                            >
+                              {isPinned ? (
+                                <PinOff className="size-4" aria-hidden="true" />
+                              ) : (
+                                <Pin className="size-4" aria-hidden="true" />
+                              )}
+                            </Button>
+                          ) : null}
+                          {isHost && p.id !== me.data?.id ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`${p.displayName} zum Host machen`}
+                              title="Host übergeben"
+                              onClick={() => setTransferTarget(p)}
+                            >
+                              <Shield className="size-4" aria-hidden="true" />
+                            </Button>
+                          ) : null}
+                        </div>
                       </li>
                     );
                   })}
                 </ul>
+                {isHost ? (
+                  <div className="mt-2 border-t-2 border-subtle pt-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-error hover:bg-error-subtle"
+                      onClick={() => setAbandonConfirmOpen(true)}
+                    >
+                      <XCircle className="size-4" aria-hidden="true" />
+                      Spiel abbrechen
+                    </Button>
+                  </div>
+                ) : null}
               </PopoverContent>
             </Popover>
           </div>
@@ -834,6 +906,101 @@ export function ActivePlayPhase({
         }
         onDiscardTrayItem={(itemId) => queue.removeItem(itemId)}
       />
+
+      <Dialog
+        open={Boolean(transferTarget)}
+        onOpenChange={(open) => {
+          if (!open) setTransferTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Host-Rolle an {transferTarget?.displayName} übergeben?
+            </DialogTitle>
+            <DialogDescription>
+              {transferTarget?.displayName} übernimmt die Host-Rechte für dieses
+              laufende Spiel.
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.transferHost.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.transferHost.error, {
+                fallback: "Host-Rolle konnte nicht übergeben werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.transferHost.isPending}
+              onClick={() => setTransferTarget(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!transferTarget || mutations.transferHost.isPending}
+              onClick={() => {
+                if (!transferTarget) return;
+                void mutations.transferHost
+                  .mutateAsync({
+                    gameId: game.id,
+                    newHostUserId: transferTarget.id,
+                  })
+                  .then(() => setTransferTarget(null));
+              }}
+            >
+              {mutations.transferHost.isPending ? "Übergibt …" : "Übergeben"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={abandonConfirmOpen} onOpenChange={setAbandonConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Spiel abbrechen?</DialogTitle>
+            <DialogDescription>
+              Die Runde wird sofort beendet und im Rückblick ohne Goldmedaille
+              abgelegt. Bisherige Fotos bleiben sichtbar.
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.abandonGame.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.abandonGame.error, {
+                fallback: "Spiel konnte nicht abgebrochen werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.abandonGame.isPending}
+              onClick={() => setAbandonConfirmOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={mutations.abandonGame.isPending}
+              onClick={() => {
+                void mutations.abandonGame.mutateAsync(game.id).then(() => {
+                  setAbandonConfirmOpen(false);
+                });
+              }}
+            >
+              {mutations.abandonGame.isPending
+                ? "Bricht ab …"
+                : "Spiel abbrechen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

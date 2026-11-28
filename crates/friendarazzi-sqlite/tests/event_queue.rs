@@ -8,7 +8,9 @@ use friendarazzi_core::{
     App,
     adapters::InMemorySigning,
     application::{AuthContext, IdentityProviderConfiguration},
-    domain::{BenachrichtigungArt, BenutzerId, CaptureId, GameId, NeueBenachrichtigung},
+    domain::{
+        BenachrichtigungArt, BenutzerId, CaptureId, CompletionReason, GameId, NeueBenachrichtigung,
+    },
     ports::{Clock, EventQueue, RepositoryError},
     service::{
         BenachrichtigungAbbestellenMitToken, CaptureUploaded, Event, GameFinished, GameStarted,
@@ -72,7 +74,8 @@ async fn sqlite_event_queue_persists_across_restart_and_processes_events() {
     let ev2 = sample_event();
     let ev3 = GameFinished {
         game_id: GameId(Uuid::new_v4()),
-        winner_id: BenutzerId(Uuid::new_v4()),
+        winner_id: Some(BenutzerId(Uuid::new_v4())),
+        completion_reason: CompletionReason::Bingo,
         finished_at: test_time(),
     };
     app.execute_fn::<_, (), RepositoryError>(AuthContext::Anonymous, async move |ctx| {
@@ -243,6 +246,7 @@ async fn unsubscribe_token_survives_process_restart_with_fresh_random_signing_ke
                     grid_size: friendarazzi_core::domain::GridSize::Three,
                     visibility_mode: friendarazzi_core::domain::VisibilityMode::LiveFeed,
                     draft_deadline_at: None,
+                    ends_at: None,
                     created_at: test_time(),
                 })
                 .await?;

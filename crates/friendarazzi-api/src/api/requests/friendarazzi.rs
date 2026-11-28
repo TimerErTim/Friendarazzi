@@ -7,7 +7,7 @@ use friendarazzi_core::{
     service::{
         BenachrichtigungsEinstellungenAktualisieren, CreateGame, DraftPromptInput,
         GameUseCaseError, HostFillRemainingDrafts, JoinGame, ProfileUseCaseError, SaveDraftPrompts,
-        SetDraftDeadline, SpielBeobachtungSetzen, UpdateGameSettings, UpdateProfile,
+        SetDraftDeadline, SpielBeobachtungSetzen, TransferHost, UpdateGameSettings, UpdateProfile,
     },
 };
 use uuid::Uuid;
@@ -29,6 +29,8 @@ pub struct CreateGameRequest {
     pub visibility_mode: VisibilityMode,
     /// Optional drafting auto-close deadline.
     pub draft_deadline_at: Option<DateTime<Utc>>,
+    /// Optional game completion deadline.
+    pub ends_at: Option<DateTime<Utc>>,
 }
 
 impl CreateGameRequest {
@@ -41,6 +43,7 @@ impl CreateGameRequest {
             grid_size,
             visibility_mode: self.visibility_mode.into(),
             draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
         })
     }
 }
@@ -60,6 +63,8 @@ pub struct UpdateGameSettingsRequest {
     pub visibility_mode: VisibilityMode,
     /// Optional drafting auto-close deadline.
     pub draft_deadline_at: Option<DateTime<Utc>>,
+    /// Optional game completion deadline.
+    pub ends_at: Option<DateTime<Utc>>,
 }
 
 impl UpdateGameSettingsRequest {
@@ -76,6 +81,7 @@ impl UpdateGameSettingsRequest {
             grid_size,
             visibility_mode: self.visibility_mode.into(),
             draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
         })
     }
 }
@@ -180,6 +186,26 @@ impl SetDraftDeadlineRequest {
         SetDraftDeadline {
             game_id,
             draft_deadline_at: self.draft_deadline_at,
+        }
+    }
+}
+
+/// Host request to transfer host ownership to another participant.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferHostRequest {
+    /// User ID of an existing player in the game to promote to host.
+    pub new_host_user_id: Uuid,
+}
+
+impl TransferHostRequest {
+    pub fn into_use_case(self, game_id: GameId) -> TransferHost {
+        TransferHost {
+            game_id,
+            new_host_user_id: BenutzerId(self.new_host_user_id),
         }
     }
 }

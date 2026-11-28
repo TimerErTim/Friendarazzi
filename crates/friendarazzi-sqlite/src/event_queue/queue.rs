@@ -5,9 +5,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, SecondsFormat, Utc};
 use error_stack::ResultExt;
-use friendarazzi_core::domain::{BenutzerId, CaptureId, GameId};
+use friendarazzi_core::domain::{BenutzerId, CaptureId, CompletionReason, GameId};
 use friendarazzi_core::ports::{EventQueue, EventQueueError};
-use friendarazzi_core::service::{CaptureUploaded, Event, GameFinished, GameStarted};
+use friendarazzi_core::service::{
+    CaptureUploaded, Event, GameFinished, GameStarted, NearBingoReached,
+};
 use friendarazzi_core::{ErrorReportExt, ResultReport};
 use molting::{AppliableMigration, MigrationTarget};
 use serde::{Deserialize, Serialize};
@@ -28,6 +30,10 @@ pub enum SqliteEventQueueError {
     Serialization,
 }
 
+fn default_completion_reason() -> String {
+    CompletionReason::Bingo.as_str().to_owned()
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 enum PersistedEvent {
@@ -42,9 +48,16 @@ enum PersistedEvent {
         target_id: Uuid,
         occurred_at: DateTime<Utc>,
     },
+    NearBingoReached {
+        game_id: Uuid,
+        leader_id: Uuid,
+        occurred_at: DateTime<Utc>,
+    },
     GameFinished {
         game_id: Uuid,
-        winner_id: Uuid,
+        winner_id: Option<Uuid>,
+        #[serde(default = "default_completion_reason")]
+        completion_reason: String,
         finished_at: DateTime<Utc>,
     },
 }
@@ -63,9 +76,15 @@ impl From<&Event> for PersistedEvent {
                 target_id: ev.target_id.0,
                 occurred_at: ev.occurred_at,
             },
+            Event::NearBingoReached(ev) => Self::NearBingoReached {
+                game_id: ev.game_id.0,
+                leader_id: ev.leader_id.0,
+                occurred_at: ev.occurred_at,
+            },
             Event::GameFinished(ev) => Self::GameFinished {
                 game_id: ev.game_id.0,
-                winner_id: ev.winner_id.0,
+                winner_id: ev.winner_id.map(|id| id.0),
+                completion_reason: ev.completion_reason.as_str().to_owned(),
                 finished_at: ev.finished_at,
             },
         }
@@ -95,13 +114,24 @@ impl From<PersistedEvent> for Event {
                 target_id: BenutzerId(target_id),
                 occurred_at,
             })),
+            PersistedEvent::NearBingoReached {
+                game_id,
+                leader_id,
+                occurred_at,
+            } => Event::NearBingoReached(Box::new(NearBingoReached {
+                game_id: GameId(game_id),
+                leader_id: BenutzerId(leader_id),
+                occurred_at,
+            })),
             PersistedEvent::GameFinished {
                 game_id,
                 winner_id,
+                completion_reason,
                 finished_at,
             } => Event::GameFinished(Box::new(GameFinished {
                 game_id: GameId(game_id),
-                winner_id: BenutzerId(winner_id),
+                winner_id: winner_id.map(BenutzerId),
+                completion_reason: completion_reason.parse().unwrap_or(CompletionReason::Bingo),
                 finished_at,
             })),
         }

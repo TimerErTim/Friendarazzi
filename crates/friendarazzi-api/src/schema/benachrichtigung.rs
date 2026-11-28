@@ -14,6 +14,8 @@ pub enum NotificationKind {
     GameStarted,
     CapturePosted,
     GameCompleted,
+    NearBingo,
+    DraftReminder,
 }
 
 impl From<domain::BenachrichtigungArt> for NotificationKind {
@@ -22,6 +24,8 @@ impl From<domain::BenachrichtigungArt> for NotificationKind {
             domain::BenachrichtigungArt::SpielGestartet => Self::GameStarted,
             domain::BenachrichtigungArt::AufnahmeHochgeladen => Self::CapturePosted,
             domain::BenachrichtigungArt::SpielBeendet => Self::GameCompleted,
+            domain::BenachrichtigungArt::FastBingo => Self::NearBingo,
+            domain::BenachrichtigungArt::EntwurfErinnerung => Self::DraftReminder,
         }
     }
 }

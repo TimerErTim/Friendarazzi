@@ -24,6 +24,7 @@ import { useState } from "react";
 import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
 import {
+  CompletionReason,
   GameStatus,
   type GameSummary,
   VisibilityMode,
@@ -573,6 +574,9 @@ function AuthenticatedHome() {
     useState<DeadlinePresetKey>("none");
   const [deadlineCustomLocal, setDeadlineCustomLocal] = useState("");
   const [draftDeadlineAt, setDraftDeadlineAt] = useState<string | null>(null);
+  const [endsAtPreset, setEndsAtPreset] = useState<DeadlinePresetKey>("none");
+  const [endsAtCustomLocal, setEndsAtCustomLocal] = useState("");
+  const [endsAt, setEndsAt] = useState<string | null>(null);
   const [inviteCode, setInviteCode] = useState("");
 
   async function handleCreate(e: React.FormEvent) {
@@ -582,11 +586,15 @@ function AuthenticatedHome() {
       gridSize: Number(gridSize),
       visibilityMode,
       draftDeadlineAt,
+      endsAt,
     });
     setCreateOpen(false);
     setDeadlinePreset("none");
     setDeadlineCustomLocal("");
     setDraftDeadlineAt(null);
+    setEndsAtPreset("none");
+    setEndsAtCustomLocal("");
+    setEndsAt(null);
     router.push(gameHref(created.id));
   }
 
@@ -802,6 +810,22 @@ function AuthenticatedHome() {
               }}
             />
 
+            <DraftDeadlinePicker
+              legend="Spiel endet spätestens am (optional)"
+              description="Wenn bis dahin niemand Bingo hat, gewinnt die Person mit den meisten ausgefüllten Feldern."
+              preset={endsAtPreset}
+              customLocalValue={endsAtCustomLocal}
+              currentIso={endsAt}
+              onSelectPreset={(preset, nextIso) => {
+                setEndsAtPreset(preset);
+                setEndsAt(nextIso);
+              }}
+              onCustomChange={(local, nextIso) => {
+                setEndsAtCustomLocal(local);
+                setEndsAt(nextIso);
+              }}
+            />
+
             {mutations.createGame.isError ? (
               <Alert variant="error">
                 {apiErrorMessage(mutations.createGame.error, {
@@ -931,7 +955,11 @@ function CompletedGameCard({ game }: { game: GameSummary }) {
         ) : (
           <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-secondary">
             <Award className="size-4" aria-hidden="true" />
-            Runde beendet
+            {game.completionReason === CompletionReason.Abandoned
+              ? "Spiel abgebrochen"
+              : game.completionReason === CompletionReason.Deadline
+                ? "Unentschieden"
+                : "Runde beendet"}
           </span>
         )}
         <Button variant="secondary" size="sm" className="w-full" asChild>

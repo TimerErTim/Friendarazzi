@@ -340,6 +340,7 @@ async fn per_user_uow_split_isolates_failures_across_all_game_events() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await

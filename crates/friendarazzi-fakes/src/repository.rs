@@ -420,6 +420,18 @@ impl GameRepository for FakeGameRepository {
         Ok(out)
     }
 
+    async fn find_active_with_deadline(&self) -> RepositoryResult<Vec<Versioned<Game>>> {
+        let mut out: Vec<_> = self
+            .datastore
+            .games()
+            .values()
+            .filter(|g| matches!(***g, Game::Active(ref a) if a.ends_at().is_some()))
+            .cloned()
+            .collect();
+        out.sort_by_key(|g| g.ends_at());
+        Ok(out)
+    }
+
     async fn update(&self, game: &mut Versioned<Game>) -> RepositoryResult<()> {
         let mut map = self.datastore.games();
         store_update(&mut map, game.id(), game)
@@ -1139,6 +1151,7 @@ mod tests {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
                 created_at: sample_time(),
             },
         ))

@@ -5,7 +5,9 @@ import {
   Camera,
   Check,
   CheckCheck,
+  Clock,
   Crown,
+  Flame,
   Play,
   Settings2,
 } from "lucide-react";
@@ -79,8 +81,37 @@ function notificationSummary(item: NotificationView): {
         accentClass: "bg-primary-subtle",
       };
     }
+    case NotificationKind.NearBingo: {
+      const leader = item.actor?.displayName ?? "Ein Mitspieler";
+      return {
+        title: `Fast Bingo! ${leader} fehlt nur noch 1 Feld`,
+        detail: `Endspurt in „${item.gameTitle}“ – schnell die letzten Fotos sichern!`,
+        badgeLabel: "Fast Bingo",
+        icon: Flame,
+        accentClass: "bg-pink-subtle",
+      };
+    }
+    case NotificationKind.DraftReminder:
+      return {
+        title: `Entwurfsfrist läuft ab: „${item.gameTitle}“`,
+        detail:
+          "Bitte logge deine letzten Aufträge ein, bevor die Runde automatisch startet.",
+        badgeLabel: "Entwurfsfrist",
+        icon: Clock,
+        accentClass: "bg-cyan-subtle",
+      };
     case NotificationKind.GameCompleted: {
-      const winner = item.actor?.displayName ?? "Ein Mitspieler";
+      if (!item.actor) {
+        return {
+          title: `Runde beendet: „${item.gameTitle}“`,
+          detail:
+            "Alle Spielbretter, Fotos und Auszeichnungen sind jetzt im Rückblick sichtbar.",
+          badgeLabel: "Beendet",
+          icon: Crown,
+          accentClass: "bg-primary-subtle",
+        };
+      }
+      const winner = item.actor.displayName;
       return {
         title: `Bingo! ${winner} hat „${item.gameTitle}“ gewonnen`,
         detail:

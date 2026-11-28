@@ -198,6 +198,7 @@ pub async fn setup_active_game(
                 grid_size,
                 visibility_mode,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await

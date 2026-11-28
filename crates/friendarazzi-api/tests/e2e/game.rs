@@ -466,3 +466,148 @@ async fn e2e_draft_deadline_host_fill_and_prompt_char_cap() {
     assert_eq!(bob_view["myBoard"]["tiles"].as_array().unwrap().len(), 9);
     let _ = (alice_id, carol_id);
 }
+
+#[test_log::test(tokio::test)]
+async fn e2e_roster_leave_kick_transfer_abandon_late_join_and_ends_at() {
+    let harness = E2eHarness::new().await;
+    let (t_alice, alice_id) = neuer_benutzer(&harness, "rl-alice@example.at").await;
+    let (t_bob, bob_id) = neuer_benutzer(&harness, "rl-bob@example.at").await;
+    let (t_carol, carol_id) = neuer_benutzer(&harness, "rl-carol@example.at").await;
+    let (t_dave, dave_id) = neuer_benutzer(&harness, "rl-dave@example.at").await;
+
+    let ends_at = harness.clock.now() + Duration::hours(2);
+    let (st, created) = harness
+        .client
+        .post_json_auth(
+            "/api/games",
+            json!({
+                "title": "Roster E2E",
+                "gridSize": 3,
+                "visibilityMode": "LiveFeed",
+                "endsAt": ends_at,
+            }),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{created}");
+    assert!(created["endsAt"].is_string());
+    let game_id = created["id"].as_str().unwrap().to_owned();
+    let invite_code = created["inviteCode"].as_str().unwrap().to_owned();
+
+    for token in [&t_bob, &t_carol, &t_dave] {
+        let (st, _) = harness
+            .client
+            .post_json_auth(
+                "/api/games/join",
+                json!({ "inviteCode": invite_code }),
+                token,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK);
+    }
+
+    // Bob leaves while in Lobby.
+    let (st, left) = harness
+        .client
+        .post_json_auth(&format!("/api/games/{game_id}/leave"), json!({}), &t_bob)
+        .await;
+    assert_eq!(st, StatusCode::OK, "{left}");
+
+    // Start Drafting with Alice, Carol, Dave.
+    let (st, _) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/start-drafting"),
+            json!({}),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    // Host Alice transfers host to Carol.
+    let (st, transferred) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/transfer-host"),
+            json!({ "newHostUserId": carol_id }),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{transferred}");
+    assert_eq!(transferred["hostUserId"], carol_id.to_string());
+
+    // Host Carol kicks Dave -> reverts to Lobby since < 3 remain.
+    let (st, kicked) = harness
+        .client
+        .delete_auth(&format!("/api/games/{game_id}/players/{dave_id}"), &t_carol)
+        .await;
+    assert_eq!(st, StatusCode::OK, "{kicked}");
+    assert_eq!(kicked["status"], "Lobby");
+
+    // Bob and Dave rejoin, start Drafting, auto-fill immediately -> Active.
+    for token in [&t_bob, &t_dave] {
+        let (st, _) = harness
+            .client
+            .post_json_auth(
+                "/api/games/join",
+                json!({ "inviteCode": invite_code }),
+                token,
+            )
+            .await;
+        assert_eq!(st, StatusCode::OK);
+    }
+    let (st, _) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/start-drafting"),
+            json!({}),
+            &t_carol,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    // Kick Dave in Active? No, kick before start or test late join: first let Alice leave during Drafting (still 3 remain: Carol, Bob, Dave).
+    let (st, _) = harness
+        .client
+        .post_json_auth(&format!("/api/games/{game_id}/leave"), json!({}), &t_alice)
+        .await;
+    assert_eq!(st, StatusCode::OK);
+
+    let (st, started) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/prompts/fill-remaining"),
+            json!({ "startImmediately": true }),
+            &t_carol,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{started}");
+    assert_eq!(started["status"], "Active");
+
+    // Late join: Alice rejoins during Active play and receives a 9-tile board.
+    let (st, rejoined) = harness
+        .client
+        .post_json_auth(
+            "/api/games/join",
+            json!({ "inviteCode": invite_code }),
+            &t_alice,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{rejoined}");
+    assert_eq!(rejoined["myBoard"]["tiles"].as_array().unwrap().len(), 9);
+
+    // Host Carol abandons the active game -> Completed, reason Abandoned, winner null.
+    let (st, abandoned) = harness
+        .client
+        .post_json_auth(
+            &format!("/api/games/{game_id}/abandon"),
+            json!({}),
+            &t_carol,
+        )
+        .await;
+    assert_eq!(st, StatusCode::OK, "{abandoned}");
+    assert_eq!(abandoned["status"], "Completed");
+    assert_eq!(abandoned["completionReason"], "Abandoned");
+    assert!(abandoned["winner"].is_null());
+    let _ = (alice_id, bob_id);
+}

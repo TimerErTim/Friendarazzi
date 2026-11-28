@@ -1,10 +1,26 @@
 "use client";
 
-import { Check, Eye, EyeOff, Loader2, Sparkles, Users } from "lucide-react";
+import {
+  Check,
+  Eye,
+  EyeOff,
+  Loader2,
+  LogOut,
+  Shield,
+  Sparkles,
+  UserMinus,
+  Users,
+  XCircle,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiErrorMessage } from "@/api/errors";
-import { type GameDetail, VisibilityMode } from "@/api/friendarazzi-api";
+import {
+  type GameDetail,
+  type PlayerBadge,
+  VisibilityMode,
+} from "@/api/friendarazzi-api";
 import { useBenutzerQuery, useFriendarazziMutations } from "@/api/hooks";
 import {
   type DeadlinePresetKey,
@@ -18,9 +34,18 @@ import { Alert } from "@/components/ui/alert";
 import { CalloutNote } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
+import { paths } from "@/lib/navigation";
 
 import type { FlushPendingSaveFn } from "./shared";
 
@@ -58,6 +83,7 @@ export function LobbyPhase({
   game: GameDetail;
   registerFlush?: (fn: FlushPendingSaveFn | null) => void;
 }) {
+  const router = useRouter();
   const me = useBenutzerQuery();
   const mutations = useFriendarazziMutations();
   const { mutateAsync: updateSettingsAsync, isPending: isSavingSettings } =
@@ -78,6 +104,19 @@ export function LobbyPhase({
   const [deadlineCustomLocal, setDeadlineCustomLocal] = useState(() =>
     toLocalDateTimeInputValue(game.draftDeadlineAt),
   );
+  const [endsAt, setEndsAt] = useState<string | null>(game.endsAt ?? null);
+  const [endsAtPreset, setEndsAtPreset] = useState<DeadlinePresetKey>(
+    game.endsAt ? "custom" : "none",
+  );
+  const [endsAtCustomLocal, setEndsAtCustomLocal] = useState(() =>
+    toLocalDateTimeInputValue(game.endsAt),
+  );
+  const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+  const [abandonConfirmOpen, setAbandonConfirmOpen] = useState(false);
+  const [kickTarget, setKickTarget] = useState<PlayerBadge | null>(null);
+  const [transferTarget, setTransferTarget] = useState<PlayerBadge | null>(
+    null,
+  );
   const [justSaved, setJustSaved] = useState(false);
   const [hasPendingDebounce, setHasPendingDebounce] = useState(false);
 
@@ -90,17 +129,20 @@ export function LobbyPhase({
     gridSize: String(game.gridSize),
     visibilityMode: game.visibilityMode,
     draftDeadlineAt: game.draftDeadlineAt ?? null,
+    endsAt: game.endsAt ?? null,
   });
   const savedSettingsRef = useRef({
     title: game.title,
     gridSize: String(game.gridSize),
     visibilityMode: game.visibilityMode,
     draftDeadlineAt: game.draftDeadlineAt ?? null,
+    endsAt: game.endsAt ?? null,
   });
   const lastSavedRef = useRef(savedSettingsRef.current);
 
   useEffect(() => {
     const serverDeadline = game.draftDeadlineAt ?? null;
+    const serverEndsAt = game.endsAt ?? null;
     if (!isEditingTitleRef.current) {
       setTitle(game.title);
       latestValuesRef.current.title = game.title;
@@ -112,17 +154,30 @@ export function LobbyPhase({
       serverDeadline === null ? "none" : prev === "none" ? "custom" : prev,
     );
     setDeadlineCustomLocal(toLocalDateTimeInputValue(serverDeadline));
+    setEndsAt(serverEndsAt);
+    setEndsAtPreset((prev) =>
+      serverEndsAt === null ? "none" : prev === "none" ? "custom" : prev,
+    );
+    setEndsAtCustomLocal(toLocalDateTimeInputValue(serverEndsAt));
     latestValuesRef.current.gridSize = String(game.gridSize);
     latestValuesRef.current.visibilityMode = game.visibilityMode;
     latestValuesRef.current.draftDeadlineAt = serverDeadline;
+    latestValuesRef.current.endsAt = serverEndsAt;
     savedSettingsRef.current = {
       title: game.title,
       gridSize: String(game.gridSize),
       visibilityMode: game.visibilityMode,
       draftDeadlineAt: serverDeadline,
+      endsAt: serverEndsAt,
     };
     lastSavedRef.current = savedSettingsRef.current;
-  }, [game.title, game.gridSize, game.visibilityMode, game.draftDeadlineAt]);
+  }, [
+    game.title,
+    game.gridSize,
+    game.visibilityMode,
+    game.draftDeadlineAt,
+    game.endsAt,
+  ]);
 
   useEffect(() => {
     if (!justSaved) return;
@@ -136,6 +191,7 @@ export function LobbyPhase({
       nextGridSize: string,
       nextMode: VisibilityMode,
       nextDeadline: string | null = latestValuesRef.current.draftDeadlineAt,
+      nextEndsAt: string | null = latestValuesRef.current.endsAt,
     ) => {
       setHasPendingDebounce(false);
       const trimmedTitle = nextTitle.trim();
@@ -145,13 +201,15 @@ export function LobbyPhase({
         gridSize: nextGridSize,
         visibilityMode: nextMode,
         draftDeadlineAt: nextDeadline,
+        endsAt: nextEndsAt,
       };
       const prev = lastSavedRef.current;
       if (
         prev.title === next.title &&
         prev.gridSize === next.gridSize &&
         prev.visibilityMode === next.visibilityMode &&
-        prev.draftDeadlineAt === next.draftDeadlineAt
+        prev.draftDeadlineAt === next.draftDeadlineAt &&
+        prev.endsAt === next.endsAt
       ) {
         return settingsSaveRef.current;
       }
@@ -166,6 +224,7 @@ export function LobbyPhase({
               gridSize: Number(next.gridSize),
               visibilityMode: next.visibilityMode,
               draftDeadlineAt: next.draftDeadlineAt,
+              endsAt: next.endsAt,
             },
           });
           savedSettingsRef.current = next;
@@ -195,6 +254,7 @@ export function LobbyPhase({
       latest.gridSize,
       latest.visibilityMode,
       latest.draftDeadlineAt,
+      latest.endsAt,
     );
   }, [commitSettings]);
 
@@ -211,6 +271,7 @@ export function LobbyPhase({
           latest.gridSize,
           latest.visibilityMode,
           latest.draftDeadlineAt,
+          latest.endsAt,
         );
       }
     };
@@ -280,17 +341,73 @@ export function LobbyPhase({
           </CardHeader>
           <CardContent className="space-y-3 pt-4">
             <ul className="divide-y divide-subtle">
-              {game.players.map((player) => (
-                <li key={player.id} className="py-2 first:pt-0 last:pb-0">
-                  <PlayerBadgeLink user={player} compact />
-                </li>
-              ))}
+              {game.players.map((player) => {
+                const canManagePlayer = isHost && player.id !== me.data?.id;
+                return (
+                  <li
+                    key={player.id}
+                    className="flex items-center justify-between gap-2 py-2 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <PlayerBadgeLink user={player} compact />
+                    </div>
+                    {canManagePlayer ? (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`${player.displayName} zum Host machen`}
+                          title="Host übergeben"
+                          onClick={() => setTransferTarget(player)}
+                        >
+                          <Shield className="size-4" aria-hidden="true" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`${player.displayName} entfernen`}
+                          title="Aus Lobby entfernen"
+                          onClick={() => setKickTarget(player)}
+                        >
+                          <UserMinus className="size-4" aria-hidden="true" />
+                        </Button>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
             {!canStart ? (
               <p className="border-t-2 border-subtle pt-3 font-mono text-xs font-bold text-secondary">
                 Noch {openSlots} weitere(r) Mitspieler nötig (min. 3).
               </p>
             ) : null}
+            <div className="flex flex-wrap gap-2 border-t-2 border-subtle pt-3">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="flex-1"
+                onClick={() => setLeaveConfirmOpen(true)}
+              >
+                <LogOut className="size-4" aria-hidden="true" />
+                Runde verlassen
+              </Button>
+              {isHost ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 text-error hover:bg-error-subtle"
+                  onClick={() => setAbandonConfirmOpen(true)}
+                >
+                  <XCircle className="size-4" aria-hidden="true" />
+                  Spiel abbrechen
+                </Button>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -451,6 +568,42 @@ export function LobbyPhase({
                 }}
               />
 
+              <DraftDeadlinePicker
+                legend="Spiel endet spätestens am (optional)"
+                description="Wenn bis dahin niemand Bingo hat, gewinnt die Person mit den meisten ausgefüllten Feldern."
+                preset={endsAtPreset}
+                customLocalValue={endsAtCustomLocal}
+                currentIso={endsAt}
+                onSelectPreset={(preset, nextIso) => {
+                  setEndsAtPreset(preset);
+                  setEndsAt(nextIso);
+                  latestValuesRef.current.endsAt = nextIso;
+                  if (nextIso || preset === "none") {
+                    void commitSettings(
+                      title,
+                      gridSize,
+                      visibilityMode,
+                      latestValuesRef.current.draftDeadlineAt,
+                      nextIso,
+                    );
+                  }
+                }}
+                onCustomChange={(local, nextIso) => {
+                  setEndsAtCustomLocal(local);
+                  setEndsAt(nextIso);
+                  latestValuesRef.current.endsAt = nextIso;
+                  if (nextIso) {
+                    void commitSettings(
+                      title,
+                      gridSize,
+                      visibilityMode,
+                      latestValuesRef.current.draftDeadlineAt,
+                      nextIso,
+                    );
+                  }
+                }}
+              />
+
               {mutations.updateSettings.isError ? (
                 <Alert variant="error">
                   {apiErrorMessage(mutations.updateSettings.error, {
@@ -490,8 +643,200 @@ export function LobbyPhase({
           {game.draftDeadlineAt
             ? ` Entwurfsfrist: ${formatDeadlineShort(game.draftDeadlineAt)}.`
             : ""}
+          {game.endsAt
+            ? ` Spielzeitlimit: ${formatDeadlineShort(game.endsAt)}.`
+            : ""}
         </CalloutNote>
       )}
+
+      <Dialog open={leaveConfirmOpen} onOpenChange={setLeaveConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Runde verlassen?</DialogTitle>
+            <DialogDescription>
+              {isHost
+                ? game.players.length > 1
+                  ? "Als Host überträgst du beim Verlassen automatisch die Host-Rolle an die nächste Person in der Lobby."
+                  : "Du bist die letzte Person in dieser Lobby – beim Verlassen wird sie aufgelöst."
+                : "Du verlässt diese Lobby. Über den Einladungscode kannst du später wieder beitreten."}
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.leaveGame.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.leaveGame.error, {
+                fallback: "Lobby konnte nicht verlassen werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.leaveGame.isPending}
+              onClick={() => setLeaveConfirmOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={mutations.leaveGame.isPending}
+              onClick={() => {
+                void mutations.leaveGame.mutateAsync(game.id).then(() => {
+                  setLeaveConfirmOpen(false);
+                  router.replace(paths.home);
+                });
+              }}
+            >
+              {mutations.leaveGame.isPending ? "Verlässt …" : "Verlassen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(kickTarget)}
+        onOpenChange={(open) => {
+          if (!open) setKickTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {kickTarget?.displayName} aus der Lobby entfernen?
+            </DialogTitle>
+            <DialogDescription>
+              Der Mitspieler wird aus der Lobby entfernt und kann über den
+              Einladungscode später bei Bedarf wieder beitreten.
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.kickPlayer.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.kickPlayer.error, {
+                fallback: "Mitspieler konnte nicht entfernt werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.kickPlayer.isPending}
+              onClick={() => setKickTarget(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!kickTarget || mutations.kickPlayer.isPending}
+              onClick={() => {
+                if (!kickTarget) return;
+                void mutations.kickPlayer
+                  .mutateAsync({ gameId: game.id, userId: kickTarget.id })
+                  .then(() => setKickTarget(null));
+              }}
+            >
+              {mutations.kickPlayer.isPending ? "Entfernt …" : "Entfernen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(transferTarget)}
+        onOpenChange={(open) => {
+          if (!open) setTransferTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              Host-Rolle an {transferTarget?.displayName} übergeben?
+            </DialogTitle>
+            <DialogDescription>
+              Danach kann {transferTarget?.displayName} Spieleinstellungen
+              ändern und die Entwurfsphase starten.
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.transferHost.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.transferHost.error, {
+                fallback: "Host-Rolle konnte nicht übergeben werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.transferHost.isPending}
+              onClick={() => setTransferTarget(null)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={!transferTarget || mutations.transferHost.isPending}
+              onClick={() => {
+                if (!transferTarget) return;
+                void mutations.transferHost
+                  .mutateAsync({
+                    gameId: game.id,
+                    newHostUserId: transferTarget.id,
+                  })
+                  .then(() => setTransferTarget(null));
+              }}
+            >
+              {mutations.transferHost.isPending ? "Übergibt …" : "Übergeben"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={abandonConfirmOpen} onOpenChange={setAbandonConfirmOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Spiel abbrechen?</DialogTitle>
+            <DialogDescription>
+              Das Spiel wird sofort beendet, ohne dass eine Goldmedaille
+              vergeben wird. Diese Aktion kann nicht rückgängig gemacht werden.
+            </DialogDescription>
+          </DialogHeader>
+          {mutations.abandonGame.isError ? (
+            <Alert variant="error">
+              {apiErrorMessage(mutations.abandonGame.error, {
+                fallback: "Spiel konnte nicht abgebrochen werden.",
+              })}
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={mutations.abandonGame.isPending}
+              onClick={() => setAbandonConfirmOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              disabled={mutations.abandonGame.isPending}
+              onClick={() => {
+                void mutations.abandonGame.mutateAsync(game.id).then(() => {
+                  setAbandonConfirmOpen(false);
+                });
+              }}
+            >
+              {mutations.abandonGame.isPending
+                ? "Bricht ab …"
+                : "Spiel abbrechen"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

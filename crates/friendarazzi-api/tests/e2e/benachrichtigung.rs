@@ -566,6 +566,7 @@ async fn e2e_failing_mail_relay_does_not_fail_capture_or_game_completion() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await

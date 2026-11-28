@@ -20,6 +20,10 @@ function kindLabel(kind: NotificationKind): string {
       return "E-Mails zum Spielstart";
     case NotificationKind.CapturePosted:
       return "E-Mails zu neuen Beweisfotos";
+    case NotificationKind.NearBingo:
+      return "Benachrichtigungen zu Fast-Bingo-Hinweisen";
+    case NotificationKind.DraftReminder:
+      return "Benachrichtigungen zu Entwurfsfristen";
     case NotificationKind.GameCompleted:
       return "E-Mails zum Spielende & Bingo-Sieg";
   }

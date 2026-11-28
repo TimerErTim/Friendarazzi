@@ -28,6 +28,8 @@ pub enum BenachrichtigungArt {
     SpielGestartet,
     AufnahmeHochgeladen,
     SpielBeendet,
+    FastBingo,
+    EntwurfErinnerung,
 }
 
 impl BenachrichtigungArt {
@@ -36,6 +38,8 @@ impl BenachrichtigungArt {
             Self::SpielGestartet => "game_started",
             Self::AufnahmeHochgeladen => "capture_posted",
             Self::SpielBeendet => "game_completed",
+            Self::FastBingo => "near_bingo",
+            Self::EntwurfErinnerung => "draft_reminder",
         }
     }
 
@@ -45,6 +49,9 @@ impl BenachrichtigungArt {
             (Self::SpielGestartet, _) => format!("game_started:{}", game_id.0),
             (Self::SpielBeendet, _) => format!("game_completed:{}", game_id.0),
             (Self::AufnahmeHochgeladen, None) => format!("capture_posted_game:{}", game_id.0),
+            (Self::FastBingo, Some(cid)) => format!("near_bingo:{}:{}", game_id.0, cid.0),
+            (Self::FastBingo, None) => format!("near_bingo:{}", game_id.0),
+            (Self::EntwurfErinnerung, _) => format!("draft_reminder:{}", game_id.0),
         }
     }
 }
@@ -57,6 +64,8 @@ impl FromStr for BenachrichtigungArt {
             "game_started" => Ok(Self::SpielGestartet),
             "capture_posted" => Ok(Self::AufnahmeHochgeladen),
             "game_completed" => Ok(Self::SpielBeendet),
+            "near_bingo" => Ok(Self::FastBingo),
+            "draft_reminder" => Ok(Self::EntwurfErinnerung),
             _ => Err(BenachrichtigungFehler::UngültigeArt),
         }
     }
@@ -143,7 +152,7 @@ impl NeueBenachrichtigung {
     pub fn spiel_beendet(
         empfänger_id: BenutzerId,
         game_id: GameId,
-        winner_id: BenutzerId,
+        winner_id: Option<BenutzerId>,
         erstellt_am: DateTime<Utc>,
     ) -> (Self, String) {
         let dedupe_key =
@@ -156,7 +165,57 @@ impl NeueBenachrichtigung {
                 art: BenachrichtigungArt::SpielBeendet,
                 game_id,
                 capture_id: None,
-                actor_id: Some(winner_id),
+                actor_id: winner_id,
+                target_id: None,
+                dedupe_key,
+                abbestell_token_hash,
+                erstellt_am,
+            },
+            raw_token,
+        )
+    }
+
+    pub fn fast_bingo(
+        empfänger_id: BenutzerId,
+        game_id: GameId,
+        leader_id: BenutzerId,
+        erstellt_am: DateTime<Utc>,
+    ) -> (Self, String) {
+        let dedupe_key = NonEmptyString::neu(format!("near_bingo:{}:{}", game_id.0, leader_id.0))
+            .expect("static prefix makes dedupe key non-empty");
+        let (raw_token, abbestell_token_hash) = AbbestellToken::neu_paar();
+        (
+            Self {
+                empfänger_id,
+                art: BenachrichtigungArt::FastBingo,
+                game_id,
+                capture_id: None,
+                actor_id: Some(leader_id),
+                target_id: None,
+                dedupe_key,
+                abbestell_token_hash,
+                erstellt_am,
+            },
+            raw_token,
+        )
+    }
+
+    pub fn entwurf_erinnerung(
+        empfänger_id: BenutzerId,
+        game_id: GameId,
+        erstellt_am: DateTime<Utc>,
+    ) -> (Self, String) {
+        let dedupe_key =
+            NonEmptyString::neu(BenachrichtigungArt::EntwurfErinnerung.dedupe_key(game_id, None))
+                .expect("static prefix makes dedupe key non-empty");
+        let (raw_token, abbestell_token_hash) = AbbestellToken::neu_paar();
+        (
+            Self {
+                empfänger_id,
+                art: BenachrichtigungArt::EntwurfErinnerung,
+                game_id,
+                capture_id: None,
+                actor_id: None,
                 target_id: None,
                 dedupe_key,
                 abbestell_token_hash,
@@ -375,6 +434,7 @@ impl BenachrichtigungsEinstellungen {
             BenachrichtigungArt::SpielGestartet => self.email_spiel_gestartet.aktiv,
             BenachrichtigungArt::AufnahmeHochgeladen => self.email_aufnahme_hochgeladen.aktiv,
             BenachrichtigungArt::SpielBeendet => self.email_spiel_beendet.aktiv,
+            BenachrichtigungArt::FastBingo | BenachrichtigungArt::EntwurfErinnerung => false,
         }
     }
 
@@ -389,6 +449,7 @@ impl BenachrichtigungsEinstellungen {
                 self.email_aufnahme_hochgeladen.setze(aktiv, jetzt)
             }
             BenachrichtigungArt::SpielBeendet => self.email_spiel_beendet.setze(aktiv, jetzt),
+            BenachrichtigungArt::FastBingo | BenachrichtigungArt::EntwurfErinnerung => {}
         }
     }
 }

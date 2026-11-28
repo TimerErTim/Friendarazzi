@@ -156,6 +156,12 @@ export default function JoinPage() {
                         {joinStatusLabel(preview.data.status)}
                       </Badge>
                     </div>
+                    {preview.data.status === GameStatus.Active ? (
+                      <p className="mt-2.5 border-t-2 border-strong/20 pt-2 text-xs font-medium text-ink">
+                        Das Spiel läuft bereits – du bekommst beim Beitritt
+                        sofort eine eigene Karte aus Starter-Decks.
+                      </p>
+                    ) : null}
                   </div>
 
                   {mutations.joinGame.isError ? (

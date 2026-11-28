@@ -9,12 +9,15 @@ use uuid::Uuid;
 use crate::{
     application::{ExecutionContext, uow::UnitOfWork, uow::Versioned},
     domain::{
-        ActiveGame, BenutzerId, DraftStartOutcome, Game, GameError, GameId, GridSize, InviteCode,
-        MIN_PLAYERS, NewBoard, NewGame, NonEmptyString, PromptSource, PromptSubmission,
-        PromptSubmissionId, PromptText, VisibilityMode,
+        ActiveGame, BenutzerId, Board, Capture, CompletionReason, DraftStartOutcome, Game,
+        GameError, GameId, GridSize, InviteCode, MIN_PLAYERS, NewBoard, NewGame, NonEmptyString,
+        PromptSource, PromptSubmission, PromptSubmissionId, PromptText, VisibilityMode,
     },
     ports::RepositoryError,
-    service::{GameStarted, UseCase, use_cases::benachrichtigung::load_default_watch_for_user},
+    service::{
+        GameFinished, GameStarted, UseCase,
+        use_cases::benachrichtigung::load_default_watch_for_user,
+    },
 };
 
 const MAX_INVITE_CODE_ATTEMPTS: usize = 8;
@@ -58,6 +61,7 @@ pub(crate) fn map_game_error(err: &GameError) -> GameUseCaseError {
         | GameError::InvalidGridSize
         | GameError::InvalidVisibilityMode
         | GameError::InvalidPromptSource
+        | GameError::InvalidCompletionReason
         | GameError::SelfTargetNotAllowed
         | GameError::TargetNotInGame
         | GameError::InvalidPromptQuota => GameUseCaseError::BadRequest,
@@ -75,6 +79,7 @@ pub struct CreateGame {
     pub grid_size: GridSize,
     pub visibility_mode: VisibilityMode,
     pub draft_deadline_at: Option<DateTime<Utc>>,
+    pub ends_at: Option<DateTime<Utc>>,
 }
 
 #[async_trait]
@@ -98,6 +103,11 @@ impl UseCase<Game> for CreateGame {
         let now = ctx.clock().now();
         if let Some(deadline) = self.draft_deadline_at
             && deadline <= now
+        {
+            return Err(Report::new(GameUseCaseError::BadRequest));
+        }
+        if let Some(end) = self.ends_at
+            && (end <= now || self.draft_deadline_at.is_some_and(|draft| end <= draft))
         {
             return Err(Report::new(GameUseCaseError::BadRequest));
         }
@@ -154,6 +164,7 @@ impl UseCase<Game> for CreateGame {
                     grid_size: self.grid_size,
                     visibility_mode: self.visibility_mode,
                     draft_deadline_at: self.draft_deadline_at,
+                    ends_at: self.ends_at,
                     created_at: now,
                 })
                 .await
@@ -202,29 +213,79 @@ impl UseCase<Game> for JoinGame {
                 return Ok(game.into_data());
             }
 
-            let version = game.v();
-            let Game::Lobby(mut lobby) = game.into_data() else {
-                return Err(Report::new(GameUseCaseError::Conflict));
-            };
-
             let watching = load_default_watch_for_user(&uow, user_id)
                 .await
                 .map_err(IntoReport::into_report)
                 .change_context(GameUseCaseError::Persistence)?;
 
-            lobby.join_player(user_id, now, watching);
-            let mut updated = Versioned::new(version, Game::Lobby(lobby));
-            uow.games()
-                .update(&mut updated)
-                .await
-                .map_err(IntoReport::into_report)
-                .change_context(GameUseCaseError::Persistence)?;
+            let version = game.v();
+            let updated = match game.into_data() {
+                Game::Lobby(mut lobby) => {
+                    lobby.join_player(user_id, now, watching);
+                    let mut updated = Versioned::new(version, Game::Lobby(lobby));
+                    uow.games()
+                        .update(&mut updated)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .map_err(|err| {
+                            let mapped = map_update_repo_err(&err);
+                            err.change_context(mapped)
+                        })?;
+                    updated.into_data()
+                }
+                Game::Active(mut active) => {
+                    if active.is_deadline_reached(now) {
+                        return Err(Report::new(GameUseCaseError::Conflict));
+                    }
+                    let decks = uow
+                        .decks()
+                        .find_all()
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameUseCaseError::Persistence)?;
+                    let maybe_board = {
+                        let mut rng = ctx.rng();
+                        active
+                            .join_late_player(user_id, now, watching, &decks, &mut *rng)
+                            .map_err(|e| {
+                                let mapped = map_game_error(e.current_context());
+                                e.change_context(mapped)
+                            })?
+                    };
+                    let mut updated = Versioned::new(version, Game::Active(active));
+                    uow.games()
+                        .update(&mut updated)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .map_err(|err| {
+                            let mapped = map_update_repo_err(&err);
+                            err.change_context(mapped)
+                        })?;
+                    if let Some(new_board) = maybe_board {
+                        uow.boards()
+                            .create(new_board)
+                            .await
+                            .map_err(IntoReport::into_report)
+                            .map_err(|err| {
+                                if matches!(err.current_context(), RepositoryError::Conflict) {
+                                    err.change_context(GameUseCaseError::Conflict)
+                                } else {
+                                    err.change_context(GameUseCaseError::Persistence)
+                                }
+                            })?;
+                    }
+                    updated.into_data()
+                }
+                Game::Drafting(_) | Game::Completed(_) => {
+                    return Err(Report::new(GameUseCaseError::Conflict));
+                }
+            };
 
-            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+            Ok::<_, Report<GameUseCaseError>>(updated)
         }
         .await;
 
-        uow.finish(result, GameUseCaseError::Persistence).await
+        uow.finish_with(result, map_update_repo_err).await
     }
 }
 
@@ -235,6 +296,7 @@ pub struct UpdateGameSettings {
     pub grid_size: GridSize,
     pub visibility_mode: VisibilityMode,
     pub draft_deadline_at: Option<DateTime<Utc>>,
+    pub ends_at: Option<DateTime<Utc>>,
 }
 
 #[async_trait]
@@ -286,6 +348,7 @@ impl UseCase<Game> for UpdateGameSettings {
                     self.grid_size,
                     self.visibility_mode,
                     self.draft_deadline_at,
+                    self.ends_at,
                     now,
                 )
                 .map_err(|e| {
@@ -957,6 +1020,422 @@ impl UseCase<StartReadyGamesOutcome> for StartReadyGames {
         Ok(StartReadyGamesOutcome {
             started_games,
             next_draft_closes_at,
+        })
+    }
+}
+
+/// Remove the caller from a game while still in Lobby or Drafting (auto-transferring host if needed).
+#[derive(Debug, Clone)]
+pub struct LeaveGame {
+    pub game_id: GameId,
+}
+
+#[async_trait]
+impl UseCase<Game> for LeaveGame {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(GameUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+            if !game.has_player(user_id) {
+                return Err(Report::new(GameUseCaseError::Forbidden));
+            }
+            let version = game.v();
+            let next_game = match game.into_data() {
+                Game::Lobby(mut lobby) => {
+                    lobby.leave_player(user_id).map_err(|e| {
+                        let mapped = map_game_error(e.current_context());
+                        e.change_context(mapped)
+                    })?;
+                    Game::Lobby(lobby)
+                }
+                Game::Drafting(drafting) => drafting.leave_player(user_id, now).map_err(|e| {
+                    let mapped = map_game_error(e.current_context());
+                    e.change_context(mapped)
+                })?,
+                Game::Active(_) | Game::Completed(_) => {
+                    return Err(Report::new(GameUseCaseError::Conflict));
+                }
+            };
+            let mut updated = Versioned::new(version, next_game);
+            uow.games()
+                .update(&mut updated)
+                .await
+                .map_err(IntoReport::into_report)
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
+            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+        }
+        .await;
+
+        uow.finish_with(result, map_update_repo_err).await
+    }
+}
+
+/// Host-only action removing a guest player while in Lobby or Drafting.
+#[derive(Debug, Clone)]
+pub struct KickPlayer {
+    pub game_id: GameId,
+    pub target_user_id: BenutzerId,
+}
+
+#[async_trait]
+impl UseCase<Game> for KickPlayer {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(GameUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+            if game.host_user_id() != user_id {
+                return Err(Report::new(GameUseCaseError::Forbidden));
+            }
+            let version = game.v();
+            let next_game = match game.into_data() {
+                Game::Lobby(mut lobby) => {
+                    lobby.kick_player(self.target_user_id).map_err(|e| {
+                        let mapped = match e.current_context() {
+                            crate::domain::GameError::PlayerNotInGame => GameUseCaseError::NotFound,
+                            other => map_game_error(other),
+                        };
+                        e.change_context(mapped)
+                    })?;
+                    Game::Lobby(lobby)
+                }
+                Game::Drafting(drafting) => drafting
+                    .kick_player(self.target_user_id, now)
+                    .map_err(|e| {
+                        let mapped = match e.current_context() {
+                            crate::domain::GameError::PlayerNotInGame => GameUseCaseError::NotFound,
+                            other => map_game_error(other),
+                        };
+                        e.change_context(mapped)
+                    })?,
+                Game::Active(_) | Game::Completed(_) => {
+                    return Err(Report::new(GameUseCaseError::Conflict));
+                }
+            };
+            let mut updated = Versioned::new(version, next_game);
+            uow.games()
+                .update(&mut updated)
+                .await
+                .map_err(IntoReport::into_report)
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
+            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+        }
+        .await;
+
+        uow.finish_with(result, map_update_repo_err).await
+    }
+}
+
+/// Host-only transfer of host privileges to another participant in Lobby, Drafting, or Active play.
+#[derive(Debug, Clone)]
+pub struct TransferHost {
+    pub game_id: GameId,
+    pub new_host_user_id: BenutzerId,
+}
+
+#[async_trait]
+impl UseCase<Game> for TransferHost {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(GameUseCaseError::Unauthorized)?;
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let mut game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(GameUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+            if game.host_user_id() != user_id {
+                return Err(Report::new(GameUseCaseError::Forbidden));
+            }
+            if matches!(&*game, Game::Completed(_)) {
+                return Err(Report::new(GameUseCaseError::Conflict));
+            }
+            if !game.has_player(self.new_host_user_id) {
+                return Err(Report::new(GameUseCaseError::BadRequest));
+            }
+            game.transfer_host(user_id, self.new_host_user_id)
+                .map_err(|e| {
+                    let mapped = map_game_error(e.current_context());
+                    e.change_context(mapped)
+                })?;
+            uow.games()
+                .update(&mut game)
+                .await
+                .map_err(IntoReport::into_report)
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
+            Ok::<_, Report<GameUseCaseError>>(game.into_data())
+        }
+        .await;
+
+        uow.finish_with(result, map_update_repo_err).await
+    }
+}
+
+/// Host-only termination of a Lobby, Drafting, or Active game as `Abandoned` (no Gold Medal).
+#[derive(Debug, Clone)]
+pub struct AbandonGame {
+    pub game_id: GameId,
+}
+
+#[async_trait]
+impl UseCase<Game> for AbandonGame {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<Game, Self::Error> {
+        let user_id = ctx
+            .auth()
+            .require_benutzer_id()
+            .change_context(GameUseCaseError::Unauthorized)?;
+        let now = ctx.clock().now();
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let result = async {
+            let game = match uow.games().find_by_id(self.game_id).await {
+                Ok(g) => g,
+                Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                    return Err(Report::new(GameUseCaseError::NotFound));
+                }
+                Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+            };
+            if game.host_user_id() != user_id {
+                return Err(Report::new(GameUseCaseError::Forbidden));
+            }
+            let version = game.v();
+            let completed = match game.into_data() {
+                Game::Lobby(g) => g.abandon(now),
+                Game::Drafting(g) => g.abandon(now),
+                Game::Active(g) => g.abandon(now),
+                Game::Completed(_) => return Err(Report::new(GameUseCaseError::Conflict)),
+            };
+            let mut updated = Versioned::new(version, Game::Completed(completed));
+            uow.games()
+                .update(&mut updated)
+                .await
+                .map_err(IntoReport::into_report)
+                .map_err(|err| {
+                    let mapped = map_update_repo_err(&err);
+                    err.change_context(mapped)
+                })?;
+            Ok::<_, Report<GameUseCaseError>>(updated.into_data())
+        }
+        .await;
+
+        let out = uow.finish_with(result, map_update_repo_err).await?;
+        ctx.events().submit(GameFinished {
+            game_id: self.game_id,
+            winner_id: None,
+            completion_reason: CompletionReason::Abandoned,
+            finished_at: now,
+        });
+        Ok(out)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FinishExpiredGamesOutcome {
+    pub finished_games: Vec<GameId>,
+    pub next_ends_at: Option<DateTime<Utc>>,
+}
+
+/// Finalize all `Active` games whose `ends_at <= now` by ranking filled tiles.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FinishExpiredGames;
+
+#[async_trait]
+impl UseCase<FinishExpiredGamesOutcome> for FinishExpiredGames {
+    type Error = Report<GameUseCaseError>;
+
+    async fn perform(
+        self,
+        ctx: ExecutionContext<'_>,
+    ) -> Result<FinishExpiredGamesOutcome, Self::Error> {
+        let now = ctx.clock().now();
+        let read_uow = ctx
+            .enter()
+            .await
+            .change_context(GameUseCaseError::Persistence)?;
+
+        let scan = async {
+            let candidates = read_uow
+                .games()
+                .find_active_with_deadline()
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(GameUseCaseError::Persistence)?;
+
+            let mut expired = Vec::new();
+            let mut next_ends_at: Option<DateTime<Utc>> = None;
+            for versioned in candidates {
+                let Game::Active(active) = versioned.into_data() else {
+                    continue;
+                };
+                if active.is_deadline_reached(now) {
+                    expired.push(active.id());
+                } else {
+                    next_ends_at = earliest_timestamp(next_ends_at, active.ends_at());
+                }
+            }
+            Ok::<_, Report<GameUseCaseError>>((expired, next_ends_at))
+        }
+        .await;
+
+        let (expired_ids, mut next_ends_at) =
+            read_uow.finish(scan, GameUseCaseError::Persistence).await?;
+
+        let mut finished_games = Vec::new();
+        for game_id in expired_ids {
+            let uow = ctx
+                .enter()
+                .await
+                .change_context(GameUseCaseError::Persistence)?;
+
+            let step = async {
+                let versioned = match uow.games().find_by_id(game_id).await {
+                    Ok(g) => g,
+                    Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+                        return Ok(None);
+                    }
+                    Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+                };
+                let version = versioned.v();
+                let Game::Active(active) = versioned.into_data() else {
+                    return Ok(None);
+                };
+                if !active.is_deadline_reached(now) {
+                    next_ends_at = earliest_timestamp(next_ends_at, active.ends_at());
+                    return Ok(None);
+                }
+
+                let boards: Vec<Board> = uow
+                    .boards()
+                    .find_by_game(game_id)
+                    .await
+                    .map_err(IntoReport::into_report)
+                    .change_context(GameUseCaseError::Persistence)?
+                    .into_iter()
+                    .map(|b| b.into_data())
+                    .collect();
+                let captures: Vec<Capture> = uow
+                    .captures()
+                    .find_by_game(game_id)
+                    .await
+                    .map_err(IntoReport::into_report)
+                    .change_context(GameUseCaseError::Persistence)?
+                    .into_iter()
+                    .map(|c| c.into_data())
+                    .collect();
+
+                let completed = active.complete_by_deadline(&boards, &captures, now);
+                let winner_id = completed.winner_user_id();
+                let mut updated = Versioned::new(version, Game::Completed(completed));
+                uow.games()
+                    .update(&mut updated)
+                    .await
+                    .map_err(IntoReport::into_report)
+                    .map_err(|err| {
+                        let mapped = map_update_repo_err(&err);
+                        err.change_context(mapped)
+                    })?;
+
+                if let Some(uid) = winner_id {
+                    let mut winner = uow
+                        .benutzer()
+                        .find_by_id(uid)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameUseCaseError::Persistence)?;
+                    winner.award_gold_medal();
+                    uow.benutzer()
+                        .update(&mut winner)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(GameUseCaseError::Persistence)?;
+                }
+
+                Ok::<_, Report<GameUseCaseError>>(Some(winner_id))
+            }
+            .await;
+
+            match uow.finish_with(step, map_update_repo_err).await {
+                Ok(Some(winner_id)) => {
+                    ctx.events().submit(GameFinished {
+                        game_id,
+                        winner_id,
+                        completion_reason: CompletionReason::Deadline,
+                        finished_at: now,
+                    });
+                    finished_games.push(game_id);
+                }
+                Ok(None) => {}
+                Err(err) if matches!(err.current_context(), GameUseCaseError::Conflict) => {
+                    debug!(
+                        ?game_id,
+                        "expired game completion raced with update; skipping"
+                    );
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        Ok(FinishExpiredGamesOutcome {
+            finished_games,
+            next_ends_at,
         })
     }
 }

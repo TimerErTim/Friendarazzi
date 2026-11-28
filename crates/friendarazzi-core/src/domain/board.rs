@@ -302,6 +302,26 @@ impl Board {
 
         None
     }
+
+    /// True when the board is one missing tile away from its first Bingo on any row, column, or diagonal.
+    pub fn is_one_away_from_bingo(&self) -> bool {
+        if self.has_bingo {
+            return false;
+        }
+        let side = self.grid_size.side() as u8;
+        let target = usize::from(side).saturating_sub(1);
+        let is_filled = |r: u8, c: u8| -> bool {
+            self.tiles
+                .iter()
+                .find(|t| t.row() == r && t.col() == c)
+                .is_some_and(BoardTile::is_filled)
+        };
+
+        (0..side).any(|r| (0..side).filter(|&c| is_filled(r, c)).count() == target)
+            || (0..side).any(|c| (0..side).filter(|&r| is_filled(r, c)).count() == target)
+            || (0..side).filter(|&i| is_filled(i, i)).count() == target
+            || (0..side).filter(|&i| is_filled(i, side - 1 - i)).count() == target
+    }
 }
 
 /// One tile entity owned by a `Board` aggregate.
@@ -520,5 +540,28 @@ mod tests {
             empty_err.current_context(),
             BoardError::TileNotCaptured
         ));
+    }
+
+    #[test_log::test]
+    fn one_away_from_bingo_detects_pre_win_state_and_clears_after_win() {
+        let mut board = mk_board(GridSize::Three);
+        let ids: Vec<BoardTileId> = board.tiles().iter().map(BoardTile::id).collect();
+        assert!(!board.is_one_away_from_bingo());
+
+        board
+            .record_capture(ids[0], CaptureId(Uuid::new_v4()))
+            .unwrap();
+        assert!(!board.is_one_away_from_bingo());
+
+        board
+            .record_capture(ids[1], CaptureId(Uuid::new_v4()))
+            .unwrap();
+        assert!(board.is_one_away_from_bingo());
+
+        board
+            .record_capture(ids[2], CaptureId(Uuid::new_v4()))
+            .unwrap();
+        assert!(board.has_bingo());
+        assert!(!board.is_one_away_from_bingo());
     }
 }

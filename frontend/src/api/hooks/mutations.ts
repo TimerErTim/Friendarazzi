@@ -112,6 +112,35 @@ export function useFriendarazziMutations() {
       },
       onSuccess: syncGameDetail,
     }),
+    leaveGame: useMutation({
+      mutationFn: (gameId: string) => api.gameLeave(gameId),
+      ...SITE_HANDLED,
+      onSuccess: (_data, gameId) => {
+        queryClient.removeQueries({
+          queryKey: friendarazziKeys.games.detail(gameId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: friendarazziKeys.games.all(),
+        });
+      },
+    }),
+    kickPlayer: useMutation({
+      mutationFn: (vars: { gameId: string; userId: string }) =>
+        api.gameKickPlayer(vars.gameId, vars.userId),
+      ...SITE_HANDLED,
+      onSuccess: syncGameDetail,
+    }),
+    transferHost: useMutation({
+      mutationFn: (vars: { gameId: string; newHostUserId: string }) =>
+        api.gameTransferHost(vars.gameId, vars.newHostUserId),
+      ...SITE_HANDLED,
+      onSuccess: syncGameDetail,
+    }),
+    abandonGame: useMutation({
+      mutationFn: (gameId: string) => api.gameAbandon(gameId),
+      ...SITE_HANDLED,
+      onSuccess: syncGameDetail,
+    }),
     markNotificationRead: useMutation({
       mutationFn: (notificationId: string) =>
         api.notificationMarkRead(notificationId),

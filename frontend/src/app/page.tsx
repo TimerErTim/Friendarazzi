@@ -2,13 +2,13 @@
 
 import {
   ArrowRight,
-  Award,
   Camera,
   CheckCircle2,
-  Crown,
   Dices,
   Eye,
   EyeOff,
+  LayoutGrid,
+  List,
   Lock,
   Pin,
   Plus,
@@ -27,6 +27,7 @@ import { useAuth } from "@/api/auth-provider";
 import { apiErrorMessage } from "@/api/errors";
 import {
   type BoardTileView,
+  type CaptureFeedItem,
   GameStatus,
   type GameSummary,
   VisibilityMode,
@@ -37,7 +38,10 @@ import {
   useGamesQuery,
 } from "@/api/hooks";
 import { Wordmark } from "@/components/brand/wordmark";
-import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
+import { BingoBoard } from "@/components/friendarazzi/bingo-board";
+import { CaptureTileDialog } from "@/components/friendarazzi/capture-tile-dialog";
+import { PhotoLightbox } from "@/components/friendarazzi/photo-lightbox";
+import { TargetGroupedBoard } from "@/components/friendarazzi/target-grouped-board";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -46,7 +50,7 @@ import {
   SparkleIcon,
 } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -58,28 +62,18 @@ import {
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { loadPinnedTiles, savePinnedTiles } from "@/lib/board-grouping";
-import { cn } from "@/lib/cn";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  formatGameProgress,
-  gameNextActionLabel,
-  sortActiveGames,
-} from "@/lib/game-overview";
-import { gameHref, gameTileHref, joinHref, paths } from "@/lib/navigation";
-import { useGameCountdown } from "@/lib/use-game-countdown";
-
-function statusLabel(status: GameStatus): string {
-  switch (status) {
-    case GameStatus.Lobby:
-      return "Lobby";
-    case GameStatus.Drafting:
-      return "Entwurf";
-    case GameStatus.Active:
-      return "Aktiv";
-    case GameStatus.Completed:
-      return "Beendet";
-  }
-}
+  type BoardViewMode,
+  loadBoardViewMode,
+  loadPinnedTiles,
+  saveBoardViewMode,
+  savePinnedTiles,
+  togglePinnedTile,
+} from "@/lib/board-grouping";
+import { cn } from "@/lib/cn";
+import { sortActiveGames } from "@/lib/game-overview";
+import { gameHref, joinHref, paths } from "@/lib/navigation";
 
 export default function HomePage() {
   const phase = useAuth();
@@ -574,24 +568,33 @@ function AuthenticatedHome() {
     VisibilityMode.Undercover,
   );
   const [inviteCode, setInviteCode] = useState("");
+  const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>(() =>
+    loadBoardViewMode(),
+  );
   const [pinnedByGame, setPinnedByGame] = useState<Record<string, string[]>>(
     {},
   );
+  const [captureTarget, setCaptureTarget] = useState<{
+    gameId: string;
+    tile: BoardTileView;
+  } | null>(null);
+  const [lightboxCapture, setLightboxCapture] =
+    useState<CaptureFeedItem | null>(null);
 
   const all = games.data ?? [];
   const active = useMemo(
     () => sortActiveGames(all.filter((g) => g.status !== GameStatus.Completed)),
     [all],
   );
-  const completed = useMemo(
-    () => all.filter((g) => g.status === GameStatus.Completed),
-    [all],
-  );
   const runningActiveGames = useMemo(
     () => active.filter((g) => g.status === GameStatus.Active),
     [active],
   );
-  const activeGameIdsKey = runningActiveGames.map((g) => g.id).join(",");
+  const activeGameIds = useMemo(
+    () => runningActiveGames.map((g) => g.id),
+    [runningActiveGames],
+  );
+  const activeGameIdsKey = activeGameIds.join(",");
 
   const refreshPinnedFromStorage = useCallback(() => {
     const ids = activeGameIdsKey ? activeGameIdsKey.split(",") : [];
@@ -616,21 +619,15 @@ function AuthenticatedHome() {
     };
   }, [refreshPinnedFromStorage]);
 
-  const pinnedGameIds = useMemo(
-    () =>
-      runningActiveGames
-        .map((g) => g.id)
-        .filter((id) => (pinnedByGame[id]?.length ?? 0) > 0),
-    [runningActiveGames, pinnedByGame],
-  );
-  const pinnedDetailQueries = useGameDetailsQueries(pinnedGameIds);
+  const activeDetailsQueries = useGameDetailsQueries(activeGameIds);
 
   const pinnedTasks: Array<{ game: GameSummary; tile: BoardTileView }> = [];
   let isLoadingPinned = false;
-  pinnedGameIds.forEach((gameId, index) => {
-    const game = runningActiveGames.find((g) => g.id === gameId);
-    const query = pinnedDetailQueries[index];
-    if (!game || !query) return;
+  runningActiveGames.forEach((game, index) => {
+    const pinIds = pinnedByGame[game.id] ?? [];
+    if (pinIds.length === 0) return;
+    const query = activeDetailsQueries[index];
+    if (!query) return;
     if (query.isLoading && !query.data) {
       isLoadingPinned = true;
       return;
@@ -638,7 +635,7 @@ function AuthenticatedHome() {
     const board = query.data?.myBoard;
     if (!board) return;
     const tileById = new Map(board.tiles.map((t) => [t.id, t]));
-    for (const tileId of pinnedByGame[gameId] ?? []) {
+    for (const tileId of pinIds) {
       const tile = tileById.get(tileId);
       if (tile && !tile.isCaptured) {
         pinnedTasks.push({ game, tile });
@@ -646,9 +643,25 @@ function AuthenticatedHome() {
     }
   });
 
-  function handleUnpinTask(gameId: string, tileId: string) {
+  function handleViewModeChange(next: string) {
+    if (next !== "grid" && next !== "list") return;
+    setBoardViewMode(next);
+    saveBoardViewMode(next);
+  }
+
+  function handleTogglePinTile(gameId: string, tileId: string) {
     setPinnedByGame((prev) => {
       const current = prev[gameId] ?? loadPinnedTiles(gameId);
+      const nextForGame = togglePinnedTile(current, tileId);
+      savePinnedTiles(gameId, nextForGame);
+      return { ...prev, [gameId]: nextForGame };
+    });
+  }
+
+  function handleTileCaptured(gameId: string, tileId: string) {
+    setPinnedByGame((prev) => {
+      const current = prev[gameId] ?? loadPinnedTiles(gameId);
+      if (!current.includes(tileId)) return prev;
       const nextForGame = current.filter((id) => id !== tileId);
       savePinnedTiles(gameId, nextForGame);
       return { ...prev, [gameId]: nextForGame };
@@ -689,15 +702,17 @@ function AuthenticatedHome() {
     );
   }
 
+  const hasPendingLobbies = active.length > runningActiveGames.length;
+
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
-      {/* Compact Hub Header: one primary CTA + inline secondary join form */}
-      <section className="brutal-shadow flex flex-col gap-4 rounded-md border-[2.5px] border-strong bg-surface p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
+    <div className="mx-auto w-full max-w-6xl space-y-5 px-3 py-4 sm:space-y-6 sm:p-6">
+      {/* Compact Spielzentrale card: create CTA + single-line join form straight beneath */}
+      <section className="brutal-shadow space-y-3 rounded-md border-[2.5px] border-strong bg-surface p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="font-display text-xl tracking-tight text-ink sm:text-2xl">
             Spielzentrale
           </h1>
-          <Button size="lg" onClick={() => setCreateOpen(true)}>
+          <Button size="md" onClick={() => setCreateOpen(true)}>
             <Plus aria-hidden="true" />
             Neues Spiel hosten
           </Button>
@@ -705,7 +720,7 @@ function AuthenticatedHome() {
 
         <form
           onSubmit={(e) => void handleJoinSubmit(e)}
-          className="flex flex-wrap items-center gap-2 rounded-sm border-2 border-strong bg-cyan-subtle p-1.5"
+          className="flex items-center gap-2"
         >
           <label htmlFor="cockpit-invite-code" className="sr-only">
             Mit Einladungscode beitreten
@@ -715,13 +730,14 @@ function AuthenticatedHome() {
             value={inviteCode}
             onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
             placeholder="Code (z.B. A7K9P2)"
-            className="min-w-40 flex-1 font-mono font-bold tracking-wider uppercase sm:w-48 sm:flex-none"
+            className="min-w-0 flex-1 font-mono font-bold tracking-wider uppercase"
             maxLength={16}
           />
           <Button
             type="submit"
             variant="secondary"
             size="field"
+            className="shrink-0"
             disabled={mutations.joinGame.isPending}
           >
             <Ticket aria-hidden="true" />
@@ -732,10 +748,10 @@ function AuthenticatedHome() {
 
       {/* Pinned Tasks Across All Running Games */}
       {pinnedTasks.length > 0 || isLoadingPinned ? (
-        <section className="space-y-3">
+        <section className="space-y-2.5">
           <div className="flex items-center gap-2">
-            <Pin className="size-5 rotate-45 text-ink" aria-hidden="true" />
-            <h2 className="font-display text-xl tracking-tight text-ink">
+            <Pin className="size-4 rotate-45 text-ink" aria-hidden="true" />
+            <h2 className="font-display text-lg tracking-tight text-ink sm:text-xl">
               Angeheftete Aufgaben ({pinnedTasks.length})
             </h2>
           </div>
@@ -751,9 +767,10 @@ function AuthenticatedHome() {
                   key={`${game.id}-${tile.id}`}
                   className="flex items-stretch overflow-hidden"
                 >
-                  <Link
-                    href={gameTileHref(game.id, tile.id)}
-                    className="flex min-h-14 min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-primary-subtle/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                  <button
+                    type="button"
+                    onClick={() => setCaptureTarget({ gameId: game.id, tile })}
+                    className="flex min-h-14 min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-primary-subtle/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
                   >
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -772,12 +789,12 @@ function AuthenticatedHome() {
                       className="size-4 shrink-0 text-secondary"
                       aria-hidden="true"
                     />
-                  </Link>
+                  </button>
                   <button
                     type="button"
                     aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
                     title="Aus Fokus entfernen"
-                    onClick={() => handleUnpinTask(game.id, tile.id)}
+                    onClick={() => handleTogglePinTile(game.id, tile.id)}
                     className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-strong bg-surface-muted px-3 text-ink transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
                   >
                     <X className="size-4" aria-hidden="true" />
@@ -789,48 +806,175 @@ function AuthenticatedHome() {
         </section>
       ) : null}
 
-      {/* Active Games */}
+      {/* Central Playing Hub: All Running Bingo Boards */}
       <section className="space-y-3">
-        <h2 className="font-display text-xl tracking-tight text-ink">
-          Laufende Spiele ({active.length})
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display text-lg tracking-tight text-ink sm:text-xl">
+            Aktive Bretter ({runningActiveGames.length})
+          </h2>
+          {runningActiveGames.length > 0 ? (
+            <ToggleGroup
+              type="single"
+              value={boardViewMode}
+              onValueChange={handleViewModeChange}
+              aria-label="Brett-Ansicht auf Home wählen"
+            >
+              <ToggleGroupItem value="grid" aria-label="Raster-Ansicht">
+                <LayoutGrid className="size-4" aria-hidden="true" />
+                <span>Raster</span>
+              </ToggleGroupItem>
+              <ToggleGroupItem value="list" aria-label="Liste nach Zielperson">
+                <List className="size-4" aria-hidden="true" />
+                <span>Nach Ziel</span>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          ) : null}
+        </div>
 
-        {active.length === 0 ? (
-          <CalloutNote label="Keine aktive Runde" tone="yellow">
-            Erstelle oben ein neues Spiel oder tritt über einen Einladungscode
-            einer bestehenden Lobby bei.
+        {runningActiveGames.length === 0 ? (
+          <CalloutNote
+            label={
+              hasPendingLobbies
+                ? "Noch keine laufende Jagd"
+                : "Keine aktive Runde"
+            }
+            tone={hasPendingLobbies ? "cyan" : "yellow"}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p>
+                {hasPendingLobbies
+                  ? "Du hast offene Lobbys oder Entwürfe – starte sie unter Lobbys, sobald alle bereit sind."
+                  : "Erstelle oben ein neues Spiel oder tritt über einen Einladungscode einer Lobby bei."}
+              </p>
+              {hasPendingLobbies ? (
+                <Button variant="secondary" size="sm" asChild>
+                  <Link href={paths.games}>
+                    Zu den Lobbys
+                    <ArrowRight aria-hidden="true" />
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
           </CalloutNote>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
-            {active.map((game) => (
-              <ActiveGameCard
-                key={game.id}
-                game={game}
-                dataUpdatedAt={games.dataUpdatedAt}
-              />
-            ))}
+          <div className="space-y-4">
+            {runningActiveGames.map((game, index) => {
+              const query = activeDetailsQueries[index];
+              const detail = query?.data;
+              const board = detail?.myBoard;
+
+              if (!detail || !board) {
+                return (
+                  <div key={game.id} className="space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <Link
+                        href={gameHref(game.id)}
+                        className="font-display text-base text-ink hover:underline"
+                      >
+                        {game.title}
+                      </Link>
+                      <span className="font-mono text-xs font-bold text-secondary">
+                        Lädt …
+                      </span>
+                    </div>
+                    <Skeleton className="h-64 w-full" />
+                  </div>
+                );
+              }
+
+              const capturedCount = board.tiles.filter(
+                (t) => t.isCaptured,
+              ).length;
+              const totalCount = board.tiles.length;
+              const gamePinnedSet = new Set(
+                (pinnedByGame[game.id] ?? []).filter((id) =>
+                  board.tiles.some((t) => t.id === id && !t.isCaptured),
+                ),
+              );
+
+              return (
+                <div key={game.id} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-0.5">
+                    <Link
+                      href={gameHref(detail.id)}
+                      className="inline-flex min-h-11 min-w-0 items-center gap-1.5 font-display text-base text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:text-lg"
+                    >
+                      <span className="truncate">{detail.title}</span>
+                      <ArrowRight
+                        className="size-4 shrink-0"
+                        aria-hidden="true"
+                      />
+                    </Link>
+                    <span className="shrink-0 font-mono text-xs font-bold text-secondary tabular-nums">
+                      {capturedCount}/{totalCount}
+                    </span>
+                  </div>
+
+                  {boardViewMode === "list" ? (
+                    <TargetGroupedBoard
+                      board={board}
+                      feed={detail.feed}
+                      pinnedTileIds={gamePinnedSet}
+                      onTogglePinTile={(tileId) =>
+                        handleTogglePinTile(detail.id, tileId)
+                      }
+                      hideCaptured
+                      onEmptyTileSelect={(tile) =>
+                        setCaptureTarget({ gameId: detail.id, tile })
+                      }
+                      onViewCapture={(cap) => setLightboxCapture(cap)}
+                    />
+                  ) : (
+                    <BingoBoard
+                      board={board}
+                      gridSize={detail.gridSize}
+                      feed={detail.feed}
+                      pinnedTileIds={gamePinnedSet}
+                      onEmptyTileSelect={(tile) =>
+                        setCaptureTarget({ gameId: detail.id, tile })
+                      }
+                      onViewCapture={(cap) => setLightboxCapture(cap)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
 
-      {/* Completed Games as Memory Cards */}
-      <section className="space-y-3">
-        <h2 className="font-display text-xl tracking-tight text-ink">
-          Vergangene Matches ({completed.length})
-        </h2>
+      <CaptureTileDialog
+        gameId={captureTarget?.gameId ?? ""}
+        tile={captureTarget?.tile ?? null}
+        isPinned={
+          captureTarget
+            ? (pinnedByGame[captureTarget.gameId] ?? []).includes(
+                captureTarget.tile.id,
+              )
+            : false
+        }
+        onTogglePin={(tileId) => {
+          if (captureTarget) {
+            handleTogglePinTile(captureTarget.gameId, tileId);
+          }
+        }}
+        onClose={() => setCaptureTarget(null)}
+        onCaptured={(tileId) => {
+          if (captureTarget) {
+            handleTileCaptured(captureTarget.gameId, tileId);
+          }
+        }}
+      />
 
-        {completed.length === 0 ? (
-          <p className="text-sm font-medium text-secondary">
-            Abgeschlossene Runden mit Zeitachse und Fotogalerien landen hier.
-          </p>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {completed.map((game) => (
-              <CompletedGameCard key={game.id} game={game} />
-            ))}
-          </div>
-        )}
-      </section>
+      <PhotoLightbox
+        capture={lightboxCapture}
+        open={Boolean(lightboxCapture)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setLightboxCapture(null);
+          }
+        }}
+      />
 
       {/* Visual Create Game Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -943,117 +1087,6 @@ function AuthenticatedHome() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function activeHeaderTint(game: GameSummary): string {
-  if (game.needsAction || game.status === GameStatus.Active) {
-    return "bg-primary-subtle";
-  }
-  if (game.status === GameStatus.Drafting) {
-    return "bg-cyan-subtle";
-  }
-  return "bg-pink-subtle";
-}
-
-function ActiveGameCard({
-  game,
-  dataUpdatedAt,
-}: {
-  game: GameSummary;
-  dataUpdatedAt: number;
-}) {
-  const countdownSeconds = useGameCountdown(
-    game.draftClosesAt,
-    game.serverNow,
-    dataUpdatedAt,
-  );
-  const progress = formatGameProgress(game, countdownSeconds);
-  const ctaLabel = gameNextActionLabel(game);
-
-  return (
-    <Card className="flex flex-col justify-between overflow-hidden">
-      <div
-        className={cn(
-          "flex items-start justify-between gap-3 border-b-2 border-strong px-5 py-3.5",
-          activeHeaderTint(game),
-        )}
-      >
-        <div className="min-w-0 space-y-1">
-          <h3 className="truncate font-display text-lg text-ink">
-            {game.title}
-          </h3>
-          <CodeTag tone="surface">{game.inviteCode}</CodeTag>
-        </div>
-        {game.needsAction ? (
-          <Badge variant="warning">Aktion nötig</Badge>
-        ) : (
-          <Badge variant="info">{statusLabel(game.status)}</Badge>
-        )}
-      </div>
-      <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-4 pb-4">
-        <div className="flex flex-wrap items-center gap-3 font-mono text-xs font-bold text-secondary">
-          <span className="inline-flex items-center gap-1 text-ink">
-            <Camera className="size-3.5" aria-hidden="true" />
-            {progress}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Users className="size-3.5 text-ink" aria-hidden="true" />
-            {game.gridSize}×{game.gridSize} · {game.playerCount}P
-          </span>
-        </div>
-        <Button variant="secondary" size="sm" asChild>
-          <Link href={gameHref(game.id)}>
-            {ctaLabel}
-            <ArrowRight aria-hidden="true" />
-          </Link>
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function CompletedGameCard({ game }: { game: GameSummary }) {
-  const dateStr = game.endedAt
-    ? new Date(game.endedAt).toLocaleDateString("de-AT")
-    : new Date(game.createdAt).toLocaleDateString("de-AT");
-
-  return (
-    <Card className="flex flex-col justify-between overflow-hidden">
-      <div className="border-b-2 border-strong bg-cyan-subtle px-5 py-3.5">
-        <div className="flex items-center justify-between gap-2 font-mono text-xs font-bold text-secondary tabular-nums">
-          <span>{dateStr}</span>
-          <span>
-            {game.gridSize}×{game.gridSize} · {game.playerCount}P
-          </span>
-        </div>
-        <h3 className="mt-1 truncate font-display text-base text-ink">
-          {game.title}
-        </h3>
-      </div>
-
-      <CardContent className="flex flex-col justify-between gap-4 pt-4 pb-4">
-        {game.winner ? (
-          <div className="flex items-center gap-2">
-            <Crown
-              className="size-4 shrink-0 text-warning"
-              aria-hidden="true"
-            />
-            <div className="min-w-0 flex-1">
-              <PlayerBadgeLink user={game.winner} compact />
-            </div>
-          </div>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 font-mono text-xs font-bold text-secondary">
-            <Award className="size-4" aria-hidden="true" />
-            Runde beendet
-          </span>
-        )}
-        <Button variant="secondary" size="sm" className="w-full" asChild>
-          <Link href={gameHref(game.id)}>Rückblick ansehen</Link>
-        </Button>
-      </CardContent>
-    </Card>
   );
 }
 

@@ -134,7 +134,7 @@ describe("ActivePlayPhase", () => {
     window.localStorage.clear();
   });
 
-  it("removes the Nur offene filter, hides captured tasks in Nach Ziel, and pins individual tasks", () => {
+  it("switches views cleanly, hides captured tasks in Nach Ziel, pins individual tasks, and toggles search", () => {
     render(<ActivePlayPhase game={makeActiveGame()} />);
 
     expect(
@@ -163,17 +163,25 @@ describe("ActivePlayPhase", () => {
         name: "Auftrag „Trinkt Wasser“ anheften",
       }),
     );
-    expect(screen.getByText("Fokus:")).toBeInTheDocument();
     expect(
-      screen.getAllByRole("button", {
-        name: "Auftrag „Trinkt Wasser“ aus Fokus entfernen",
-      }),
-    ).toHaveLength(2);
+      screen.getByRole("button", { name: "Fokus (1)" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: "Auftrag „Lacht laut“ anheften",
+        name: "Auftrag „Trinkt Wasser“ aus Fokus entfernen",
       }),
-    ).toHaveAttribute("aria-pressed", "false");
+    ).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Aufträge oder Ziele durchsuchen",
+      }),
+    );
+    expect(
+      screen.getByRole("searchbox", {
+        name: "Suchfeld für Aufträge oder Ziele",
+      }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("radio", { name: "Raster-Ansicht" }));
     const pinnedGridTile = screen.getByRole("button", {

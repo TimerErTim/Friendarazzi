@@ -6,42 +6,29 @@ import {
   LayoutGrid,
   List,
   Pin,
-  Upload,
+  Search,
   Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { apiErrorMessage } from "@/api/errors";
 import {
   type BoardTileView,
   type CaptureFeedItem,
   type GameDetail,
   VisibilityMode,
 } from "@/api/friendarazzi-api";
-import { useFriendarazziMutations } from "@/api/hooks";
 import { BingoBoard } from "@/components/friendarazzi/bingo-board";
-import { CaptureUploadControl } from "@/components/friendarazzi/capture-upload-control";
+import { CaptureTileDialog } from "@/components/friendarazzi/capture-tile-dialog";
 import { AuthenticatedImage } from "@/components/friendarazzi/media-image";
 import { PhotoLightbox } from "@/components/friendarazzi/photo-lightbox";
-import {
-  PlayerAvatar,
-  PlayerBadgeLink,
-} from "@/components/friendarazzi/player-avatar";
+import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { TargetGroupedBoard } from "@/components/friendarazzi/target-grouped-board";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { CalloutNote, CodeTag } from "@/components/ui/brutal-elements";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
@@ -64,7 +51,6 @@ import {
 } from "@/lib/board-grouping";
 import { newestCapturesFirst } from "@/lib/capture-feed";
 import { cn } from "@/lib/cn";
-import { normalizeImageForUpload } from "@/lib/media-capture";
 
 const INITIAL_FEED_ITEMS = 3;
 
@@ -81,11 +67,7 @@ export function ActivePlayPhase({
   initialTileId?: string | null;
   onConsumeInitialTile?: () => void;
 }) {
-  const mutations = useFriendarazziMutations();
   const [selectedTile, setSelectedTile] = useState<BoardTileView | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isPreparingUpload, setIsPreparingUpload] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [lightboxCapture, setLightboxCapture] =
     useState<CaptureFeedItem | null>(null);
   const [mobileFeedOpen, setMobileFeedOpen] = useState(false);
@@ -93,6 +75,7 @@ export function ActivePlayPhase({
   const [viewMode, setViewMode] = useState<BoardViewMode>(() =>
     loadBoardViewMode(),
   );
+  const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [pinnedTileIds, setPinnedTileIds] = useState<string[]>(() =>
     loadPinnedTiles(game.id),
@@ -129,20 +112,9 @@ export function ActivePlayPhase({
     );
     if (found) {
       openedTileRef.current = initialTileId;
-      setSelectedFile(null);
       setSelectedTile(found);
     }
   }, [initialTileId, board]);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(selectedFile);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [selectedFile]);
 
   const hasActiveFilter = searchQuery.trim().length > 0;
 
@@ -184,6 +156,19 @@ export function ActivePlayPhase({
     });
   }
 
+  function handleTileCaptured(tileId: string) {
+    if (pinnedTileSet.has(tileId)) {
+      setPinnedTileIds((prev) => {
+        const next = prev.filter((id) => id !== tileId);
+        savePinnedTiles(game.id, next);
+        return next;
+      });
+    }
+    if (initialTileId) {
+      onConsumeInitialTile?.();
+    }
+  }
+
   if (!board) {
     return (
       <div aria-busy="true" className="space-y-3">
@@ -198,86 +183,17 @@ export function ActivePlayPhase({
   const pct =
     totalCount > 0 ? Math.round((capturedCount / totalCount) * 100) : 0;
 
-  const isUploading = isPreparingUpload || mutations.submitCapture.isPending;
   const newestFirstFeed = newestCapturesFirst(game.feed);
   const visibleFeed = showAllFeed
     ? newestFirstFeed
     : newestFirstFeed.slice(0, INITIAL_FEED_ITEMS);
   const hiddenFeedCount = Math.max(0, game.feed.length - visibleFeed.length);
 
-  async function submitTilePhoto() {
-    if (!selectedTile || !selectedFile || isUploading) return;
-    const submittedTileId = selectedTile.id;
-    setIsPreparingUpload(true);
-    try {
-      const normalized = await normalizeImageForUpload(selectedFile);
-      await mutations.submitCapture.mutateAsync({
-        gameId: game.id,
-        tileId: submittedTileId,
-        file: normalized,
-      });
-      if (pinnedTileSet.has(submittedTileId)) {
-        setPinnedTileIds((prev) => {
-          const next = prev.filter((id) => id !== submittedTileId);
-          savePinnedTiles(game.id, next);
-          return next;
-        });
-      }
-      setSelectedTile(null);
-      setSelectedFile(null);
-      if (initialTileId) {
-        onConsumeInitialTile?.();
-      }
-    } finally {
-      setIsPreparingUpload(false);
-    }
-  }
-
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[1.5fr_0.75fr]">
-      {/* Left: Compact progress + Crew popover directly above the hero board */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Progress
-              value={pct}
-              aria-label="Brett-Fortschritt"
-              className="h-3 max-w-52 flex-1"
-            />
-            <span className="shrink-0 font-mono text-xs font-bold text-ink tabular-nums">
-              {capturedCount} / {totalCount}
-            </span>
-          </div>
-
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="shrink-0 gap-1.5"
-              >
-                <Users className="size-4" aria-hidden="true" />
-                <span>Crew ({game.players.length})</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-72 p-3">
-              <p className="mb-2 font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
-                Mitspieler ({game.players.length})
-              </p>
-              <ul className="divide-y divide-subtle">
-                {game.players.map((p) => (
-                  <li key={p.id} className="py-1.5 first:pt-0 last:pb-0">
-                    <PlayerBadgeLink user={p} compact />
-                  </li>
-                ))}
-              </ul>
-            </PopoverContent>
-          </Popover>
-        </div>
-
-        {/* Hunt Toolbar: Grid/List toggle + Search */}
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="grid items-start gap-4 lg:grid-cols-[1.5fr_0.75fr] lg:gap-5">
+      {/* Left: Single compact control bar + slim progress directly above the hero board */}
+      <div className="space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <ToggleGroup
             type="single"
             value={viewMode}
@@ -294,62 +210,160 @@ export function ActivePlayPhase({
             </ToggleGroupItem>
           </ToggleGroup>
 
+          <div className="flex items-center gap-1.5">
+            {pinnedTiles.length > 0 ? (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    aria-label={`Fokus (${pinnedTiles.length})`}
+                    className="gap-1.5"
+                  >
+                    <Pin className="size-3.5 rotate-45" aria-hidden="true" />
+                    <span>Fokus ({pinnedTiles.length})</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 space-y-2 p-3">
+                  <p className="font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
+                    Angeheftete Aufträge ({pinnedTiles.length})
+                  </p>
+                  <ul className="space-y-1.5">
+                    {pinnedTiles.map((tile) => (
+                      <li
+                        key={tile.id}
+                        className="flex items-stretch overflow-hidden rounded-sm border-2 border-strong bg-surface"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedTile(tile)}
+                          className="min-h-11 min-w-0 flex-1 cursor-pointer px-2.5 py-1.5 text-left text-xs font-bold text-ink hover:bg-primary-subtle/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                        >
+                          <span className="mr-1.5 inline-block rounded-[2px] border border-strong bg-primary px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground">
+                            {tile.targetUser.displayName}
+                          </span>
+                          <span>{tile.promptText}</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
+                          onClick={() => handleTogglePinTile(tile.id)}
+                          className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-strong text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                        >
+                          <X className="size-3.5" aria-hidden="true" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </PopoverContent>
+              </Popover>
+            ) : null}
+
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  aria-label={`Crew (${game.players.length})`}
+                  className="gap-1.5"
+                >
+                  <Users className="size-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">Crew</span>
+                  <span className="font-mono tabular-nums">
+                    ({game.players.length})
+                  </span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-3">
+                <p className="mb-2 font-mono text-[11px] font-bold tracking-wider text-secondary uppercase">
+                  Mitspieler ({game.players.length})
+                </p>
+                <ul className="divide-y divide-subtle">
+                  {game.players.map((p) => (
+                    <li key={p.id} className="py-1.5 first:pt-0 last:pb-0">
+                      <PlayerBadgeLink user={p} compact />
+                    </li>
+                  ))}
+                </ul>
+              </PopoverContent>
+            </Popover>
+
+            <Button
+              type="button"
+              variant={searchOpen || hasActiveFilter ? "primary" : "secondary"}
+              size="icon"
+              aria-expanded={searchOpen || hasActiveFilter}
+              aria-label="Aufträge oder Ziele durchsuchen"
+              title="Aufträge durchsuchen"
+              onClick={() => {
+                if (searchOpen && !hasActiveFilter) {
+                  setSearchOpen(false);
+                } else if (hasActiveFilter) {
+                  setSearchQuery("");
+                  setSearchOpen(false);
+                } else {
+                  setSearchOpen(true);
+                }
+              }}
+            >
+              <Search className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+        </div>
+
+        {searchOpen || hasActiveFilter ? (
           <SearchInput
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Ziel oder Auftrag …"
-            aria-label="Aufträge oder Ziele durchsuchen"
-            className="min-w-44 flex-1 sm:max-w-64"
+            placeholder="Ziel oder Auftrag suchen …"
+            aria-label="Suchfeld für Aufträge oder Ziele"
+            autoFocus
           />
+        ) : null}
+
+        <div className="flex items-center gap-2.5">
+          <Progress
+            value={pct}
+            aria-label="Brett-Fortschritt"
+            className="h-2 flex-1"
+          />
+          <span className="shrink-0 font-mono text-xs font-bold text-ink tabular-nums">
+            {capturedCount} / {totalCount}
+          </span>
         </div>
 
-        {/* Pinned Tasks Strip */}
-        {pinnedTiles.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border-2 border-strong bg-primary-subtle px-3 py-2">
-            <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-ink uppercase">
-              <Pin className="size-3.5 rotate-45" aria-hidden="true" />
-              Fokus:
-            </span>
-            {pinnedTiles.map((tile) => (
-              <div
-                key={tile.id}
-                className="inline-flex max-w-full items-center overflow-hidden rounded-sm border-2 border-strong bg-surface"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    mutations.submitCapture.reset();
-                    setSelectedFile(null);
-                    setSelectedTile(tile);
-                  }}
-                  className="inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-1.5 px-2.5 text-left text-xs font-bold text-ink transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                >
-                  <span className="shrink-0 rounded-[2px] border border-strong bg-primary px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground">
-                    {tile.targetUser.displayName}
-                  </span>
-                  <span className="truncate">{tile.promptText}</span>
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Auftrag „${tile.promptText}“ aus Fokus entfernen`}
-                  onClick={() => handleTogglePinTile(tile.id)}
-                  className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center border-l-2 border-strong text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-                >
-                  <X className="size-3.5" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
+        {viewMode === "list" ? (
+          <TargetGroupedBoard
+            board={board}
+            feed={game.feed}
+            pinnedTileIds={pinnedTileSet}
+            onTogglePinTile={handleTogglePinTile}
+            hideCaptured
+            searchQuery={searchQuery}
+            onEmptyTileSelect={(tile) => setSelectedTile(tile)}
+            onViewCapture={(cap) => setLightboxCapture(cap)}
+          />
+        ) : (
+          <BingoBoard
+            board={board}
+            gridSize={game.gridSize}
+            feed={game.feed}
+            matchingTileIds={matchingTileIds}
+            pinnedTileIds={pinnedTileSet}
+            onEmptyTileSelect={(tile) => setSelectedTile(tile)}
+            onViewCapture={(cap) => setLightboxCapture(cap)}
+          />
+        )}
 
         {capturedCount === 0 && !coachDismissed ? (
           <Alert variant="info">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p>
                 <strong>Tipp für die Jagd:</strong> Wechsle zwischen Raster und
-                „Nach Ziel“ oder hefte einzelne Aufträge im Fokus an – deine
-                angehefteten Aufgaben erscheinen auch direkt in der
-                Spielzentrale.
+                „Nach Ziel“ oder hefte einzelne Aufträge an – deine angehefteten
+                Aufgaben erscheinen auch direkt auf Home.
               </p>
               <Button
                 type="button"
@@ -365,37 +379,6 @@ export function ActivePlayPhase({
             </div>
           </Alert>
         ) : null}
-
-        {viewMode === "list" ? (
-          <TargetGroupedBoard
-            board={board}
-            feed={game.feed}
-            pinnedTileIds={pinnedTileSet}
-            onTogglePinTile={handleTogglePinTile}
-            hideCaptured
-            searchQuery={searchQuery}
-            onEmptyTileSelect={(tile) => {
-              mutations.submitCapture.reset();
-              setSelectedFile(null);
-              setSelectedTile(tile);
-            }}
-            onViewCapture={(cap) => setLightboxCapture(cap)}
-          />
-        ) : (
-          <BingoBoard
-            board={board}
-            gridSize={game.gridSize}
-            feed={game.feed}
-            matchingTileIds={matchingTileIds}
-            pinnedTileIds={pinnedTileSet}
-            onEmptyTileSelect={(tile) => {
-              mutations.submitCapture.reset();
-              setSelectedFile(null);
-              setSelectedTile(tile);
-            }}
-            onViewCapture={(cap) => setLightboxCapture(cap)}
-          />
-        )}
       </div>
 
       {/* Right: Activity Stream (collapsed on mobile so the board stays first) */}
@@ -509,144 +492,19 @@ export function ActivePlayPhase({
         </CardContent>
       </Card>
 
-      {/* Camera / Upload Capture Dialog */}
-      <Dialog
-        open={Boolean(selectedTile)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedTile(null);
-            setSelectedFile(null);
-            if (initialTileId) {
-              onConsumeInitialTile?.();
-            }
+      <CaptureTileDialog
+        gameId={game.id}
+        tile={selectedTile}
+        isPinned={selectedTile ? pinnedTileSet.has(selectedTile.id) : false}
+        onTogglePin={handleTogglePinTile}
+        onClose={() => {
+          setSelectedTile(null);
+          if (initialTileId) {
+            onConsumeInitialTile?.();
           }
         }}
-      >
-        <DialogContent>
-          <DialogHeader className="space-y-2.5">
-            {selectedTile?.targetUser ? (
-              <div className="flex items-center justify-between gap-3 rounded-md border-2 border-strong bg-cyan-subtle p-2.5">
-                <div className="flex min-w-0 items-center gap-3">
-                  <PlayerAvatar
-                    user={selectedTile.targetUser}
-                    size="sm"
-                    linkToProfile={false}
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate font-display text-sm leading-tight text-ink">
-                      {selectedTile.targetUser.displayName}
-                    </p>
-                    <p className="truncate font-mono text-[11px] font-bold text-secondary">
-                      {selectedTile.targetUser.effectiveTitle}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <span className="rounded-sm border border-strong bg-surface px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-ink uppercase">
-                    Zielperson
-                  </span>
-                  <Button
-                    type="button"
-                    variant={
-                      pinnedTileSet.has(selectedTile.id)
-                        ? "primary"
-                        : "secondary"
-                    }
-                    size="icon"
-                    aria-pressed={pinnedTileSet.has(selectedTile.id)}
-                    aria-label={
-                      pinnedTileSet.has(selectedTile.id)
-                        ? `Auftrag „${selectedTile.promptText}“ aus Fokus entfernen`
-                        : `Auftrag „${selectedTile.promptText}“ anheften`
-                    }
-                    title={
-                      pinnedTileSet.has(selectedTile.id)
-                        ? "Aus Fokus entfernen"
-                        : "Im Fokus anheften"
-                    }
-                    onClick={() => handleTogglePinTile(selectedTile.id)}
-                  >
-                    <Pin
-                      className={cn(
-                        "size-4 rotate-45",
-                        pinnedTileSet.has(selectedTile.id) && "fill-current",
-                      )}
-                      aria-hidden="true"
-                    />
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-            <DialogTitle className="font-display text-2xl leading-tight tracking-tight text-ink">
-              {selectedTile?.promptText}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Lade ein Beweisfoto für diesen Auftrag hoch.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            {previewUrl ? (
-              <div className="space-y-2">
-                <div className="brutal-shadow-sm overflow-hidden rounded-md border-2 border-strong bg-surface p-1.5">
-                  {/* biome-ignore lint/performance/noImgElement: local File preview blob URL */}
-                  <img
-                    src={previewUrl}
-                    alt="Vorschau"
-                    className="max-h-72 w-full rounded-sm object-contain"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={isUploading}
-                  onClick={() => setSelectedFile(null)}
-                >
-                  Anderes Foto wählen
-                </Button>
-              </div>
-            ) : (
-              <CaptureUploadControl
-                onFileSelect={(file) => setSelectedFile(file)}
-              />
-            )}
-
-            {mutations.submitCapture.isError ? (
-              <Alert variant="error">
-                {apiErrorMessage(mutations.submitCapture.error, {
-                  fallback: "Das Foto konnte nicht hochgeladen werden.",
-                })}
-              </Alert>
-            ) : null}
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setSelectedTile(null);
-                setSelectedFile(null);
-                if (initialTileId) {
-                  onConsumeInitialTile?.();
-                }
-              }}
-              disabled={isUploading}
-            >
-              Abbrechen
-            </Button>
-            <Button
-              type="button"
-              disabled={!selectedFile || isUploading}
-              onClick={() => void submitTilePhoto()}
-            >
-              <Upload className="size-4" aria-hidden="true" />
-              {isUploading ? "Wird hochgeladen …" : "Beweis einreichen"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onCaptured={handleTileCaptured}
+      />
 
       <PhotoLightbox
         capture={lightboxCapture}

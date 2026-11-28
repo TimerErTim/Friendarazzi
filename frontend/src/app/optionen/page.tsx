@@ -1,7 +1,6 @@
 "use client";
 
 import { Bell } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -28,7 +27,6 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { paths } from "@/lib/navigation";
 
 export default function OptionsPage() {
   const phase = useAuth();
@@ -77,18 +75,13 @@ export default function OptionsPage() {
 
   return (
     <div className="mx-auto w-full max-w-2xl space-y-6 p-4 sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
-            Konto-Optionen
-          </h1>
-          <p className="text-sm font-medium text-secondary">
-            Verwalte Benachrichtigungen, Standard-Abos und deinen Account.
-          </p>
-        </div>
-        <Button variant="secondary" size="sm" asChild>
-          <Link href={paths.profil}>Zum Profil</Link>
-        </Button>
+      <div>
+        <h1 className="font-display text-2xl tracking-tight text-ink sm:text-3xl">
+          Konto-Optionen
+        </h1>
+        <p className="text-sm font-medium text-secondary">
+          Verwalte Benachrichtigungen, Standard-Abos und deinen Account.
+        </p>
       </div>
 
       <Card>

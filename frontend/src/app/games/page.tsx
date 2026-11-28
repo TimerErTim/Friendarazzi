@@ -112,16 +112,6 @@ export default function GamePage() {
     }
   }, [id]);
 
-  // Auto-open only when the player has a single game; multiple games get an explicit overview.
-  useEffect(() => {
-    if (id === "" && gamesList.data && gamesList.data.length === 1) {
-      const single = gamesList.data[0];
-      if (single) {
-        router.replace(gameHref(single.id));
-      }
-    }
-  }, [id, gamesList.data, router]);
-
   async function handleSwitchGame(targetId: string) {
     if (targetId === id || isSwitching) return;
     setIsSwitching(true);
@@ -147,12 +137,12 @@ export default function GamePage() {
     if (allGames.length === 0) {
       return (
         <div className="mx-auto w-full max-w-2xl space-y-4 p-4 sm:p-6">
-          <CalloutNote label="Kein Spiel gewählt" tone="yellow">
-            Du bist aktuell in keinem Spiel. Starte ein neues Spiel oder tritt
-            einem bestehenden Match bei.
+          <CalloutNote label="Keine Lobbys" tone="yellow">
+            Du bist aktuell in keinem Spiel. Erstelle auf Home ein neues Spiel
+            oder tritt über einen Einladungscode bei.
           </CalloutNote>
           <Button asChild>
-            <Link href={paths.home}>Zur Spielzentrale</Link>
+            <Link href={paths.home}>Zu Home</Link>
           </Button>
         </div>
       );
@@ -168,15 +158,15 @@ export default function GamePage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl tracking-tight text-ink">
-              Deine Spiele
+              Lobbys &amp; Matches
             </h1>
             <p className="text-sm font-medium text-secondary">
-              Wähle eine laufende Runde aus oder kehre zu einem abgeschlossenen
-              Spiel zurück.
+              Alle beigetretenen Lobbys, Entwürfe, laufenden Runden und
+              vergangenen Matches.
             </p>
           </div>
           <Button variant="secondary" asChild>
-            <Link href={paths.home}>Zur Spielzentrale</Link>
+            <Link href={paths.home}>Zu Home</Link>
           </Button>
         </div>
 
@@ -243,29 +233,22 @@ export default function GamePage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 sm:space-y-5 sm:p-6">
+    <div className="mx-auto w-full max-w-6xl space-y-3 px-3 pt-3 pb-6 sm:space-y-4 sm:p-6">
       <SetBreadcrumbLabel label={game.title} />
 
-      {/* Compact single-row match header + thin phase progress track */}
-      <header className="space-y-2.5 border-b-2 border-strong pb-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 space-y-0.5">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate font-display text-xl tracking-tight text-ink sm:text-2xl">
-                {game.title}
-              </h1>
-              <Badge variant="primary" className="shrink-0">
-                {shortStatusLabel(game.status)}
-              </Badge>
-            </div>
-            <p className="truncate font-mono text-xs font-bold text-secondary">
-              {game.gridSize}×{game.gridSize} ·{" "}
-              {visibilityLabel(game.visibilityMode)} · {game.players.length}{" "}
-              Spieler
-            </p>
+      {/* Compact single-header block with inline 4-step phase indicator */}
+      <header className="space-y-1.5 border-b-2 border-strong pb-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate font-display text-lg tracking-tight text-ink sm:text-2xl">
+              {game.title}
+            </h1>
+            <Badge variant="primary" className="shrink-0">
+              {shortStatusLabel(game.status)}
+            </Badge>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             <GameRulesDialog
               status={game.status}
               visibilityMode={game.visibilityMode}
@@ -312,7 +295,7 @@ export default function GamePage() {
                     variant="secondary"
                     size="sm"
                     disabled={isSwitching}
-                    className="shrink-0 gap-1.5"
+                    className="shrink-0 gap-1"
                   >
                     <span>Runden ({runningGames.length})</span>
                     {hasOtherActionNeeded ? (
@@ -353,7 +336,7 @@ export default function GamePage() {
                   })}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
-                    <Link href={paths.home}>
+                    <Link href={paths.games}>
                       <Plus className="size-4" aria-hidden="true" />
                       Alle Lobbys
                     </Link>
@@ -364,42 +347,42 @@ export default function GamePage() {
           </div>
         </div>
 
-        <ol aria-label="Spielphasen" className="grid grid-cols-4 gap-1.5">
-          {PHASES.map((step, idx) => {
-            const isCurrent = idx === activeIdx;
-            const isDone = idx < activeIdx;
-            return (
-              <li
-                key={step.status}
-                aria-current={isCurrent ? "step" : undefined}
-                className="space-y-1"
-              >
-                <div
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11px] font-bold text-secondary sm:text-xs">
+          <ol
+            aria-label="Spielphasen"
+            className="inline-flex items-center gap-0.5"
+          >
+            {PHASES.map((step, idx) => {
+              const isCurrent = idx === activeIdx;
+              const isDone = idx < activeIdx;
+              return (
+                <li
+                  key={step.status}
+                  aria-current={isCurrent ? "step" : undefined}
+                  title={`${step.num}. ${step.label}`}
                   className={cn(
-                    "h-2.5 w-full rounded-sm border border-strong",
+                    "h-2 w-4 rounded-[1px] border border-strong",
                     isCurrent
                       ? "bg-primary"
                       : isDone
                         ? "bg-cyan"
                         : "bg-surface-muted",
                   )}
-                />
-                <span
-                  className={cn(
-                    "hidden font-mono text-[10px] leading-none font-bold sm:block",
-                    isCurrent ? "text-ink" : "text-secondary",
-                  )}
                 >
-                  {step.num}. {step.label}
-                </span>
-                <span className="sr-only sm:hidden">
-                  {step.num}. {step.label}
-                  {isCurrent ? " (aktuell)" : isDone ? " (erledigt)" : ""}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+                  <span className="sr-only">
+                    {step.num}. {step.label}
+                    {isCurrent ? " (aktuell)" : isDone ? " (erledigt)" : ""}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+          <span className="truncate">
+            {game.gridSize}×{game.gridSize} ·{" "}
+            {visibilityLabel(game.visibilityMode)} · {game.players.length}{" "}
+            Spieler
+          </span>
+        </div>
       </header>
 
       {game.status === GameStatus.Lobby ? (

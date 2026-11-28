@@ -31,6 +31,7 @@ export function PlayerAvatar({
   size = "md",
   linkToProfile = true,
   showMedalBadge = true,
+  alwaysShowMedalBadge = false,
   className,
 }: {
   user: Pick<
@@ -40,12 +41,14 @@ export function PlayerAvatar({
   size?: AvatarSize;
   linkToProfile?: boolean;
   showMedalBadge?: boolean;
+  alwaysShowMedalBadge?: boolean;
   className?: string;
 }) {
   const me = useBenutzerQuery();
   const href =
     me.data?.id === user.id ? paths.profil : userProfileHref(user.id);
   const hasGold = user.goldMedalCount > 0;
+  const renderMedalBadge = showMedalBadge && (hasGold || alwaysShowMedalBadge);
 
   const avatarBox = (
     <span className={cn("relative inline-flex shrink-0", className)}>
@@ -66,7 +69,7 @@ export function PlayerAvatar({
           <span>{initialsFor(user.displayName)}</span>
         )}
       </span>
-      {showMedalBadge && hasGold ? (
+      {renderMedalBadge ? (
         <span
           className="brutal-shadow-sm absolute -right-1.5 -bottom-1 inline-flex items-center gap-0.5 rounded-full border-2 border-strong bg-primary px-1.5 py-0.5 font-mono text-[10px] leading-none font-bold text-primary-foreground tabular-nums"
           title={`${user.goldMedalCount} Goldmedaille(n)`}

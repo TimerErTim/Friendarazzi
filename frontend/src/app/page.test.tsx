@@ -20,7 +20,24 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
+vi.mock("@/components/friendarazzi/media-image", () => ({
+  AuthenticatedImage: ({
+    alt,
+    storageKey,
+  }: {
+    alt: string;
+    storageKey: string;
+  }) => (
+    <div data-testid="auth-image" data-storage-key={storageKey}>
+      {alt}
+    </div>
+  ),
+}));
+
 vi.mock("@/components/friendarazzi/player-avatar", () => ({
+  PlayerAvatar: ({ user }: { user: { displayName: string } }) => (
+    <span>{user.displayName}</span>
+  ),
   PlayerBadgeLink: ({ user }: { user: { displayName: string } }) => (
     <span>{user.displayName}</span>
   ),
@@ -199,6 +216,13 @@ vi.mock("@/api/hooks", () => ({
   useFriendarazziMutations: () => ({
     createGame: { mutateAsync: vi.fn(), isPending: false, isError: false },
     joinGame: { mutateAsync: vi.fn(), isPending: false, isError: false },
+    submitCapture: {
+      mutateAsync: vi.fn(),
+      reset: vi.fn(),
+      isPending: false,
+      isError: false,
+      error: null,
+    },
   }),
 }));
 
@@ -207,28 +231,37 @@ describe("HomePage", () => {
     window.localStorage.clear();
   });
 
-  it("lists pinned open tasks across all running games and allows unpinning", () => {
+  it("renders all running boards with Raster/Nach Ziel toggle and cross-game pinned tasks", () => {
     savePinnedTiles("game-1", ["tile-1", "tile-done"]);
     savePinnedTiles("game-2", ["tile-2"]);
 
     render(<HomePage />);
 
-    expect(screen.getByText("Angeheftete Aufgaben (2)")).toBeInTheDocument();
-    expect(screen.getByText("Bestellt Espresso")).toBeInTheDocument();
-    expect(screen.getByText("Vergisst Sonnenbrille")).toBeInTheDocument();
-    expect(screen.queryByText("Schon erledigt")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Laufende Spiele/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Vergangene Matches/i)).not.toBeInTheDocument();
 
-    const link1 = screen.getByRole("link", { name: /Bestellt Espresso/i });
-    expect(link1).toHaveAttribute("href", "/games?id=game-1&tile=tile-1");
+    expect(screen.getByText("Aktive Bretter (2)")).toBeInTheDocument();
+    expect(screen.getByText("Angeheftete Aufgaben (2)")).toBeInTheDocument();
+    expect(screen.getAllByText("Bestellt Espresso").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("Vergisst Sonnenbrille").length).toBeGreaterThan(
+      1,
+    );
+    expect(screen.getByText("Schon erledigt")).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole("button", {
-        name: "Auftrag „Bestellt Espresso“ aus Fokus entfernen",
-      }),
+      screen.getByRole("radio", { name: "Liste nach Zielperson" }),
     );
+    expect(screen.queryByText("Schon erledigt")).not.toBeInTheDocument();
+
+    const unpinButton = screen.getAllByRole("button", {
+      name: "Auftrag „Bestellt Espresso“ aus Fokus entfernen",
+    })[0];
+    expect(unpinButton).toBeDefined();
+    if (unpinButton) {
+      fireEvent.click(unpinButton);
+    }
 
     expect(screen.getByText("Angeheftete Aufgaben (1)")).toBeInTheDocument();
-    expect(screen.queryByText("Bestellt Espresso")).not.toBeInTheDocument();
     expect(loadPinnedTiles("game-1")).toEqual(["tile-done"]);
   });
 

@@ -6,8 +6,18 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/api/auth-provider";
-import type { CaptureFeedItem, GalleryGameGroup } from "@/api/friendarazzi-api";
-import { useBenutzerQuery, useUserGalleryQuery } from "@/api/hooks";
+import {
+  type CaptureFeedItem,
+  type GalleryGameGroup,
+  GameStatus,
+  VisibilityMode,
+} from "@/api/friendarazzi-api";
+import {
+  useBenutzerQuery,
+  useGameDetailsQueries,
+  useGamesQuery,
+  useUserGalleryQuery,
+} from "@/api/hooks";
 import { CaptureGalleryCard } from "@/components/friendarazzi/capture-gallery-card";
 import { PhotoLightbox } from "@/components/friendarazzi/photo-lightbox";
 import { Alert } from "@/components/ui/alert";
@@ -19,7 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { authHrefWithRedirect, gameHref, paths } from "@/lib/navigation";
 
-type RoleFilter = "all" | "captured" | "caught";
+type RoleFilter = "all" | "captured" | "caught" | "others";
 type GroupMode = "none" | "game" | "person";
 
 type CollectionItem = {
@@ -28,8 +38,8 @@ type CollectionItem = {
   gameTitle: string;
   isCaught: boolean;
   isCaptured: boolean;
-  otherPersonId: string;
-  otherPersonName: string;
+  personId: string;
+  personName: string;
 };
 
 function compareCaptureNewestFirst(
@@ -47,6 +57,7 @@ export default function CollectionsPage() {
   const router = useRouter();
   const benutzer = useBenutzerQuery();
   const gallery = useUserGalleryQuery(benutzer.data?.id ?? null);
+  const games = useGamesQuery();
   const [selected, setSelected] = useState<CaptureFeedItem | null>(null);
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [groupMode, setGroupMode] = useState<GroupMode>("none");
@@ -60,52 +71,97 @@ export default function CollectionsPage() {
   const myId = benutzer.data?.id;
   const galleryData = gallery.data;
 
+  const accessibleGameIds = useMemo(() => {
+    const list = games.data ?? [];
+    return list
+      .filter(
+        (g) =>
+          g.status === GameStatus.Completed ||
+          (g.status === GameStatus.Active &&
+            g.visibilityMode === VisibilityMode.LiveFeed),
+      )
+      .map((g) => g.id);
+  }, [games.data]);
+
+  const gameDetailsQueries = useGameDetailsQueries(accessibleGameIds);
+  const loadedDetails = gameDetailsQueries.map((q) => q.data);
+
   const allItems = useMemo(() => {
-    if (!galleryData) return [];
     const byId = new Map<string, CollectionItem>();
 
-    function addGroup(
+    function upsertPhoto(
+      photo: CaptureFeedItem,
+      gameId: string,
+      gameTitle: string,
+      opts: { isCaught?: boolean; isCaptured?: boolean },
+    ) {
+      if (photo.isBlurred) return;
+      const isMeCatcher = opts.isCaptured ?? photo.catcher.id === myId;
+      const isMeTarget = opts.isCaught ?? photo.target?.id === myId;
+
+      const existing = byId.get(photo.id);
+      if (existing) {
+        if (isMeCaughtOrCaptured(isMeTarget)) existing.isCaught = true;
+        if (isMeCaughtOrCaptured(isMeCatcher)) existing.isCaptured = true;
+        return;
+      }
+
+      const person =
+        isMeTarget && !isMeCatcher
+          ? photo.catcher
+          : (photo.target ?? photo.catcher);
+
+      byId.set(photo.id, {
+        capture: photo,
+        gameId,
+        gameTitle,
+        isCaught: isMeTarget,
+        isCaptured: isMeCatcher,
+        personId: person.id,
+        personName: person.displayName,
+      });
+    }
+
+    function addGalleryGroups(
       groups: readonly GalleryGameGroup[],
       kind: "caught" | "captured",
     ) {
       for (const group of groups) {
         for (const photo of group.photos) {
-          const existing = byId.get(photo.id);
-          if (existing) {
-            if (kind === "caught") existing.isCaught = true;
-            if (kind === "captured") existing.isCaptured = true;
-            continue;
-          }
-          const otherPerson =
-            kind === "caught"
-              ? photo.catcher
-              : (photo.target ??
-                (photo.catcher.id === myId ? undefined : photo.catcher));
-          byId.set(photo.id, {
-            capture: photo,
-            gameId: group.gameId,
-            gameTitle: group.gameTitle,
+          upsertPhoto(photo, group.gameId, group.gameTitle, {
             isCaught: kind === "caught",
             isCaptured: kind === "captured",
-            otherPersonId: otherPerson?.id ?? "unknown",
-            otherPersonName: otherPerson?.displayName ?? "Unbekannt",
           });
         }
       }
     }
 
-    addGroup(galleryData.captured, "captured");
-    addGroup(galleryData.caught, "caught");
+    if (galleryData) {
+      addGalleryGroups(galleryData.captured, "captured");
+      addGalleryGroups(galleryData.caught, "caught");
+    }
+
+    for (const detail of loadedDetails) {
+      if (!detail) continue;
+      for (const photo of detail.feed) {
+        upsertPhoto(photo, detail.id, detail.title, {});
+      }
+    }
 
     return Array.from(byId.values()).sort(compareCaptureNewestFirst);
-  }, [galleryData, myId]);
+  }, [galleryData, loadedDetails, myId]);
 
   const filteredItems = useMemo(() => {
-    if (roleFilter === "all") return allItems;
-    if (roleFilter === "captured") {
-      return allItems.filter((item) => item.isCaptured);
+    switch (roleFilter) {
+      case "all":
+        return allItems;
+      case "captured":
+        return allItems.filter((item) => item.isCaptured);
+      case "caught":
+        return allItems.filter((item) => item.isCaught);
+      case "others":
+        return allItems.filter((item) => !item.isCaptured && !item.isCaught);
     }
-    return allItems.filter((item) => item.isCaught);
   }, [allItems, roleFilter]);
 
   const groupedItems = useMemo(() => {
@@ -116,9 +172,8 @@ export default function CollectionsPage() {
     >();
 
     for (const item of filteredItems) {
-      const key = groupMode === "game" ? item.gameId : item.otherPersonId;
-      const label =
-        groupMode === "game" ? item.gameTitle : item.otherPersonName;
+      const key = groupMode === "game" ? item.gameId : item.personId;
+      const label = groupMode === "game" ? item.gameTitle : item.personName;
       let bucket = map.get(key);
       if (!bucket) {
         bucket = {
@@ -165,7 +220,7 @@ export default function CollectionsPage() {
             Collections
           </h1>
           <p className="text-sm font-medium text-secondary">
-            Alle deine Schnappschüsse, Ränge und kommenden Erfolge.
+            Alle zugänglichen Schnappschüsse, Ränge und kommenden Erfolge.
           </p>
         </div>
         <div className="flex items-center gap-2 font-mono text-xs font-bold text-ink">
@@ -208,6 +263,7 @@ export default function CollectionsPage() {
                 <option value="all">Alle Fotos</option>
                 <option value="captured">Selbst geschossen</option>
                 <option value="caught">Selbst erwischt</option>
+                <option value="others">Von Mitspielern</option>
               </Select>
 
               <label htmlFor="collections-group" className="sr-only">
@@ -316,4 +372,8 @@ export default function CollectionsPage() {
       />
     </div>
   );
+}
+
+function isMeCaughtOrCaptured(flag: boolean): boolean {
+  return flag;
 }

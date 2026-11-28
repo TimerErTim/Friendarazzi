@@ -9,7 +9,6 @@ import type {
 } from "@/api/friendarazzi-api";
 import { PlayerBadgeLink } from "@/components/friendarazzi/player-avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   groupActiveGamesByTarget,
@@ -45,61 +44,61 @@ function OpenTaskRow({
   onSelect: () => void;
   onTogglePin?: () => void;
 }) {
-  const uploadButton = (
-    <button
-      type="button"
-      aria-label={`${tile.targetUser.displayName}: ${tile.promptText} (Foto aufnehmen)`}
-      onClick={onSelect}
+  return (
+    <div
       className={cn(
-        "brutal-press flex min-h-12 min-w-0 flex-1 cursor-pointer items-center justify-between gap-3 rounded-sm border-2 bg-surface px-3 py-2.5 text-left hover:bg-primary-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+        "brutal-shadow-sm flex min-h-12 w-full items-center gap-1.5 rounded-sm border-2 bg-surface transition-colors",
         isPinned ? "border-info" : "border-control",
       )}
     >
-      <span className="min-w-0 flex-1 space-y-0.5">
-        <span className="block text-sm leading-snug font-bold text-ink">
-          {tile.promptText}
-        </span>
-        {subtitle ? (
-          <span className="block truncate font-mono text-[11px] font-semibold text-secondary">
-            {subtitle}
-          </span>
-        ) : null}
-      </span>
-      <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border border-strong bg-primary text-primary-foreground">
-        <Camera className="size-4" aria-hidden="true" />
-      </span>
-    </button>
-  );
-
-  if (!onTogglePin) {
-    return <div className="flex">{uploadButton}</div>;
-  }
-
-  return (
-    <div className="flex items-stretch gap-2">
-      {uploadButton}
-      <Button
+      <button
         type="button"
-        variant="secondary"
-        size="icon"
-        className={cn(
-          "h-auto min-h-12 w-11 shrink-0",
-          isPinned && "border-info bg-info/15 text-ink hover:bg-info/25",
-        )}
-        aria-pressed={isPinned}
-        aria-label={
-          isPinned
-            ? `Auftrag „${tile.promptText}“ aus Fokus entfernen`
-            : `Auftrag „${tile.promptText}“ anheften`
-        }
-        title={isPinned ? "Aus Fokus entfernen" : "Im Fokus anheften"}
-        onClick={onTogglePin}
+        aria-label={`${tile.targetUser.displayName}: ${tile.promptText} (Foto aufnehmen)`}
+        onClick={onSelect}
+        className="flex min-h-12 min-w-0 flex-1 cursor-pointer items-center justify-between gap-2.5 rounded-l-sm py-2 pr-1 pl-3 text-left transition-colors hover:bg-primary-subtle focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
       >
-        <Pin
-          className={cn("size-4 rotate-45", isPinned && "fill-info text-info")}
-          aria-hidden="true"
-        />
-      </Button>
+        <span className="min-w-0 flex-1 space-y-0.5">
+          <span className="block text-sm leading-snug font-bold text-ink">
+            {tile.promptText}
+          </span>
+          {subtitle ? (
+            <span className="block truncate font-mono text-[11px] font-semibold text-secondary">
+              {subtitle}
+            </span>
+          ) : null}
+        </span>
+        <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-sm border border-strong bg-primary text-primary-foreground">
+          <Camera className="size-4" aria-hidden="true" />
+        </span>
+      </button>
+
+      {onTogglePin ? (
+        <button
+          type="button"
+          aria-pressed={isPinned}
+          aria-label={
+            isPinned
+              ? `Auftrag „${tile.promptText}“ aus Fokus entfernen`
+              : `Auftrag „${tile.promptText}“ anheften`
+          }
+          title={isPinned ? "Aus Fokus entfernen" : "Im Fokus anheften"}
+          onClick={onTogglePin}
+          className={cn(
+            "relative mr-2 inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-sm border transition-colors before:absolute before:-inset-[6px] before:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+            isPinned
+              ? "border-info bg-info/15 text-ink hover:bg-info/25"
+              : "border-strong bg-surface-muted text-ink hover:bg-surface",
+          )}
+        >
+          <Pin
+            className={cn(
+              "size-4 rotate-45",
+              isPinned && "fill-info text-info",
+            )}
+            aria-hidden="true"
+          />
+        </button>
+      ) : null}
     </div>
   );
 }

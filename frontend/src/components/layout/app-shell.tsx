@@ -133,7 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   size="icon"
                   asChild
                   className={cn(
-                    "size-11",
+                    "size-12",
                     isNavItemActive(pathname, paths.benachrichtigungen, true) &&
                       "border-control bg-surface-muted",
                   )}
@@ -148,9 +148,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     title="Benachrichtigungen"
                   >
                     <span className="relative inline-flex items-center justify-center">
-                      <Bell className="size-5" aria-hidden="true" />
+                      <Bell className="size-6" aria-hidden="true" />
                       {unreadCount > 0 ? (
-                        <span className="brutal-shadow-sm absolute -right-2 -bottom-1.5 inline-flex min-w-4.5 items-center justify-center rounded-full border-2 border-strong bg-pink px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-pink-foreground tabular-nums">
+                        <span className="brutal-shadow-sm absolute -right-1.5 -bottom-1 inline-flex min-w-4.5 items-center justify-center rounded-full border-2 border-strong bg-pink px-1 py-0.5 font-mono text-[10px] leading-none font-bold text-pink-foreground tabular-nums">
                           {unreadCount > 99 ? "99+" : unreadCount}
                         </span>
                       ) : null}

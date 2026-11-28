@@ -118,9 +118,6 @@ export default function GamePage() {
             Du bist aktuell in keinem Spiel. Erstelle auf Home ein neues Spiel
             oder tritt über einen Einladungscode bei.
           </CalloutNote>
-          <Button asChild>
-            <Link href={paths.home}>Zu Home</Link>
-          </Button>
         </div>
       );
     }
@@ -132,19 +129,14 @@ export default function GamePage() {
 
     return (
       <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="font-display text-2xl tracking-tight text-ink">
-              Lobbys &amp; Matches
-            </h1>
-            <p className="text-sm font-medium text-secondary">
-              Alle beigetretenen Lobbys, Entwürfe, laufenden Runden und
-              vergangenen Matches.
-            </p>
-          </div>
-          <Button variant="secondary" asChild>
-            <Link href={paths.home}>Zu Home</Link>
-          </Button>
+        <div>
+          <h1 className="font-display text-2xl tracking-tight text-ink">
+            Lobbys &amp; Matches
+          </h1>
+          <p className="text-sm font-medium text-secondary">
+            Alle beigetretenen Lobbys, Entwürfe, laufenden Runden und
+            vergangenen Matches.
+          </p>
         </div>
 
         {active.length > 0 ? (

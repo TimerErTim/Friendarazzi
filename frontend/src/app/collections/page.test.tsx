@@ -1,7 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { UserGallery } from "@/api/friendarazzi-api";
+import {
+  type GameDetail,
+  GameStatus,
+  type GameSummary,
+  type UserGallery,
+  VisibilityMode,
+} from "@/api/friendarazzi-api";
 
 import CollectionsPage from "./page";
 
@@ -43,6 +49,14 @@ const lena = {
   id: "u-lena",
   displayName: "Lena",
   goldMedalCount: 1,
+  effectiveTitle: "Neuling",
+  draftLocked: true,
+  isHost: false,
+};
+const max = {
+  id: "u-max",
+  displayName: "Max",
+  goldMedalCount: 0,
   effectiveTitle: "Neuling",
   draftLocked: true,
   isHost: false,
@@ -96,6 +110,72 @@ const galleryFixture: UserGallery = {
   ],
 };
 
+const gamesList: GameSummary[] = [
+  {
+    id: "g-2",
+    inviteCode: "DONE02",
+    title: "Urlaub",
+    gridSize: 3,
+    visibilityMode: VisibilityMode.Undercover,
+    status: GameStatus.Completed,
+    watching: true,
+    playableTileCount: 9,
+    playerCount: 3,
+    myCapturedTiles: 2,
+    needsAction: false,
+    serverNow: "2026-11-28T19:00:00Z",
+    createdAt: "2026-11-28T10:00:00Z",
+  },
+];
+
+const completedDetail: GameDetail = {
+  id: "g-2",
+  inviteCode: "DONE02",
+  hostUserId: "u-lena",
+  title: "Urlaub",
+  gridSize: 3,
+  visibilityMode: VisibilityMode.Undercover,
+  status: GameStatus.Completed,
+  watching: true,
+  playableTileCount: 9,
+  draftClosesAt: null,
+  serverNow: "2026-11-28T19:00:00Z",
+  startedAt: "2026-11-28T11:00:00Z",
+  endedAt: "2026-11-28T19:00:00Z",
+  winner: lena,
+  createdAt: "2026-11-28T10:00:00Z",
+  players: [me, lena, max],
+  myQuotas: [],
+  myDrafts: [],
+  myBoard: null,
+  allBoards: [],
+  feed: [
+    {
+      id: "cap-new",
+      tileId: "t-2",
+      catcher: lena,
+      target: me,
+      promptText: "Neueres Foto",
+      imageStorageKey: "cap-new.webp",
+      thumbnailStorageKey: "cap-new.webp",
+      isBlurred: false,
+      capturedAt: "2026-11-28T18:00:00Z",
+    },
+    {
+      id: "cap-others",
+      tileId: "t-3",
+      catcher: lena,
+      target: max,
+      promptText: "Lena erwischt Max",
+      imageStorageKey: "cap-others.webp",
+      thumbnailStorageKey: "cap-others.webp",
+      isBlurred: false,
+      capturedAt: "2026-11-28T19:00:00Z",
+    },
+  ],
+  superlatives: [],
+};
+
 vi.mock("@/api/auth-provider", () => ({
   useAuth: () => ({ status: "authenticated" }),
 }));
@@ -103,14 +183,21 @@ vi.mock("@/api/auth-provider", () => ({
 vi.mock("@/api/hooks", () => ({
   useBenutzerQuery: () => ({ data: me }),
   useUserGalleryQuery: () => ({ isLoading: false, data: galleryFixture }),
+  useGamesQuery: () => ({ isLoading: false, data: gamesList }),
+  useGameDetailsQueries: (ids: readonly string[]) =>
+    ids.map((id) => ({
+      isLoading: false,
+      data: id === "g-2" ? completedDetail : undefined,
+    })),
 }));
 
 describe("CollectionsPage", () => {
-  it("shows all related photos flat and sorted newest first, with optional grouping", () => {
+  it("shows all accessible photos including revealed captures between other players, sorted newest first", () => {
     render(<CollectionsPage />);
 
     const images = screen.getAllByTestId("auth-image");
     expect(images.map((el) => el.textContent)).toEqual([
+      "Lena erwischt Max",
       "Neueres Foto",
       "Älteres Foto",
     ]);

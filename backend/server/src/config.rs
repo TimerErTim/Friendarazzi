@@ -52,6 +52,19 @@ pub struct ServerConfig {
     pub otlp_stream_name: String,
     /// OpenTelemetry `service.name` resource attribute.
     pub otel_service_name: String,
+    pub oidc_google_client_id: Option<String>,
+    pub oidc_google_client_secret: Option<String>,
+    pub oidc_apple_client_id: Option<String>,
+    pub oidc_apple_team_id: Option<String>,
+    pub oidc_apple_key_id: Option<String>,
+    pub oidc_apple_private_key_path: Option<PathBuf>,
+    pub oidc_apple_private_key_pem: Option<String>,
+    pub oidc_generic_id: Option<String>,
+    pub oidc_generic_display_name: Option<String>,
+    pub oidc_generic_issuer: Option<String>,
+    pub oidc_generic_client_id: Option<String>,
+    pub oidc_generic_client_secret: Option<String>,
+    pub oidc_generic_scopes: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -78,6 +91,19 @@ impl Default for ServerConfig {
             otlp_password: None,
             otlp_stream_name: "friendarazzi_traces".into(),
             otel_service_name: "friendarazzi-server".into(),
+            oidc_google_client_id: None,
+            oidc_google_client_secret: None,
+            oidc_apple_client_id: None,
+            oidc_apple_team_id: None,
+            oidc_apple_key_id: None,
+            oidc_apple_private_key_path: None,
+            oidc_apple_private_key_pem: None,
+            oidc_generic_id: None,
+            oidc_generic_display_name: None,
+            oidc_generic_issuer: None,
+            oidc_generic_client_id: None,
+            oidc_generic_client_secret: None,
+            oidc_generic_scopes: None,
         }
     }
 }
@@ -189,6 +215,58 @@ pub struct Cli {
     /// OpenTelemetry `service.name` resource attribute
     #[arg(long, env = "FRIENDARAZZI_OTEL_SERVICE_NAME")]
     pub otel_service_name: Option<String>,
+
+    /// Google OIDC client ID
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GOOGLE_CLIENT_ID")]
+    pub oidc_google_client_id: Option<String>,
+
+    /// Google OIDC client secret
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GOOGLE_CLIENT_SECRET")]
+    pub oidc_google_client_secret: Option<String>,
+
+    /// Apple Services ID (OIDC client ID)
+    #[arg(long, env = "FRIENDARAZZI_OIDC_APPLE_CLIENT_ID")]
+    pub oidc_apple_client_id: Option<String>,
+
+    /// Apple Developer Team ID
+    #[arg(long, env = "FRIENDARAZZI_OIDC_APPLE_TEAM_ID")]
+    pub oidc_apple_team_id: Option<String>,
+
+    /// Apple Sign In Key ID
+    #[arg(long, env = "FRIENDARAZZI_OIDC_APPLE_KEY_ID")]
+    pub oidc_apple_key_id: Option<String>,
+
+    /// Path to Apple Sign In PKCS#8 private key PEM file
+    #[arg(long, env = "FRIENDARAZZI_OIDC_APPLE_PRIVATE_KEY_PATH")]
+    pub oidc_apple_private_key_path: Option<PathBuf>,
+
+    /// Inline Apple Sign In PKCS#8 private key PEM
+    #[arg(long, env = "FRIENDARAZZI_OIDC_APPLE_PRIVATE_KEY_PEM")]
+    pub oidc_apple_private_key_pem: Option<String>,
+
+    /// Generic OIDC provider slug
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GENERIC_ID")]
+    pub oidc_generic_id: Option<String>,
+
+    /// Generic OIDC provider display name
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GENERIC_DISPLAY_NAME")]
+    pub oidc_generic_display_name: Option<String>,
+
+    /// Generic OIDC issuer URL
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GENERIC_ISSUER")]
+    pub oidc_generic_issuer: Option<String>,
+
+    /// Generic OIDC client ID
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GENERIC_CLIENT_ID")]
+    pub oidc_generic_client_id: Option<String>,
+
+    /// Generic OIDC client secret
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GENERIC_CLIENT_SECRET")]
+    pub oidc_generic_client_secret: Option<String>,
+
+    /// Generic OIDC space-separated scopes
+    #[arg(long, env = "FRIENDARAZZI_OIDC_GENERIC_SCOPES")]
+    pub oidc_generic_scopes: Option<String>,
 }
 
 pub fn load() -> Result<ServerConfig, ConfigError> {
@@ -308,6 +386,45 @@ fn overlay(mut config: ServerConfig, cli: &Cli) -> ServerConfig {
     }
     if let Some(otel_service_name) = &cli.otel_service_name {
         config.otel_service_name = otel_service_name.clone();
+    }
+    if cli.oidc_google_client_id.is_some() {
+        config.oidc_google_client_id = cli.oidc_google_client_id.clone();
+    }
+    if cli.oidc_google_client_secret.is_some() {
+        config.oidc_google_client_secret = cli.oidc_google_client_secret.clone();
+    }
+    if cli.oidc_apple_client_id.is_some() {
+        config.oidc_apple_client_id = cli.oidc_apple_client_id.clone();
+    }
+    if cli.oidc_apple_team_id.is_some() {
+        config.oidc_apple_team_id = cli.oidc_apple_team_id.clone();
+    }
+    if cli.oidc_apple_key_id.is_some() {
+        config.oidc_apple_key_id = cli.oidc_apple_key_id.clone();
+    }
+    if cli.oidc_apple_private_key_path.is_some() {
+        config.oidc_apple_private_key_path = cli.oidc_apple_private_key_path.clone();
+    }
+    if cli.oidc_apple_private_key_pem.is_some() {
+        config.oidc_apple_private_key_pem = cli.oidc_apple_private_key_pem.clone();
+    }
+    if cli.oidc_generic_id.is_some() {
+        config.oidc_generic_id = cli.oidc_generic_id.clone();
+    }
+    if cli.oidc_generic_display_name.is_some() {
+        config.oidc_generic_display_name = cli.oidc_generic_display_name.clone();
+    }
+    if cli.oidc_generic_issuer.is_some() {
+        config.oidc_generic_issuer = cli.oidc_generic_issuer.clone();
+    }
+    if cli.oidc_generic_client_id.is_some() {
+        config.oidc_generic_client_id = cli.oidc_generic_client_id.clone();
+    }
+    if cli.oidc_generic_client_secret.is_some() {
+        config.oidc_generic_client_secret = cli.oidc_generic_client_secret.clone();
+    }
+    if cli.oidc_generic_scopes.is_some() {
+        config.oidc_generic_scopes = cli.oidc_generic_scopes.clone();
     }
     config
 }

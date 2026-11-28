@@ -149,6 +149,15 @@ impl UnitOfWorkImpl for FaultyUow {
     fn benachrichtigungen(&self) -> &dyn BenachrichtigungRepository {
         &self.benachrichtigungen
     }
+    fn external_identities(&self) -> &dyn friendarazzi_core::ports::ExternalIdentityRepository {
+        unimplemented!()
+    }
+    fn oidc_auth_states(&self) -> &dyn friendarazzi_core::ports::OidcAuthStateRepository {
+        unimplemented!()
+    }
+    fn oidc_exchange_codes(&self) -> &dyn friendarazzi_core::ports::OidcExchangeCodeRepository {
+        unimplemented!()
+    }
 }
 
 struct FaultyUowProvider {

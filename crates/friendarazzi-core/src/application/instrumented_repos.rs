@@ -8,9 +8,11 @@ use tracing::instrument;
 use crate::application::uow::UnitOfWorkImpl;
 use crate::application::uow::Versioned;
 use crate::domain::konto::{
-    BestätigungId, EmailBestätigung, Konto, KontoId, NeueBestätigung,
-    NeuePasswortWiederherstellung, NeueSession, NeuesKonto, PasswortWiederherstellung,
-    PasswortWiederherstellungId, SecretTokenHash, Session, SessionId,
+    BestätigungId, EmailBestätigung, ExternalIdentity, ExternalIdentityId, Konto, KontoId,
+    NeueBestätigung, NeueExternalIdentity, NeuePasswortWiederherstellung, NeueSession,
+    NeuerOidcAuthState, NeuerOidcExchangeCode, NeuesKonto, OidcAuthState, OidcExchangeCode,
+    OidcProviderId, PasswortWiederherstellung, PasswortWiederherstellungId, SecretTokenHash,
+    Session, SessionId,
 };
 use crate::domain::{
     Benachrichtigung, BenachrichtigungId, Benutzer, BenutzerId, Board, BoardId, Capture, CaptureId,
@@ -19,7 +21,8 @@ use crate::domain::{
 };
 use crate::ports::{
     BenachrichtigungRepository, BenutzerRepository, BoardRepository, CaptureRepository,
-    DeckRepository, EmailBestätigungRepository, GameRepository, KontoRepository,
+    DeckRepository, EmailBestätigungRepository, ExternalIdentityRepository, GameRepository,
+    KontoRepository, OidcAuthStateRepository, OidcExchangeCodeRepository,
     PasswortWiederherstellungRepository, RepositoryResult, SessionRepository,
 };
 
@@ -264,6 +267,58 @@ impl_instrumented_repo!(
     ]
 );
 
+impl_instrumented_repo!(
+    InstrumentedExternalIdentityRepository,
+    ExternalIdentityRepository,
+    external_identities,
+    methods: [
+        #[instrument(skip(self, identity), level = "debug", err(Debug))]
+        fn create(&self, identity: NeueExternalIdentity) -> RepositoryResult<Versioned<ExternalIdentity>>;
+        #[instrument(skip(self, id), fields(id = ?id), level = "trace", err(Debug))]
+        fn find_by_id(&self, id: ExternalIdentityId) -> RepositoryResult<Versioned<ExternalIdentity>>;
+        #[instrument(skip(self, provider_id, subject), level = "trace", err(Debug))]
+        fn find_by_provider_subject(&self, provider_id: &OidcProviderId, subject: &str) -> RepositoryResult<Versioned<ExternalIdentity>>;
+        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "trace", err(Debug))]
+        fn find_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<Vec<Versioned<ExternalIdentity>>>;
+        #[instrument(skip(self, identity), level = "debug", err(Debug))]
+        fn delete(&self, identity: Versioned<ExternalIdentity>) -> RepositoryResult<()>;
+        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "debug", err(Debug))]
+        fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
+    ]
+);
+
+impl_instrumented_repo!(
+    InstrumentedOidcAuthStateRepository,
+    OidcAuthStateRepository,
+    oidc_auth_states,
+    methods: [
+        #[instrument(skip(self, state), level = "debug", err(Debug))]
+        fn create(&self, state: NeuerOidcAuthState) -> RepositoryResult<Versioned<OidcAuthState>>;
+        #[instrument(skip(self, state_hash), level = "trace", err(Debug))]
+        fn find_by_state_hash(&self, state_hash: &SecretTokenHash) -> RepositoryResult<Versioned<OidcAuthState>>;
+        #[instrument(skip(self, state), level = "debug", err(Debug))]
+        fn update(&self, state: &mut Versioned<OidcAuthState>) -> RepositoryResult<()>;
+        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "debug", err(Debug))]
+        fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
+    ]
+);
+
+impl_instrumented_repo!(
+    InstrumentedOidcExchangeCodeRepository,
+    OidcExchangeCodeRepository,
+    oidc_exchange_codes,
+    methods: [
+        #[instrument(skip(self, code), level = "debug", err(Debug))]
+        fn create(&self, code: NeuerOidcExchangeCode) -> RepositoryResult<Versioned<OidcExchangeCode>>;
+        #[instrument(skip(self, code_hash), level = "trace", err(Debug))]
+        fn find_by_code_hash(&self, code_hash: &SecretTokenHash) -> RepositoryResult<Versioned<OidcExchangeCode>>;
+        #[instrument(skip(self, code), level = "debug", err(Debug))]
+        fn update(&self, code: &mut Versioned<OidcExchangeCode>) -> RepositoryResult<()>;
+        #[instrument(skip(self, benutzer_id), fields(benutzer_id = ?benutzer_id), level = "debug", err(Debug))]
+        fn delete_by_benutzer(&self, benutzer_id: BenutzerId) -> RepositoryResult<()>;
+    ]
+);
+
 /// Pinned bundle: instrumented repos hold pointers into `uow` (field order keeps drop safe).
 pub(crate) struct RepoStorage {
     pub(crate) games: InstrumentedGameRepository,
@@ -276,6 +331,9 @@ pub(crate) struct RepoStorage {
     pub(crate) bestätigungen: InstrumentedEmailBestätigungRepository,
     pub(crate) wiederherstellungen: InstrumentedPasswortWiederherstellungRepository,
     pub(crate) benachrichtigungen: InstrumentedBenachrichtigungRepository,
+    pub(crate) external_identities: InstrumentedExternalIdentityRepository,
+    pub(crate) oidc_auth_states: InstrumentedOidcAuthStateRepository,
+    pub(crate) oidc_exchange_codes: InstrumentedOidcExchangeCodeRepository,
     pub(crate) uow: Box<dyn UnitOfWorkImpl>,
 }
 
@@ -292,6 +350,9 @@ impl RepoStorage {
             bestätigungen: InstrumentedEmailBestätigungRepository::disabled(),
             wiederherstellungen: InstrumentedPasswortWiederherstellungRepository::disabled(),
             benachrichtigungen: InstrumentedBenachrichtigungRepository::disabled(),
+            external_identities: InstrumentedExternalIdentityRepository::disabled(),
+            oidc_auth_states: InstrumentedOidcAuthStateRepository::disabled(),
+            oidc_exchange_codes: InstrumentedOidcExchangeCodeRepository::disabled(),
             uow,
         });
 
@@ -309,6 +370,9 @@ impl RepoStorage {
             this.wiederherstellungen =
                 InstrumentedPasswortWiederherstellungRepository::new(uow_ptr);
             this.benachrichtigungen = InstrumentedBenachrichtigungRepository::new(uow_ptr);
+            this.external_identities = InstrumentedExternalIdentityRepository::new(uow_ptr);
+            this.oidc_auth_states = InstrumentedOidcAuthStateRepository::new(uow_ptr);
+            this.oidc_exchange_codes = InstrumentedOidcExchangeCodeRepository::new(uow_ptr);
         }
 
         pinned

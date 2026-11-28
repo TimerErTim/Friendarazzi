@@ -689,7 +689,8 @@ async fn ac12_löschung_entfernt_identität_und_gibt_die_adresse_frei() {
         .execute(
             auth_aus(&ausgestellt),
             BenutzerLöschen {
-                passwort: passwort(),
+                passwort: Some(passwort()),
+                reauth_code: None,
                 bestätigt: true,
             },
         )
@@ -726,7 +727,8 @@ async fn ac12_löschung_ohne_bestätigung_oder_mit_falschem_passwort_scheitert()
         .execute(
             auth_aus(&ausgestellt),
             BenutzerLöschen {
-                passwort: passwort(),
+                passwort: Some(passwort()),
+                reauth_code: None,
                 bestätigt: false,
             },
         )
@@ -738,7 +740,8 @@ async fn ac12_löschung_ohne_bestätigung_oder_mit_falschem_passwort_scheitert()
         .execute(
             auth_aus(&ausgestellt),
             BenutzerLöschen {
-                passwort: passwort_wie("falsch-falsch"),
+                passwort: Some(passwort_wie("falsch-falsch")),
+                reauth_code: None,
                 bestätigt: true,
             },
         )

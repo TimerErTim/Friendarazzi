@@ -9,6 +9,7 @@ pub mod common;
 mod deck;
 mod game;
 mod konto;
+mod oidc;
 mod passwort_wiederherstellung;
 mod session;
 
@@ -20,5 +21,9 @@ pub use capture::SQLiteCaptureRepository;
 pub use deck::SQLiteDeckRepository;
 pub use game::SQLiteGameRepository;
 pub use konto::SQLiteKontoRepository;
+pub use oidc::{
+    SQLiteExternalIdentityRepository, SQLiteOidcAuthStateRepository,
+    SQLiteOidcExchangeCodeRepository,
+};
 pub use passwort_wiederherstellung::SQLitePasswortWiederherstellungRepository;
 pub use session::SQLiteSessionRepository;

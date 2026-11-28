@@ -2,7 +2,9 @@
 export const friendarazziKeys = {
   root: ["friendarazzi"] as const,
   health: () => [...friendarazziKeys.root, "health"] as const,
+  authProviders: () => [...friendarazziKeys.root, "auth-providers"] as const,
   benutzer: () => [...friendarazziKeys.root, "benutzer"] as const,
+  loginMethods: () => [...friendarazziKeys.root, "login-methods"] as const,
   decks: () => [...friendarazziKeys.root, "decks"] as const,
   games: {
     all: () => [...friendarazziKeys.root, "games"] as const,

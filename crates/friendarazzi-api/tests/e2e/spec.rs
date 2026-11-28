@@ -97,11 +97,16 @@ fn bearer_schema_ist_veröffentlicht() {
             .is_some_and(|text| !text.is_empty()),
     );
 
-    const OHNE_TOKEN: [(&str, &str); 11] = [
+    const OHNE_TOKEN: [(&str, &str); 16] = [
         ("/health", "get"),
         ("/health/mail", "get"),
         ("/version", "get"),
         ("/games/by-code/{invite_code}", "get"),
+        ("/auth/providers", "get"),
+        ("/auth/oidc/{provider}/start", "get"),
+        ("/auth/oidc/{provider}/callback", "get"),
+        ("/auth/oidc/{provider}/callback", "post"),
+        ("/auth/oidc/exchange", "post"),
         ("/registrierung", "post"),
         ("/konto/email/bestaetigen", "post"),
         ("/anmeldung", "post"),

@@ -22,10 +22,12 @@ use friendarazzi_core::{
         BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen, BenutzerLöschenFehler,
         CaptureUseCaseError, EmailBestätigen, EmailBestätigenFehler, EmailBestätigungErneutSenden,
         EmailBestätigungSendenFehler, Erneuerung, ErneuerungFehler, GameUseCaseError,
-        HostFillRemainingDrafts, KickPlayer, LeaveGame, LockDraftPrompts, PasswortVergessen,
+        HostFillRemainingDrafts, KickPlayer, LeaveGame, LockDraftPrompts, OidcCompleteCallback,
+        OidcStartAuth, OidcUseCaseError, PasswortErstmaligSetzenFehler, PasswortVergessen,
         PasswortVergessenFehler, PasswortWiederherstellen, PasswortWiederherstellenFehler,
         ProfileUseCaseError, Registrieren, RegistrierenFehler, RetractCapture, SessionAusgestellt,
-        SetDraftDeadline, StartDrafting, SubmitCapture, UnlockDraftPrompts, UploadAvatar,
+        SetDraftDeadline, StartDrafting, SubmitCapture, UnlinkExternalIdentity, UnlockDraftPrompts,
+        UploadAvatar,
     },
 };
 use tracing::warn;
@@ -37,9 +39,10 @@ use self::errors::{GameReadError, MediaReadError, NotificationReadError, Profile
 use crate::schema::{
     AuthenticatedBenutzer, BoardTileView, BoardView, BuildVersion, CaptureFeedItem, CaptureOutcome,
     DraftTargetQuota, GalleryGameGroup, GameDetail, GameInvitePreview, GameSummary, GridCoordinate,
-    NotificationPreferences, NotificationView, NotificationsInbox, PlayerBadge,
-    PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView, UnsubscribeOutcome,
-    UserGallery, UserProfile,
+    LinkedExternalIdentity, LoginMethodsResponse, NotificationPreferences, NotificationView,
+    NotificationsInbox, OidcAuthorizationRedirect, OidcProviderItem, OidcProvidersResponse,
+    PlayerBadge, PromptSubmissionView, StarterDeck, SuperlativeKind, SuperlativeView,
+    UnsubscribeOutcome, UserGallery, UserProfile,
 };
 
 #[derive(Clone)]
@@ -1142,6 +1145,181 @@ impl FriendarazziAppApi {
         self.app.execute(auth, use_case).await
     }
 
+    pub fn oidc_providers(&self) -> OidcProvidersResponse {
+        OidcProvidersResponse {
+            providers: self
+                .app
+                .oidc_client
+                .configured_providers()
+                .into_iter()
+                .map(OidcProviderItem::from)
+                .collect(),
+        }
+    }
+
+    pub async fn oidc_start_login(
+        &self,
+        provider_raw: &str,
+        return_to: Option<String>,
+        client_key: ClientKey,
+    ) -> ResultReport<String, OidcUseCaseError> {
+        let provider_id = domain::konto::OidcProviderId::parse(provider_raw)
+            .change_context(OidcUseCaseError::AnbieterNichtKonfiguriert)?;
+        self.app
+            .execute(
+                AuthContext::Anonymous,
+                OidcStartAuth {
+                    provider_id,
+                    mode: domain::konto::OidcFlowMode::Login,
+                    return_to,
+                    client_key,
+                },
+            )
+            .await
+    }
+
+    pub async fn oidc_complete_callback(
+        &self,
+        provider_raw: &str,
+        code: Option<String>,
+        state: Option<String>,
+        provider_error: Option<String>,
+        apple_user_json: Option<&str>,
+    ) -> ResultReport<String, OidcUseCaseError> {
+        let provider_id = domain::konto::OidcProviderId::parse(provider_raw)
+            .change_context(OidcUseCaseError::AnbieterNichtKonfiguriert)?;
+        let display_name_hint = apple_user_json.and_then(parse_apple_user_display_name);
+        let outcome = self
+            .app
+            .execute(
+                AuthContext::Anonymous,
+                OidcCompleteCallback {
+                    provider_id,
+                    code,
+                    state,
+                    provider_error,
+                    display_name_hint,
+                },
+            )
+            .await?;
+        Ok(outcome.redirect_url)
+    }
+
+    pub async fn oidc_exchange(
+        &self,
+        anfrage: requests::OidcExchangeRequest,
+        client_key: ClientKey,
+    ) -> ResultReport<SessionAusgestellt, OidcUseCaseError> {
+        let use_case = anfrage.in_use_case(client_key)?;
+        self.app.execute(AuthContext::Anonymous, use_case).await
+    }
+
+    pub async fn login_methods(
+        &self,
+        auth: AuthContext,
+    ) -> ResultReport<LoginMethodsResponse, ProfileReadError> {
+        let providers: Vec<OidcProviderItem> = self
+            .app
+            .oidc_client
+            .configured_providers()
+            .into_iter()
+            .map(OidcProviderItem::from)
+            .collect();
+        let display_by_id: HashMap<String, String> = providers
+            .iter()
+            .map(|p| (p.id.clone(), p.display_name.clone()))
+            .collect();
+
+        self.app
+            .execute_fn(auth, async move |ctx| {
+                let benutzer_id = ctx
+                    .auth()
+                    .require_benutzer_id()
+                    .change_context(ProfileReadError::Unauthorized)?;
+                let uow = ctx
+                    .enter()
+                    .await
+                    .change_context(ProfileReadError::Persistence)?;
+                let res = async {
+                    let konten = uow
+                        .konten()
+                        .find_by_benutzer(benutzer_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let identities = uow
+                        .external_identities()
+                        .find_by_benutzer(benutzer_id)
+                        .await
+                        .map_err(IntoReport::into_report)
+                        .change_context(ProfileReadError::Persistence)?;
+                    let external_identities = identities
+                        .into_iter()
+                        .map(|row| {
+                            let id_str = row.provider_id().as_str().to_owned();
+                            let provider_display_name = display_by_id
+                                .get(&id_str)
+                                .cloned()
+                                .unwrap_or_else(|| id_str.clone());
+                            LinkedExternalIdentity {
+                                id: row.id().0,
+                                provider_id: id_str,
+                                provider_display_name,
+                                provider_email: row
+                                    .provider_email()
+                                    .map(|e| AsRef::<str>::as_ref(e).to_owned()),
+                                created_at: row.created_at(),
+                            }
+                        })
+                        .collect();
+                    Ok::<_, Report<ProfileReadError>>(LoginMethodsResponse {
+                        has_password: !konten.is_empty(),
+                        external_identities,
+                        available_providers: providers,
+                    })
+                }
+                .await;
+                uow.finish(res, ProfileReadError::Persistence).await
+            })
+            .await
+    }
+
+    pub async fn oidc_start_account_action(
+        &self,
+        auth: AuthContext,
+        provider_raw: &str,
+        anfrage: requests::StartOidcAccountActionRequest,
+        client_key: ClientKey,
+    ) -> ResultReport<OidcAuthorizationRedirect, OidcUseCaseError> {
+        let benutzer_id = auth
+            .require_benutzer_id()
+            .change_context(OidcUseCaseError::NichtAngemeldet)?;
+        let provider_id = domain::konto::OidcProviderId::parse(provider_raw)
+            .change_context(OidcUseCaseError::AnbieterNichtKonfiguriert)?;
+        let use_case = anfrage.in_use_case(provider_id, benutzer_id, client_key);
+        let authorization_url = self.app.execute(auth, use_case).await?;
+        Ok(OidcAuthorizationRedirect { authorization_url })
+    }
+
+    pub async fn unlink_external_identity(
+        &self,
+        auth: AuthContext,
+        identity_id: domain::konto::ExternalIdentityId,
+    ) -> ResultReport<(), OidcUseCaseError> {
+        self.app
+            .execute(auth, UnlinkExternalIdentity { identity_id })
+            .await
+    }
+
+    pub async fn set_initial_password(
+        &self,
+        auth: AuthContext,
+        anfrage: requests::SetInitialPasswordRequest,
+    ) -> ResultReport<(), PasswortErstmaligSetzenFehler> {
+        let use_case = anfrage.in_use_case()?;
+        self.app.execute(auth, use_case).await
+    }
+
     // ---------------------------------------------------------------- Notifications
 
     pub async fn notifications_list(
@@ -1597,4 +1775,27 @@ fn profile_to_schema(
         captures_made,
         times_caught,
     }
+}
+
+fn parse_apple_user_display_name(raw_json: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct AppleName {
+        #[serde(rename = "firstName")]
+        first_name: Option<String>,
+        #[serde(rename = "lastName")]
+        last_name: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct AppleUser {
+        name: Option<AppleName>,
+    }
+    let parsed: AppleUser = serde_json::from_str(raw_json).ok()?;
+    let name = parsed.name?;
+    let parts: Vec<&str> = [name.first_name.as_deref(), name.last_name.as_deref()]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    (!parts.is_empty()).then(|| parts.join(" "))
 }

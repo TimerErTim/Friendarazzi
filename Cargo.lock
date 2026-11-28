@@ -1034,6 +1034,7 @@ dependencies = [
  "friendarazzi-core",
  "friendarazzi-fakes",
  "friendarazzi-filesystemstore",
+ "friendarazzi-oidc",
  "friendarazzi-smtp",
  "friendarazzi-sqlite",
  "futures",
@@ -1043,6 +1044,7 @@ dependencies = [
  "poem-openapi",
  "pollster",
  "reqwest 0.12.28",
+ "ring",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -1113,6 +1115,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "friendarazzi-oidc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "error-stack",
+ "friendarazzi-core",
+ "poem",
+ "reqwest 0.12.28",
+ "ring",
+ "serde",
+ "serde_json",
+ "test-log",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "friendarazzi-scheduler"
 version = "0.1.0"
 dependencies = [
@@ -1144,6 +1167,7 @@ dependencies = [
  "friendarazzi-api",
  "friendarazzi-core",
  "friendarazzi-filesystemstore",
+ "friendarazzi-oidc",
  "friendarazzi-scheduler",
  "friendarazzi-smtp",
  "friendarazzi-sqlite",

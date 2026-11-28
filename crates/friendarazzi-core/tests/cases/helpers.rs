@@ -19,7 +19,7 @@ use friendarazzi_core::{
         SaveDraftPrompts, SessionPrüfen, StartDrafting, StartReadyGames,
     },
 };
-use friendarazzi_fakes::{FakeMailSender, FixedClock, FixedRng};
+use friendarazzi_fakes::{FakeMailSender, FakeOidcProviderClient, FixedClock, FixedRng};
 use uuid::Uuid;
 
 pub fn test_signing_key() -> InMemorySigning {
@@ -46,6 +46,7 @@ pub fn pruefen(_harness: &Harness, claims: AccessTokenClaims) -> SessionPrüfen 
 
 pub fn test_konfiguration() -> IdentityProviderConfiguration {
     IdentityProviderConfiguration::neu("friendarazzi.app", "friendarazzi-api")
+        .with_frontend_basis_url(FRONTEND_BASIS_URL)
 }
 
 pub const FRONTEND_BASIS_URL: &str = "https://friendarazzi.app";
@@ -54,6 +55,7 @@ pub struct Harness {
     app: App,
     clock: Arc<FixedClock>,
     mail: Arc<FakeMailSender>,
+    oidc: Arc<FakeOidcProviderClient>,
 }
 
 impl Harness {
@@ -62,6 +64,10 @@ impl Harness {
     }
     pub fn mail(&self) -> &FakeMailSender {
         self.mail.as_ref()
+    }
+
+    pub fn oidc(&self) -> &FakeOidcProviderClient {
+        self.oidc.as_ref()
     }
 
     pub fn jetzt(&self) -> DateTime<Utc> {
@@ -106,16 +112,23 @@ fn build_inner(
 ) -> Harness {
     let clock = Arc::new(FixedClock::new(jetzt()));
     let mail = Arc::new(FakeMailSender::new());
+    let oidc = Arc::new(FakeOidcProviderClient::default());
     let app = builder
         .signing(Arc::new(test_signing_key()))
         .throttle(Arc::new(InMemoryThrottle::new()))
         .mail_sender(mail.clone())
         .konto(test_konfiguration())
+        .oidc_client(oidc.clone())
         .clock(clock.clone())
         .rng(Arc::new(FixedRng::default()))
         .maybe_event_queue(event_queue)
         .build();
-    Harness { app, clock, mail }
+    Harness {
+        app,
+        clock,
+        mail,
+        oidc,
+    }
 }
 
 pub fn jetzt() -> DateTime<Utc> {

@@ -12,7 +12,9 @@ use crate::{
     application::ExecutionContext,
     domain::{
         EmailAdresse,
-        konto::{KlartextPasswort, NeuePasswortWiederherstellung, SecretToken, hash_password},
+        konto::{
+            KlartextPasswort, NeuePasswortWiederherstellung, NeuesKonto, SecretToken, hash_password,
+        },
     },
     ports::{ClientKey, Mail, RepositoryError, ThrottleAction},
     service::UseCase,
@@ -256,5 +258,73 @@ impl UseCase<()> for PasswortWiederherstellen {
             PasswortWiederherstellenFehler::WiederherstellungLaden,
         )
         .await
+    }
+}
+
+/// Every way `PasswortErstmaligSetzen` may refuse.
+#[derive(Debug, thiserror::Error)]
+pub enum PasswortErstmaligSetzenFehler {
+    #[error("die Anfrage ist ungültig")]
+    UngültigeAnfrage,
+    #[error("für diese Aktion ist eine Anmeldung erforderlich")]
+    NichtAngemeldet,
+    #[error("es ist bereits ein Passwort hinterlegt")]
+    PasswortBereitsVorhanden,
+    #[error("das Passwort konnte nicht gespeichert werden")]
+    PasswortSetzen,
+    #[error("das Konto konnte nicht geladen werden")]
+    KontoLaden,
+    #[error("das Konto konnte nicht gespeichert werden")]
+    KontoSpeichern,
+}
+
+/// Set an initial Passwort on a passwordless (OIDC-created) Benutzer.
+#[derive(Debug)]
+pub struct PasswortErstmaligSetzen {
+    pub neues_passwort: KlartextPasswort,
+}
+
+#[async_trait]
+impl UseCase<()> for PasswortErstmaligSetzen {
+    type Error = Report<PasswortErstmaligSetzenFehler>;
+
+    async fn perform(self, ctx: ExecutionContext<'_>) -> Result<(), Self::Error> {
+        let now = ctx.clock().now();
+        let (benutzer_id, _) = ctx
+            .auth()
+            .require_authenticated()
+            .change_context(PasswortErstmaligSetzenFehler::NichtAngemeldet)?;
+
+        let password_hash = hash_password(&self.neues_passwort)
+            .change_context(PasswortErstmaligSetzenFehler::PasswortSetzen)?;
+
+        let uow = ctx
+            .enter()
+            .await
+            .change_context(PasswortErstmaligSetzenFehler::KontoLaden)?;
+
+        let ergebnis = async {
+            let konten = uow
+                .konten()
+                .find_by_benutzer(benutzer_id)
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(PasswortErstmaligSetzenFehler::KontoLaden)?;
+            if !konten.is_empty() {
+                return Err(Report::new(
+                    PasswortErstmaligSetzenFehler::PasswortBereitsVorhanden,
+                ));
+            }
+            uow.konten()
+                .create(NeuesKonto::neu(benutzer_id, password_hash, now))
+                .await
+                .map_err(IntoReport::into_report)
+                .change_context(PasswortErstmaligSetzenFehler::KontoSpeichern)?;
+            Ok::<_, Report<PasswortErstmaligSetzenFehler>>(())
+        }
+        .await;
+
+        uow.finish(ergebnis, PasswortErstmaligSetzenFehler::KontoLaden)
+            .await
     }
 }

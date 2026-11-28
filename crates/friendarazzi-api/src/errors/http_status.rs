@@ -4,8 +4,8 @@ use friendarazzi_core::ports::{ObjectStoreError, RepositoryError};
 use friendarazzi_core::service::{
     AbmeldungFehler, AnmeldungFehler, BenachrichtigungUseCaseError, BenutzerLöschenFehler,
     CaptureUseCaseError, EmailBestätigenFehler, EmailBestätigungSendenFehler, ErneuerungFehler,
-    GameUseCaseError, PasswortVergessenFehler, PasswortWiederherstellenFehler, ProfileUseCaseError,
-    RegistrierenFehler, SessionPrüfenFehler,
+    GameUseCaseError, OidcUseCaseError, PasswortErstmaligSetzenFehler, PasswortVergessenFehler,
+    PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierenFehler, SessionPrüfenFehler,
 };
 use http::StatusCode;
 
@@ -57,6 +57,8 @@ fn nested_http_status<C: ThreadSafeError>(error: &Report<C>) -> Option<StatusCod
         .or_else(|| mapped::<C, PasswortVergessenFehler>(error))
         .or_else(|| mapped::<C, PasswortWiederherstellenFehler>(error))
         .or_else(|| mapped::<C, BenutzerLöschenFehler>(error))
+        .or_else(|| mapped::<C, OidcUseCaseError>(error))
+        .or_else(|| mapped::<C, PasswortErstmaligSetzenFehler>(error))
         .or_else(|| mapped::<C, RepositoryError>(error))
         .or_else(|| mapped::<C, ObjectStoreError>(error))
         .or_else(|| mapped::<C, ValidationError>(error))
@@ -244,7 +246,9 @@ http_status!(PasswortWiederherstellenFehler {
 http_status!(BenutzerLöschenFehler {
     UngültigeAnfrage => StatusCode::BAD_REQUEST,
     NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    AuthentifizierungErforderlich => StatusCode::BAD_REQUEST,
     PasswortFalsch => StatusCode::UNAUTHORIZED,
+    ReauthUngültig => StatusCode::UNAUTHORIZED,
     PasswortPrüfen => StatusCode::INTERNAL_SERVER_ERROR,
     KontoLaden => StatusCode::INTERNAL_SERVER_ERROR,
     BenutzerLaden => StatusCode::INTERNAL_SERVER_ERROR,
@@ -253,4 +257,26 @@ http_status!(BenutzerLöschenFehler {
     KontoLöschen => StatusCode::INTERNAL_SERVER_ERROR,
     SessionLöschen => StatusCode::INTERNAL_SERVER_ERROR,
     BenutzerLöschen => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(OidcUseCaseError {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    AnbieterNichtKonfiguriert => StatusCode::NOT_FOUND,
+    Gedrosselt => StatusCode::TOO_MANY_REQUESTS,
+    CodeUngültig => StatusCode::BAD_REQUEST,
+    IdentitätNichtGefunden => StatusCode::NOT_FOUND,
+    LetzteAnmeldemethode => StatusCode::CONFLICT,
+    StartFehlgeschlagen => StatusCode::BAD_GATEWAY,
+    DatenbankFehler => StatusCode::INTERNAL_SERVER_ERROR,
+    SessionFehler => StatusCode::INTERNAL_SERVER_ERROR,
+});
+
+http_status!(PasswortErstmaligSetzenFehler {
+    UngültigeAnfrage => StatusCode::BAD_REQUEST,
+    NichtAngemeldet => StatusCode::UNAUTHORIZED,
+    PasswortBereitsVorhanden => StatusCode::CONFLICT,
+    PasswortSetzen => StatusCode::INTERNAL_SERVER_ERROR,
+    KontoLaden => StatusCode::INTERNAL_SERVER_ERROR,
+    KontoSpeichern => StatusCode::INTERNAL_SERVER_ERROR,
 });

@@ -1,5 +1,5 @@
 use error_stack::Report;
-use friendarazzi_core::{ThreadSafeError, ports::ObjectStream};
+use friendarazzi_core::{ResultReport, ThreadSafeError, ports::ObjectStream};
 use futures::StreamExt;
 use http::StatusCode;
 use poem::{Body, IntoResponse, Response};
@@ -142,6 +142,48 @@ where
             }
             TypicalJsonResponse::InternalError(error) => {
                 Self::InternalError(error, NO_STORE.to_owned())
+            }
+        }
+    }
+}
+
+/// Redirect response for OIDC authorization starts and provider callbacks.
+#[derive(ApiResponse)]
+pub enum RedirectResponse {
+    /// Redirect to the provider or frontend destination without caching.
+    #[oai(status = 302)]
+    Found(
+        #[oai(header = "Location")] String,
+        #[oai(header = "Cache-Control")] String,
+    ),
+    /// Validation or rate-limit client failure.
+    #[oai(status_range = "4XX")]
+    ClientError(
+        StatusCode,
+        Json<StructuredError>,
+        #[oai(header = "Cache-Control")] String,
+    ),
+    /// Internal server error.
+    #[oai(status = 500)]
+    InternalError(
+        PlainText<InternalServerError>,
+        #[oai(header = "Cache-Control")] String,
+    ),
+}
+
+impl<E: ThreadSafeError + HttpStatusMapping> From<ResultReport<String, E>> for RedirectResponse {
+    fn from(result: ResultReport<String, E>) -> Self {
+        match result {
+            Ok(location) => Self::Found(location, NO_STORE.to_owned()),
+            Err(error) => {
+                let status = status_from_report(&error);
+                if status.is_server_error() {
+                    return Self::InternalError(
+                        PlainText(InternalServerError),
+                        NO_STORE.to_owned(),
+                    );
+                }
+                Self::ClientError(status, Json(error.into()), NO_STORE.to_owned())
             }
         }
     }

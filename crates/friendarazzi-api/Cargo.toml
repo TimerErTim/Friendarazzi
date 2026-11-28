@@ -41,7 +41,9 @@ serde_json = { workspace = true }
 friendarazzi-sqlite = { path = "../friendarazzi-sqlite" }
 friendarazzi-fakes = { path = "../friendarazzi-fakes" }
 friendarazzi-filesystemstore = { path = "../friendarazzi-filesystemstore" }
+friendarazzi-oidc = { path = "../friendarazzi-oidc" }
 friendarazzi-smtp = { path = "../friendarazzi-smtp" }
+ring = "0.17"
 test-log = { workspace = true }
 tracing-subscriber = { workspace = true }
 # The restart case opens one database file from two apps, so it needs a directory that

@@ -8,8 +8,10 @@ use friendarazzi_core::{
     ports::ClientKey,
     service::{
         Anmeldung, AnmeldungFehler, BenutzerLöschen, BenutzerLöschenFehler, EmailBestätigen,
-        EmailBestätigenFehler, PasswortVergessen, PasswortVergessenFehler,
-        PasswortWiederherstellen, PasswortWiederherstellenFehler, Registrieren, RegistrierenFehler,
+        EmailBestätigenFehler, OidcExchangeCodeForSession, OidcStartAuth, OidcUseCaseError,
+        PasswortErstmaligSetzen, PasswortErstmaligSetzenFehler, PasswortVergessen,
+        PasswortVergessenFehler, PasswortWiederherstellen, PasswortWiederherstellenFehler,
+        Registrieren, RegistrierenFehler,
     },
 };
 
@@ -79,17 +81,67 @@ pub struct PasswortWiederherstellenRequest {
     pub neues_passwort: String,
 }
 
-/// Delete one's own Benutzer: the password is re-entered, and the intent is explicit.
+/// Delete one's own Benutzer: proven either with password re-entry or an OIDC re-auth code.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
 #[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BenutzerLoeschungRequest {
-    /// The account's password, re-entered to prove the caller's identity.
-    pub passwort: String,
+    /// The account's password, re-entered when deleting a password-based account.
+    #[serde(default)]
+    pub passwort: Option<String>,
+    /// Single-use OIDC re-authentication code for passwordless account deletion.
+    #[serde(default)]
+    pub reauth_code: Option<String>,
     /// Must be `true`; a missing flag is a refusal, never a default.
     pub bestaetigt: bool,
+}
+
+/// Exchange a single-use OIDC browser callback code for a live session.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OidcExchangeRequest {
+    /// Single-use opaque code received on `/anmeldung/oidc`.
+    pub code: String,
+}
+
+/// Mode for an authenticated OIDC account ceremony.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Enum))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OidcAccountActionMode {
+    /// Link a new external identity provider to the signed-in user.
+    Link,
+    /// Re-authenticate via OIDC before deleting a passwordless account.
+    DeleteReauth,
+}
+
+/// Start an authenticated OIDC ceremony (link provider or deletion re-auth).
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartOidcAccountActionRequest {
+    /// Which authenticated OIDC flow to initiate.
+    pub mode: OidcAccountActionMode,
+}
+
+/// Set an initial password on a passwordless OIDC-created account.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetInitialPasswordRequest {
+    /// Chosen account password (checked against password policy).
+    pub passwort: String,
 }
 
 impl RegistrierungRequest {
@@ -175,11 +227,65 @@ impl PasswortWiederherstellenRequest {
 
 impl BenutzerLoeschungRequest {
     pub fn in_use_case(self) -> Result<BenutzerLöschen, Report<BenutzerLöschenFehler>> {
-        let passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
+        let passwort = self
+            .passwort
+            .filter(|s| !s.is_empty())
+            .map(domain::konto::KlartextPasswort::try_from)
+            .transpose()
+            .change_context(BenutzerLöschenFehler::UngültigeAnfrage)?;
+        let reauth_code = self
+            .reauth_code
+            .filter(|s| !s.is_empty())
+            .map(|raw| domain::konto::SecretToken::try_from(raw.as_str()))
+            .transpose()
             .change_context(BenutzerLöschenFehler::UngültigeAnfrage)?;
         Ok(BenutzerLöschen {
             passwort,
+            reauth_code,
             bestätigt: self.bestaetigt,
         })
+    }
+}
+
+impl OidcExchangeRequest {
+    pub fn in_use_case(
+        self,
+        client_key: ClientKey,
+    ) -> Result<OidcExchangeCodeForSession, Report<OidcUseCaseError>> {
+        let code = domain::konto::SecretToken::try_from(self.code.as_str())
+            .change_context(OidcUseCaseError::CodeUngültig)?;
+        Ok(OidcExchangeCodeForSession { code, client_key })
+    }
+}
+
+impl StartOidcAccountActionRequest {
+    pub fn in_use_case(
+        self,
+        provider_id: domain::konto::OidcProviderId,
+        benutzer_id: domain::BenutzerId,
+        client_key: ClientKey,
+    ) -> OidcStartAuth {
+        let mode = match self.mode {
+            OidcAccountActionMode::Link => domain::konto::OidcFlowMode::Link { benutzer_id },
+            OidcAccountActionMode::DeleteReauth => {
+                domain::konto::OidcFlowMode::DeleteReauth { benutzer_id }
+            }
+        };
+        OidcStartAuth {
+            provider_id,
+            mode,
+            return_to: None,
+            client_key,
+        }
+    }
+}
+
+impl SetInitialPasswordRequest {
+    pub fn in_use_case(
+        self,
+    ) -> Result<PasswortErstmaligSetzen, Report<PasswortErstmaligSetzenFehler>> {
+        let neues_passwort = domain::konto::KlartextPasswort::try_from(self.passwort)
+            .change_context(PasswortErstmaligSetzenFehler::UngültigeAnfrage)?;
+        Ok(PasswortErstmaligSetzen { neues_passwort })
     }
 }

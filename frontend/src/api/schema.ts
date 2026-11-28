@@ -2184,7 +2184,7 @@ export interface paths {
         put?: never;
         /**
          * Delete the caller's own Benutzer.
-         * @description The caller confirms the deletion by re-entering their password.
+         * @description The caller confirms deletion by re-entering their password or supplying a fresh OIDC re-authentication code.
          */
         post: {
             parameters: {
@@ -2224,6 +2224,550 @@ export interface paths {
                     headers: {
                         "SET-COOKIE": string;
                         "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List configured external OpenID Connect identity providers.
+         * @description Returns only the providers enabled in this deployment so clients can show sign-in buttons dynamically.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["OidcProvidersResponse"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start an unauthenticated OIDC sign-in redirect.
+         * @description Creates single-use PKCE/state/nonce material and redirects to the chosen OIDC provider.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    next?: string | null;
+                };
+                header?: {
+                    "User-Agent"?: string | null;
+                    "Accept-Language"?: string | null;
+                };
+                path: {
+                    provider: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Redirect to the provider or frontend destination without caching. */
+                302: {
+                    headers: {
+                        LOCATION: string;
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal server error. */
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                /** @description Validation or rate-limit client failure. */
+                "4XX": {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Complete an OIDC redirect callback via query parameters.
+         * @description Validates single-use state and ID token claims, then redirects to the frontend with a 120s opaque code.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    code?: string | null;
+                    state?: string | null;
+                    error?: string | null;
+                };
+                header?: never;
+                path: {
+                    provider: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Redirect to the provider or frontend destination without caching. */
+                302: {
+                    headers: {
+                        LOCATION: string;
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal server error. */
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                /** @description Validation or rate-limit client failure. */
+                "4XX": {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Complete an Apple Sign In OIDC form_post callback.
+         * @description Accepts form-encoded authorization parameters from Apple, verifies the ID token, and redirects to the frontend with a 120s opaque code.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    provider: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/x-www-form-urlencoded": components["schemas"]["OidcCallbackForm"];
+                };
+            };
+            responses: {
+                /** @description Redirect to the provider or frontend destination without caching. */
+                302: {
+                    headers: {
+                        LOCATION: string;
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Internal server error. */
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                /** @description Validation or rate-limit client failure. */
+                "4XX": {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/oidc/exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a short-lived single-use OIDC callback code for a session.
+         * @description Issues a new access token and refresh cookie when the code is valid and unused.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    "User-Agent"?: string | null;
+                    "Accept-Language"?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["OidcExchangeRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        "SET-COOKIE": string;
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["SessionResponseContent"];
+                    };
+                };
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        "SET-COOKIE"?: string | null;
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/konto/anmeldemethoden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List password and linked OIDC login methods for the signed-in caller.
+         * @description Shows whether a local password exists alongside linked external provider identities.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["LoginMethodsResponse"];
+                    };
+                };
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/konto/anmeldemethoden/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start an authenticated OIDC ceremony to link a provider or re-authenticate deletion.
+         * @description Returns the provider authorization URL so the browser can redirect while bearing its access token beforehand.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                    "User-Agent"?: string | null;
+                    "Accept-Language"?: string | null;
+                };
+                path: {
+                    provider: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["StartOidcAccountActionRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["OidcAuthorizationRedirect"];
+                    };
+                };
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/konto/anmeldemethoden/{identity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a linked external OIDC identity from the signed-in caller.
+         * @description Refuses with a conflict status if removing the last remaining login method.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    identity_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["Ok"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/konto/passwort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set an initial password on a passwordless OIDC account.
+         * @description Fails with a conflict status if the account already has a password credential.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["SetInitialPasswordRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["Ok"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
                         [name: string]: unknown;
                     };
                     content: {
@@ -2619,11 +3163,13 @@ export interface components {
         };
         /**
          * BenutzerLoeschungRequest
-         * @description Delete one's own Benutzer: the password is re-entered, and the intent is explicit.
+         * @description Delete one's own Benutzer: proven either with password re-entry or an OIDC re-auth code.
          */
         BenutzerLoeschungRequest: {
-            /** @description The account's password, re-entered to prove the caller's identity. */
-            passwort: string;
+            /** @description The account's password, re-entered when deleting a password-based account. */
+            passwort?: string | null;
+            /** @description Single-use OIDC re-authentication code for passwordless account deletion. */
+            reauthCode?: string | null;
             /** @description Must be `true`; a missing flag is a refusal, never a default. */
             bestaetigt: boolean;
         };
@@ -3096,6 +3642,40 @@ export interface components {
             inviteCode: string;
         };
         /**
+         * LinkedExternalIdentity
+         * @description External identity linked to the authenticated Benutzer.
+         */
+        LinkedExternalIdentity: {
+            /**
+             * Format: uuid
+             * @description Identifier of this linked identity row.
+             */
+            id: string;
+            /** @description Provider slug (`google`, `apple`, or generic id). */
+            providerId: string;
+            /** @description Display name of the provider. */
+            providerDisplayName: string;
+            /** @description Optional e-mail address asserted by the provider at link time. */
+            providerEmail?: string | null;
+            /**
+             * Format: date-time
+             * @description Timestamp when the provider identity was linked.
+             */
+            createdAt: string;
+        };
+        /**
+         * LoginMethodsResponse
+         * @description Overview of all sign-in methods configured for the authenticated Benutzer.
+         */
+        LoginMethodsResponse: {
+            /** @description Whether the account currently has a local password credential. */
+            hasPassword: boolean;
+            /** @description External OIDC identities linked to the account. */
+            externalIdentities: components["schemas"]["LinkedExternalIdentity"][];
+            /** @description All OIDC providers configured in this deployment. */
+            availableProviders: components["schemas"]["OidcProviderItem"][];
+        };
+        /**
          * @description The mail relay's last probe verdict, tagged by `status`.
          *
          *     Not a boolean: "not probed yet" and "probed and broken" call for different operator
@@ -3272,6 +3852,66 @@ export interface components {
             notifications: components["schemas"]["NotificationView"][];
         };
         /**
+         * @description Mode for an authenticated OIDC account ceremony.
+         * @enum {string}
+         */
+        OidcAccountActionMode: OidcAccountActionMode;
+        /**
+         * OidcAuthorizationRedirect
+         * @description Redirect URL returned when initiating an authenticated OIDC account flow.
+         */
+        OidcAuthorizationRedirect: {
+            /** @description Provider authorization URL the frontend navigates the browser to. */
+            authorizationUrl: string;
+        };
+        /**
+         * OidcCallbackForm
+         * @description Form payload received from Apple Sign In (`response_mode=form_post`).
+         */
+        OidcCallbackForm: {
+            /** @description Authorization code from the external OIDC provider. */
+            code?: string | null;
+            /** @description Single-use anti-CSRF state value. */
+            state?: string | null;
+            /** @description Optional OAuth error code reported by the provider. */
+            error?: string | null;
+            /** @description Optional Apple initial login `user` JSON payload carrying the display name. */
+            user?: string | null;
+        };
+        /**
+         * OidcExchangeRequest
+         * @description Exchange a single-use OIDC browser callback code for a live session.
+         */
+        OidcExchangeRequest: {
+            /** @description Single-use opaque code received on `/anmeldung/oidc`. */
+            code: string;
+        };
+        /**
+         * OidcProviderItem
+         * @description Public metadata for one configured external OIDC provider.
+         */
+        OidcProviderItem: {
+            /** @description URL-safe provider slug (`google`, `apple`, or generic id). */
+            id: string;
+            /** @description Provider family kind. */
+            kind: components["schemas"]["OidcProviderKindSchema"] & unknown;
+            /** @description Human-readable label rendered on login buttons. */
+            displayName: string;
+        };
+        /**
+         * @description Supported external OpenID Connect provider families.
+         * @enum {string}
+         */
+        OidcProviderKindSchema: OidcProviderKindSchema;
+        /**
+         * OidcProvidersResponse
+         * @description List of configured OIDC sign-in providers available in this deployment.
+         */
+        OidcProvidersResponse: {
+            /** @description Enabled OIDC identity providers. */
+            providers: components["schemas"]["OidcProviderItem"][];
+        };
+        /**
          * Ok
          * @description Acknowledgement of a request that has nothing to return.
          * @example {
@@ -3408,6 +4048,22 @@ export interface components {
         SetGameWatchRequest: {
             /** @description Whether the caller wants to watch notifications for this game. */
             watching: boolean;
+        };
+        /**
+         * SetInitialPasswordRequest
+         * @description Set an initial password on a passwordless OIDC-created account.
+         */
+        SetInitialPasswordRequest: {
+            /** @description Chosen account password (checked against password policy). */
+            passwort: string;
+        };
+        /**
+         * StartOidcAccountActionRequest
+         * @description Start an authenticated OIDC ceremony (link provider or deletion re-auth).
+         */
+        StartOidcAccountActionRequest: {
+            /** @description Which authenticated OIDC flow to initiate. */
+            mode: components["schemas"]["OidcAccountActionMode"] & unknown;
         };
         /**
          * StarterDeck
@@ -3639,6 +4295,15 @@ export enum NotificationKind {
     GameCompleted = "GameCompleted",
     NearBingo = "NearBingo",
     DraftReminder = "DraftReminder"
+}
+export enum OidcAccountActionMode {
+    link = "link",
+    deleteReauth = "deleteReauth"
+}
+export enum OidcProviderKindSchema {
+    google = "google",
+    apple = "apple",
+    generic = "generic"
 }
 export enum PromptSource {
     Custom = "Custom",

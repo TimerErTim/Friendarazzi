@@ -7,12 +7,13 @@ use tracing::{error, instrument};
 
 use crate::adapters::{
     BlankPdfRenderer, BlockingEventQueue, InMemoryObjectStore, InMemorySigning, InMemoryThrottle,
-    NullMailSender, SystemClock, SystemRng,
+    NullMailSender, NullOidcProviderClient, SystemClock, SystemRng,
 };
 use crate::application::context::{ContextPorts, EventCollector};
 use crate::application::instrumented::InstrumentedEventQueue;
 use crate::ports::{
-    Clock, EventQueue, MailSender, ObjectStore, PdfRenderer, RngSource, Signing, Throttle,
+    Clock, EventQueue, MailSender, ObjectStore, OidcProviderClient, PdfRenderer, RngSource,
+    Signing, Throttle,
 };
 use crate::service::UseCase;
 use crate::uow::UnitOfWorkProvider;
@@ -99,6 +100,7 @@ pub struct AppInner {
     pub mail_sender: Arc<dyn MailSender>,
     /// Mailed link targets and token identity. Deployment data, not behaviour.
     pub konto: IdentityProviderConfiguration,
+    pub oidc_client: Arc<dyn OidcProviderClient>,
     pub clock: Arc<dyn Clock>,
     pub rng: Arc<dyn RngSource>,
     pub object_store: Arc<dyn ObjectStore>,
@@ -156,6 +158,7 @@ impl AppInner {
                 pdf_renderer: Arc::clone(&self.pdf_renderer),
                 throttle: Arc::clone(&self.throttle),
                 mail_sender: Arc::clone(&self.mail_sender),
+                oidc_client: Arc::clone(&self.oidc_client),
                 events: EventCollector::new(),
                 identity_provider_conf: self.konto.clone(),
             },
@@ -195,6 +198,9 @@ impl App {
         #[builder(default = Arc::new(InMemoryThrottle::new()))] throttle: Arc<dyn Throttle>,
         #[builder(default = Arc::new(NullMailSender))] mail_sender: Arc<dyn MailSender>,
         konto: IdentityProviderConfiguration,
+        #[builder(default = Arc::new(NullOidcProviderClient))] oidc_client: Arc<
+            dyn OidcProviderClient,
+        >,
         #[builder(default = Arc::new(SystemClock))] clock: Arc<dyn Clock>,
         #[builder(default = Arc::new(SystemRng))] rng: Arc<dyn RngSource>,
         #[builder(default = Arc::new(InMemoryObjectStore::new()))] object_store: Arc<
@@ -217,6 +223,7 @@ impl App {
                 throttle,
                 mail_sender,
                 konto,
+                oidc_client,
                 clock,
                 rng,
                 object_store,

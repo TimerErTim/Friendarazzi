@@ -13,7 +13,12 @@ import {
 } from "react";
 
 import { ApiError, apiErrorMessage } from "@/api/errors";
-import { useAuthMutations } from "@/api/hooks";
+import {
+  type OidcProviderItem,
+  OidcProviderKindSchema,
+} from "@/api/friendarazzi-api";
+import { useAuthMutations, useAuthProvidersQuery } from "@/api/hooks";
+import { useFriendarazziApi } from "@/api/provider";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Alert } from "@/components/ui/alert";
 import { SparkleIcon } from "@/components/ui/brutal-elements";
@@ -251,6 +256,54 @@ function AuthLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
+function oidcButtonLabel(provider: OidcProviderItem): string {
+  switch (provider.kind) {
+    case OidcProviderKindSchema.google:
+      return "Mit Google anmelden";
+    case OidcProviderKindSchema.apple:
+      return "Mit Apple anmelden";
+    default:
+      return `Mit ${provider.displayName} anmelden`;
+  }
+}
+
+function OidcProviderButtons({ redirectTarget }: { redirectTarget: string }) {
+  const { api } = useFriendarazziApi();
+  const providersQuery = useAuthProvidersQuery();
+  const providers = providersQuery.data?.providers ?? [];
+
+  if (providers.length === 0) {
+    return null;
+  }
+
+  const nextPath =
+    redirectTarget && redirectTarget !== "/" ? redirectTarget : undefined;
+
+  return (
+    <div className="mt-5 space-y-2 border-t-2 border-subtle pt-4">
+      <p className="font-mono text-xs font-bold tracking-wider text-secondary uppercase">
+        Oder direkt anmelden mit
+      </p>
+      <div className="space-y-2">
+        {providers.map((provider) => (
+          <Button
+            key={provider.id}
+            type="button"
+            variant="secondary"
+            size="field"
+            className="w-full"
+            asChild
+          >
+            <a href={api.oidcLoginStartUrl(provider.id, nextPath)}>
+              {oidcButtonLabel(provider)}
+            </a>
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function LoginPage() {
   const router = useRouter();
   const redirectTarget = useRedirectTarget();
@@ -320,6 +373,70 @@ export function LoginPage() {
           {auth.login.isPending ? "Wird angemeldet …" : "Anmelden"}
         </Button>
       </form>
+      <OidcProviderButtons redirectTarget={redirectTarget} />
+    </AuthStudio>
+  );
+}
+
+export function OidcCallbackPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const auth = useAuthMutations();
+  const code = searchParams.get("code") ?? "";
+  const next = searchParams.get("next");
+  const errorParam = searchParams.get("error");
+  const providerParam = searchParams.get("provider");
+  const triggeredForRef = useRef<string | null>(null);
+  const { mutate, isPending, isError } = auth.exchangeOidc;
+
+  useEffect(() => {
+    if (!code || errorParam || triggeredForRef.current === code) return;
+    triggeredForRef.current = code;
+    mutate(code, {
+      onSuccess: () => {
+        clearStoredRedirect();
+        router.replace(safeRedirectPath(next, "/"));
+      },
+    });
+  }, [code, errorParam, mutate, next, router]);
+
+  let errorMessage: string | null = null;
+  if (errorParam === "email_conflict") {
+    const providerLabel = providerParam ? ` (${providerParam})` : "";
+    errorMessage = `Für diese E-Mail-Adresse existiert bereits ein Konto. Bitte melde dich zuerst mit deiner bestehenden Methode an und verknüpfe den Anbieter${providerLabel} unter Konto-Optionen.`;
+  } else if (errorParam === "email_not_verified") {
+    errorMessage =
+      "Dein Anbieter hat diese E-Mail-Adresse nicht bestätigt. Bitte bestätige zuerst deine E-Mail-Adresse beim Anbieter.";
+  } else if (errorParam === "cancelled") {
+    errorMessage = "Die Anmeldung beim Anbieter wurde abgebrochen.";
+  } else if (errorParam || isError || (!code && !isPending)) {
+    errorMessage =
+      "Der Anmeldelink ist ungültig oder abgelaufen. Bitte starte die Anmeldung erneut.";
+  }
+
+  return (
+    <AuthStudio
+      mode="password"
+      title="Anmeldung wird abgeschlossen"
+      description="Deine Anmeldung über den externen Anbieter wird geprüft."
+    >
+      <div className="space-y-4">
+        {isPending && !errorMessage ? (
+          <p className="font-mono text-sm font-bold text-ink">
+            Sitzung wird gestartet …
+          </p>
+        ) : null}
+
+        {errorMessage ? (
+          <AuthAlert variant="error" message={errorMessage} />
+        ) : null}
+
+        {errorMessage ? (
+          <Button size="field" className="w-full" asChild>
+            <Link href="/anmeldung">Zur Anmeldung</Link>
+          </Button>
+        ) : null}
+      </div>
     </AuthStudio>
   );
 }
@@ -508,6 +625,7 @@ export function RegistrationPage() {
           {auth.register.isPending ? "Wird erstellt …" : "Konto erstellen"}
         </Button>
       </form>
+      <OidcProviderButtons redirectTarget={redirectTarget} />
     </AuthStudio>
   );
 }

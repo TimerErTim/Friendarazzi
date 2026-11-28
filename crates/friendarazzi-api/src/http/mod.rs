@@ -4,17 +4,19 @@ use error_stack::ResultExt;
 use friendarazzi_core::{
     App, ResultReport,
     application::AuthContext,
-    domain::{BenachrichtigungId, BenutzerId, BoardTileId, CaptureId, GameId},
+    domain::{
+        BenachrichtigungId, BenutzerId, BoardTileId, CaptureId, GameId, konto::ExternalIdentityId,
+    },
     service::{
-        AbmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError,
+        AbmeldungFehler, BenutzerLöschenFehler, CaptureUseCaseError, OidcUseCaseError,
         PasswortWiederherstellenFehler, ProfileUseCaseError,
     },
 };
 use poem::web::RealIp;
 use poem_openapi::{
-    Multipart, OpenApi, OpenApiService, ServerObject, Tags,
-    param::{Cookie, Header, Path},
-    payload::Json,
+    Multipart, Object, OpenApi, OpenApiService, ServerObject, Tags,
+    param::{Cookie, Header, Path, Query},
+    payload::{Form, Json},
     types::multipart::Upload,
 };
 use std::sync::{Arc, RwLock, atomic::AtomicBool};
@@ -34,17 +36,18 @@ use crate::{
         FriendarazziAppApi,
         requests::{
             AnmeldungRequest, BenutzerLoeschungRequest, CreateGameRequest, EmailBestaetigenRequest,
-            HostFillDraftsRequest, JoinGameRequest, PasswortVergessenRequest,
+            HostFillDraftsRequest, JoinGameRequest, OidcExchangeRequest, PasswortVergessenRequest,
             PasswortWiederherstellenRequest, RegistrierungRequest, SaveDraftPromptsRequest,
-            SetDraftDeadlineRequest, SetGameWatchRequest, TransferHostRequest,
-            UnsubscribeNotificationRequest, UpdateGameSettingsRequest,
-            UpdateNotificationPreferencesRequest, UpdateProfileRequest,
+            SetDraftDeadlineRequest, SetGameWatchRequest, SetInitialPasswordRequest,
+            StartOidcAccountActionRequest, TransferHostRequest, UnsubscribeNotificationRequest,
+            UpdateGameSettingsRequest, UpdateNotificationPreferencesRequest, UpdateProfileRequest,
         },
     },
     schema::{
         AuthenticatedBenutzer, BuildVersion, CaptureOutcome, GameDetail, GameInvitePreview,
-        GameSummary, MailHealth, NotificationPreferences, NotificationsInbox, Ok, StarterDeck,
-        UnsubscribeOutcome, UserGallery, UserProfile,
+        GameSummary, LoginMethodsResponse, MailHealth, NotificationPreferences, NotificationsInbox,
+        OidcAuthorizationRedirect, OidcProvidersResponse, Ok, StarterDeck, UnsubscribeOutcome,
+        UserGallery, UserProfile,
     },
 };
 
@@ -72,6 +75,23 @@ pub enum ApiTag {
 pub struct PhotoUploadMultipart {
     /// Uploaded image file (JPEG, PNG, or WebP).
     pub file: Upload,
+}
+
+/// Form payload received from Apple Sign In (`response_mode=form_post`).
+#[derive(Debug, Clone, Object, serde::Deserialize)]
+pub struct OidcCallbackForm {
+    /// Authorization code from the external OIDC provider.
+    #[serde(default)]
+    pub code: Option<String>,
+    /// Single-use anti-CSRF state value.
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Optional OAuth error code reported by the provider.
+    #[serde(default)]
+    pub error: Option<String>,
+    /// Optional Apple initial login `user` JSON payload carrying the display name.
+    #[serde(default)]
+    pub user: Option<String>,
 }
 
 pub struct FriendarazziApiSpec {
@@ -879,7 +899,7 @@ impl FriendarazziApiSpec {
 
     /// Delete the caller's own Benutzer.
     ///
-    /// The caller confirms the deletion by re-entering their password.
+    /// The caller confirms deletion by re-entering their password or supplying a fresh OIDC re-authentication code.
     #[oai(path = "/benutzer/loeschung", method = "post", tag = "ApiTag::Konto")]
     async fn benutzer_löschen(
         &self,
@@ -893,6 +913,203 @@ impl FriendarazziApiSpec {
         let ergebnis: ResultReport<(), BenutzerLöschenFehler> =
             self.app_api.benutzer_löschen(auth, body.0).await;
         EndSessionResponse::from(ergebnis.map(|()| Ok { ok: true }))
+    }
+
+    /// List configured external OpenID Connect identity providers.
+    ///
+    /// Returns only the providers enabled in this deployment so clients can show sign-in buttons dynamically.
+    #[oai(path = "/auth/providers", method = "get", tag = "ApiTag::Konto")]
+    async fn auth_providers(&self) -> TypicalJsonResponse<OidcProvidersResponse> {
+        TypicalJsonResponse::Ok(Json(self.app_api.oidc_providers()))
+    }
+
+    /// Start an unauthenticated OIDC sign-in redirect.
+    ///
+    /// Creates single-use PKCE/state/nonce material and redirects to the chosen OIDC provider.
+    #[oai(
+        path = "/auth/oidc/:provider/start",
+        method = "get",
+        tag = "ApiTag::Konto"
+    )]
+    async fn oidc_start_login(
+        &self,
+        real_ip: RealIp,
+        #[oai(name = "User-Agent")] user_agent: Header<Option<String>>,
+        #[oai(name = "Accept-Language")] accept_language: Header<Option<String>>,
+        provider: Path<String>,
+        next: Query<Option<String>>,
+    ) -> RedirectResponse {
+        let client_key = client_key(
+            real_ip,
+            user_agent.0.as_deref(),
+            accept_language.0.as_deref(),
+        );
+        self.app_api
+            .oidc_start_login(&provider.0, next.0, client_key)
+            .await
+            .into()
+    }
+
+    /// Complete an OIDC redirect callback via query parameters.
+    ///
+    /// Validates single-use state and ID token claims, then redirects to the frontend with a 120s opaque code.
+    #[oai(
+        path = "/auth/oidc/:provider/callback",
+        method = "get",
+        tag = "ApiTag::Konto"
+    )]
+    async fn oidc_callback_get(
+        &self,
+        provider: Path<String>,
+        code: Query<Option<String>>,
+        state: Query<Option<String>>,
+        error: Query<Option<String>>,
+    ) -> RedirectResponse {
+        self.app_api
+            .oidc_complete_callback(&provider.0, code.0, state.0, error.0, None)
+            .await
+            .into()
+    }
+
+    /// Complete an Apple Sign In OIDC form_post callback.
+    ///
+    /// Accepts form-encoded authorization parameters from Apple, verifies the ID token, and redirects to the frontend with a 120s opaque code.
+    #[oai(
+        path = "/auth/oidc/:provider/callback",
+        method = "post",
+        tag = "ApiTag::Konto"
+    )]
+    async fn oidc_callback_post(
+        &self,
+        provider: Path<String>,
+        body: Form<OidcCallbackForm>,
+    ) -> RedirectResponse {
+        self.app_api
+            .oidc_complete_callback(
+                &provider.0,
+                body.0.code,
+                body.0.state,
+                body.0.error,
+                body.0.user.as_deref(),
+            )
+            .await
+            .into()
+    }
+
+    /// Exchange a short-lived single-use OIDC callback code for a session.
+    ///
+    /// Issues a new access token and refresh cookie when the code is valid and unused.
+    #[oai(path = "/auth/oidc/exchange", method = "post", tag = "ApiTag::Konto")]
+    async fn oidc_exchange(
+        &self,
+        real_ip: RealIp,
+        #[oai(name = "User-Agent")] user_agent: Header<Option<String>>,
+        #[oai(name = "Accept-Language")] accept_language: Header<Option<String>>,
+        body: Json<OidcExchangeRequest>,
+    ) -> NewSessionResponse {
+        let client_key = client_key(
+            real_ip,
+            user_agent.0.as_deref(),
+            accept_language.0.as_deref(),
+        );
+        let ergebnis = self.app_api.oidc_exchange(body.0, client_key).await;
+        NewSessionResponse::from(ergebnis.map(|ausgestellt| {
+            jwt::encode_session(ausgestellt, self.app_api.inner_app().signing.as_ref())
+                .expect("the JOSE header serialises")
+        }))
+    }
+
+    /// List password and linked OIDC login methods for the signed-in caller.
+    ///
+    /// Shows whether a local password exists alongside linked external provider identities.
+    #[oai(path = "/konto/anmeldemethoden", method = "get", tag = "ApiTag::Konto")]
+    async fn login_methods(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+    ) -> UncachedJsonResponse<LoginMethodsResponse> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        UncachedJsonResponse::from(self.app_api.login_methods(auth).await)
+    }
+
+    /// Start an authenticated OIDC ceremony to link a provider or re-authenticate deletion.
+    ///
+    /// Returns the provider authorization URL so the browser can redirect while bearing its access token beforehand.
+    #[oai(
+        path = "/konto/anmeldemethoden/:provider/start",
+        method = "post",
+        tag = "ApiTag::Konto"
+    )]
+    async fn oidc_start_account_action(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        real_ip: RealIp,
+        #[oai(name = "User-Agent")] user_agent: Header<Option<String>>,
+        #[oai(name = "Accept-Language")] accept_language: Header<Option<String>>,
+        provider: Path<String>,
+        body: Json<StartOidcAccountActionRequest>,
+    ) -> UncachedJsonResponse<OidcAuthorizationRedirect> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        let client_key = client_key(
+            real_ip,
+            user_agent.0.as_deref(),
+            accept_language.0.as_deref(),
+        );
+        UncachedJsonResponse::from(
+            self.app_api
+                .oidc_start_account_action(auth, &provider.0, body.0, client_key)
+                .await,
+        )
+    }
+
+    /// Remove a linked external OIDC identity from the signed-in caller.
+    ///
+    /// Refuses with a conflict status if removing the last remaining login method.
+    #[oai(
+        path = "/konto/anmeldemethoden/:identity_id",
+        method = "delete",
+        tag = "ApiTag::Konto"
+    )]
+    async fn unlink_external_identity(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        identity_id: Path<Uuid>,
+    ) -> TypicalJsonResponse<Ok> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        let ergebnis: ResultReport<(), OidcUseCaseError> = self
+            .app_api
+            .unlink_external_identity(auth, ExternalIdentityId(identity_id.0))
+            .await;
+        TypicalJsonResponse::from(ergebnis.map(|()| Ok { ok: true }))
+    }
+
+    /// Set an initial password on a passwordless OIDC account.
+    ///
+    /// Fails with a conflict status if the account already has a password credential.
+    #[oai(path = "/konto/passwort", method = "post", tag = "ApiTag::Konto")]
+    async fn set_initial_password(
+        &self,
+        #[oai(name = "Authorization")] authorization: RequiredBearerAuthorization,
+        body: Json<SetInitialPasswordRequest>,
+    ) -> TypicalJsonResponse<Ok> {
+        let auth = self
+            .auth_context(authorization.0.as_deref())
+            .await
+            .unwrap_or(AuthContext::Anonymous);
+        TypicalJsonResponse::from(
+            self.app_api
+                .set_initial_password(auth, body.0)
+                .await
+                .map(|()| Ok { ok: true }),
+        )
     }
 
     // ------------------------------------------------------------------ notifications

@@ -22,13 +22,17 @@ pub enum ThrottleAction {
     Wiederherstellung,
     /// Session renewal: 5 per hour (rule 5, AC-16).
     Erneuerung,
+    /// OIDC authorization initiation: 20 per 15 minutes.
+    OidcStart,
+    /// OIDC one-time code exchange: 20 per 15 minutes.
+    OidcExchange,
 }
 
 impl ThrottleAction {
     /// Failed attempts allowed inside one window.
     pub fn threshold(self) -> u32 {
         match self {
-            Self::Anmeldung => 20,
+            Self::Anmeldung | Self::OidcStart | Self::OidcExchange => 20,
             Self::EmailBestätigung => 10,
             Self::EmailBestätigungErneut => 3,
             Self::Registrierung | Self::Wiederherstellung | Self::Erneuerung => 5,
@@ -38,7 +42,7 @@ impl ThrottleAction {
     /// Length of the window the threshold applies to.
     pub fn window(self) -> Duration {
         match self {
-            Self::Anmeldung => Duration::minutes(15),
+            Self::Anmeldung | Self::OidcStart | Self::OidcExchange => Duration::minutes(15),
             Self::Registrierung
             | Self::EmailBestätigung
             | Self::EmailBestätigungErneut
@@ -56,6 +60,8 @@ impl ThrottleAction {
             Self::EmailBestätigungErneut => "email-bestaetigung-erneut",
             Self::Wiederherstellung => "wiederherstellung",
             Self::Erneuerung => "erneuerung",
+            Self::OidcStart => "oidc-start",
+            Self::OidcExchange => "oidc-exchange",
         }
     }
 }

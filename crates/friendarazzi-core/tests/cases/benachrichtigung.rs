@@ -19,7 +19,7 @@ use friendarazzi_core::{
         AlleBenachrichtigungenAlsGelesenMarkieren, BenachrichtigungAbbestellenMitToken,
         BenachrichtigungAlsGelesenMarkieren, BenachrichtigungUseCaseError,
         BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen, CreateGame, JoinGame,
-        RegistrierungStarten, SpielBeobachtungSetzen, SubmitCapture,
+        Registrieren, SpielBeobachtungSetzen, SubmitCapture,
     },
 };
 use friendarazzi_fakes::{FixedClock, FixedRng, png_bytes_for_test};
@@ -562,9 +562,11 @@ async fn undercover_suppresses_capture_notifications_and_mail_failure_does_not_f
     fail_app
         .execute(
             AuthContext::Anonymous,
-            RegistrierungStarten {
+            Registrieren {
                 email: friendarazzi_core::domain::EmailAdresse::normalisiert("fm-reg@example.at")
                     .unwrap(),
+                passwort: KlartextPasswort::neu("korrekt-pferd-batterie").unwrap(),
+                display_name: None,
                 client_key: friendarazzi_core::ports::ClientKey::new(
                     "127.0.0.1".parse().unwrap(),
                     "fm-reg@example.at".to_owned(),

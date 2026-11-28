@@ -6,6 +6,7 @@ import {
   CircleAlert,
   LogIn,
   LogOut,
+  Mail,
   Settings2,
   Ticket,
   UserRound,
@@ -317,6 +318,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Deine Sitzung konnte nicht überprüft werden. Bitte lade die
                 Seite erneut oder melde dich an.
               </p>
+            </Alert>
+          </div>
+        ) : null}
+        {isAuthenticated &&
+        benutzer.data &&
+        !benutzer.data.emailVerified &&
+        !onAuthRoute ? (
+          <div className="mx-auto w-full max-w-6xl px-4 pt-4 sm:px-6">
+            <Alert variant="info" icon={<Mail aria-hidden="true" />}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-medium text-ink">
+                  Bitte bestätige deine E-Mail-Adresse (
+                  <span className="font-mono font-bold">
+                    {benutzer.data.eMailAdresse}
+                  </span>
+                  ), um mehr als ein Spiel zu starten oder E-Mail-Hinweise zu
+                  erhalten.
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={auth.resendVerificationEmail.isPending}
+                  onClick={() => {
+                    auth.resendVerificationEmail.mutate(undefined, {
+                      onSuccess: () => {
+                        toast.success(
+                          "resend-verification",
+                          "Bestätigungs-Mail erneut gesendet – schau in dein Postfach.",
+                        );
+                      },
+                      onError: () => {
+                        toast.error(
+                          "resend-verification-err",
+                          "Konnte gerade keine neue Bestätigungs-Mail senden. Bitte warte kurz.",
+                        );
+                      },
+                    });
+                  }}
+                >
+                  {auth.resendVerificationEmail.isPending
+                    ? "Wird gesendet …"
+                    : "Bestätigungs-Mail erneut senden"}
+                </Button>
+              </div>
             </Alert>
           </div>
         ) : null}

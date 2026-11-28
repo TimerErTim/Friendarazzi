@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-const SELECT: &str = r#"SELECT id, email_address, display_name, avatar_storage_key, gold_medal_count, equipped_title, default_watch_games, default_watch_updated_at, email_game_started, email_game_started_updated_at, email_capture_posted, email_capture_posted_updated_at, email_game_completed, email_game_completed_updated_at, registered_at, _version FROM "benutzer""#;
+const SELECT: &str = r#"SELECT id, email_address, display_name, avatar_storage_key, gold_medal_count, equipped_title, default_watch_games, default_watch_updated_at, email_game_started, email_game_started_updated_at, email_capture_posted, email_capture_posted_updated_at, email_game_completed, email_game_completed_updated_at, registered_at, email_verified_at, _version FROM "benutzer""#;
 
 fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
     let id_raw: String = row.get(0).contextualize(RepositoryError::Data)?;
@@ -44,7 +44,8 @@ fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
     let email_game_completed_updated_at: String =
         row.get(13).contextualize(RepositoryError::Data)?;
     let registered_at_raw: String = row.get(14).contextualize(RepositoryError::Data)?;
-    let version = parse_version(row, 15)?;
+    let email_verified_at_raw: Option<String> = row.get(15).contextualize(RepositoryError::Data)?;
+    let version = parse_version(row, 16)?;
 
     let id = parse_uuid(&id_raw)?;
     let email_address =
@@ -52,6 +53,10 @@ fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
     let gold_medal_count =
         u32::try_from(gold_medal_count_raw).contextualize(RepositoryError::Data)?;
     let registered_at = parse_datetime(&registered_at_raw)?;
+    let email_verified_at = email_verified_at_raw
+        .as_deref()
+        .map(parse_datetime)
+        .transpose()?;
     let notification_preferences = BenachrichtigungsEinstellungen::from_parts(
         PreferenceToggle::neu(
             default_watch_games != 0,
@@ -80,6 +85,7 @@ fn benutzer_from_row(row: &Row) -> RepositoryResult<Versioned<Benutzer>> {
         equipped_title,
         notification_preferences,
         registered_at,
+        email_verified_at,
     )
     .change_context(RepositoryError::Data)?;
 
@@ -107,8 +113,8 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
                 email_game_started, email_game_started_updated_at,
                 email_capture_posted, email_capture_posted_updated_at,
                 email_game_completed, email_game_completed_updated_at,
-                registered_at, _version)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, 0)"#,
+                registered_at, email_verified_at, _version)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, 0)"#,
             (
                 id.0.to_string(),
                 domain.email_address().as_ref(),
@@ -125,6 +131,7 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
                 i64::from(prefs.email_spiel_beendet().aktiv()),
                 format_datetime(prefs.email_spiel_beendet().aktualisiert_am()),
                 format_datetime(domain.registered_at()),
+                domain.email_verified_at().map(format_datetime),
             ),
         )
         .await
@@ -219,10 +226,10 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
                    email_game_started = ?9, email_game_started_updated_at = ?10,
                    email_capture_posted = ?11, email_capture_posted_updated_at = ?12,
                    email_game_completed = ?13, email_game_completed_updated_at = ?14,
-                   registered_at = ?15,
-                   _version = ?16 + 1
-               WHERE id = ?1 AND _version = ?16"#,
-            (
+                   registered_at = ?15, email_verified_at = ?16,
+                   _version = ?17 + 1
+               WHERE id = ?1 AND _version = ?17"#,
+            libsql::params![
                 benutzer.id().0.to_string(),
                 benutzer.email_address().as_ref().to_string(),
                 benutzer.display_name().as_str().to_string(),
@@ -238,8 +245,9 @@ impl BenutzerRepository for SQLiteBenutzerRepository {
                 i64::from(prefs.email_spiel_beendet().aktiv()),
                 format_datetime(prefs.email_spiel_beendet().aktualisiert_am()),
                 format_datetime(benutzer.registered_at()),
+                benutzer.email_verified_at().map(format_datetime),
                 benutzer.v() as i64,
-            ),
+            ],
             benutzer.v(),
         )
         .await?;

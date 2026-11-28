@@ -74,96 +74,64 @@ export default function JoinPage() {
 
         {/* Ticket Body */}
         <div className="space-y-5 p-6">
-          {phase.status === "anonymous" ? (
-            <div className="space-y-4">
-              <p className="text-sm font-medium text-secondary">
-                Um einer Lobby beizutreten und Beweisfotos zu knipsen, brauchst
-                du ein Friendarazzi-Konto.
-              </p>
-              {activeCode ? (
-                <div className="rounded-sm border-2 border-strong bg-cyan-subtle px-4 py-3 font-mono text-sm font-bold text-ink">
-                  Dein Code: {activeCode}
-                </div>
-              ) : null}
-              <div className="flex flex-wrap gap-3">
-                <Button size="lg" asChild>
-                  <Link
-                    href={authHrefWithRedirect("/anmeldung", redirectTarget)}
-                  >
-                    Anmelden
-                    <ArrowRight aria-hidden="true" />
-                  </Link>
-                </Button>
-                <Button variant="secondary" size="lg" asChild>
-                  <Link
-                    href={authHrefWithRedirect(
-                      "/registrierung",
-                      redirectTarget,
-                    )}
-                  >
-                    Konto erstellen
-                  </Link>
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2">
-                <label
-                  htmlFor="join-ticket-code"
-                  className="block font-mono text-xs font-bold tracking-wider text-secondary uppercase"
-                >
-                  Einladungscode
-                </label>
-                <Input
-                  id="join-ticket-code"
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-                  placeholder="A7K9P2"
-                  className="h-14 text-center font-mono text-2xl font-bold tracking-[0.25em] uppercase"
-                  maxLength={16}
-                />
-              </div>
+          <div className="space-y-2">
+            <label
+              htmlFor="join-ticket-code"
+              className="block font-mono text-xs font-bold tracking-wider text-secondary uppercase"
+            >
+              Einladungscode
+            </label>
+            <Input
+              id="join-ticket-code"
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value.toUpperCase())}
+              placeholder="A7K9P2"
+              className="h-14 text-center font-mono text-2xl font-bold tracking-[0.25em] uppercase"
+              maxLength={16}
+            />
+          </div>
 
-              {preview.isLoading ? (
-                <Skeleton className="h-32 w-full" />
-              ) : preview.isError && activeCode ? (
-                <Alert variant="error">
-                  {apiErrorMessage(preview.error, {
-                    fallback: "Keine Lobby mit diesem Code gefunden.",
-                  })}
-                </Alert>
-              ) : preview.data ? (
-                <div className="space-y-4 border-t-2 border-dashed border-strong pt-5">
-                  <div className="brutal-shadow-sm rounded-md border-2 border-strong bg-cyan-subtle p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <h2 className="font-display text-xl text-ink">
-                          {preview.data.title}
-                        </h2>
-                        <div className="flex flex-wrap items-center gap-3 font-mono text-xs font-bold text-ink">
-                          <span className="inline-flex items-center gap-1">
-                            <Camera className="size-3.5" aria-hidden="true" />
-                            {preview.data.gridSize}×{preview.data.gridSize}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Users className="size-3.5" aria-hidden="true" />
-                            {preview.data.playerCount} Spieler
-                          </span>
-                        </div>
-                      </div>
-                      <Badge variant="info">
-                        {joinStatusLabel(preview.data.status)}
-                      </Badge>
+          {preview.isLoading ? (
+            <Skeleton className="h-32 w-full" />
+          ) : preview.isError && activeCode ? (
+            <Alert variant="error">
+              {apiErrorMessage(preview.error, {
+                fallback: "Keine Lobby mit diesem Code gefunden.",
+              })}
+            </Alert>
+          ) : preview.data ? (
+            <div className="space-y-4 border-t-2 border-dashed border-strong pt-5">
+              <div className="brutal-shadow-sm rounded-md border-2 border-strong bg-cyan-subtle p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h2 className="font-display text-xl text-ink">
+                      {preview.data.title}
+                    </h2>
+                    <div className="flex flex-wrap items-center gap-3 font-mono text-xs font-bold text-ink">
+                      <span className="inline-flex items-center gap-1">
+                        <Camera className="size-3.5" aria-hidden="true" />
+                        {preview.data.gridSize}×{preview.data.gridSize}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="size-3.5" aria-hidden="true" />
+                        {preview.data.playerCount} Spieler
+                      </span>
                     </div>
-                    {preview.data.status === GameStatus.Active ? (
-                      <p className="mt-2.5 border-t-2 border-strong/20 pt-2 text-xs font-medium text-ink">
-                        Das Spiel läuft bereits – du bekommst beim Beitritt
-                        sofort eine eigene Karte aus Starter-Decks.
-                      </p>
-                    ) : null}
                   </div>
+                  <Badge variant="info">
+                    {joinStatusLabel(preview.data.status)}
+                  </Badge>
+                </div>
+                {preview.data.status === GameStatus.Active ? (
+                  <p className="mt-2.5 border-t-2 border-strong/20 pt-2 text-xs font-medium text-ink">
+                    Das Spiel läuft bereits – du bekommst beim Beitritt sofort
+                    eine eigene Karte aus Starter-Decks.
+                  </p>
+                ) : null}
+              </div>
 
+              {phase.status === "authenticated" ? (
+                <>
                   {mutations.joinGame.isError ? (
                     <Alert variant="error">
                       {apiErrorMessage(mutations.joinGame.error, {
@@ -183,14 +151,48 @@ export default function JoinPage() {
                       ? "Tritt bei …"
                       : "Jetzt mitspielen!"}
                   </Button>
-                </div>
-              ) : (
-                <p className="text-center font-mono text-xs font-medium text-secondary">
-                  Code eingeben, um die Match-Vorschau zu laden.
-                </p>
-              )}
-            </>
+                </>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-center font-mono text-xs font-medium text-secondary">
+              Code eingeben, um die Match-Vorschau zu laden.
+            </p>
           )}
+
+          {phase.status === "anonymous" ? (
+            <div className="space-y-3 border-t-2 border-subtle pt-4">
+              <p className="text-sm font-medium text-secondary">
+                Erstelle in einem Schritt dein Konto oder melde dich an – deine
+                erste Runde startet sofort, E-Mail bestätigen kannst du später.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button size="lg" className="flex-1" asChild>
+                  <Link
+                    href={authHrefWithRedirect(
+                      "/registrierung",
+                      redirectTarget,
+                    )}
+                  >
+                    Konto erstellen &amp; mitspielen
+                    <ArrowRight aria-hidden="true" />
+                  </Link>
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="flex-1"
+                  asChild
+                >
+                  <Link
+                    href={authHrefWithRedirect("/anmeldung", redirectTarget)}
+                  >
+                    Anmelden
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

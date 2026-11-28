@@ -194,6 +194,35 @@ pub struct GameSummary {
     pub created_at: DateTime<Utc>,
 }
 
+/// Safe public game preview returned for invite links before signing in.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]
+#[cfg_attr(feature = "openapi", oai(rename_all = "camelCase"))]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GameInvitePreview {
+    /// Game ID.
+    pub id: Uuid,
+    /// Short invite code.
+    pub invite_code: String,
+    /// Game title.
+    pub title: String,
+    /// Board side length (3, 4, or 5).
+    pub grid_size: u8,
+    /// Proof visibility mode.
+    pub visibility_mode: VisibilityMode,
+    /// Current lifecycle state.
+    pub status: GameStatus,
+    /// Playable tile count per player.
+    pub playable_tile_count: u32,
+    /// Number of currently joined players.
+    pub player_count: u32,
+    /// Optional drafting deadline.
+    pub draft_deadline_at: Option<DateTime<Utc>>,
+    /// Optional game completion deadline.
+    pub ends_at: Option<DateTime<Utc>>,
+}
+
 /// Complete adaptive state of a game for `/games?id=...`.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Object))]

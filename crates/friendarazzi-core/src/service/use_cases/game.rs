@@ -28,6 +28,10 @@ pub enum GameUseCaseError {
     Unauthorized,
     #[error("du bist nicht berechtigt, diese Aktion auszuführen")]
     Forbidden,
+    #[error(
+        "Bitte bestätige zuerst deine E-Mail-Adresse, um ein weiteres Spiel zu starten oder einem weiteren Spiel beizutreten"
+    )]
+    EmailVerificationRequired,
     #[error("das Spiel wurde nicht gefunden")]
     NotFound,
     #[error("ungültige Eingabe")]
@@ -117,6 +121,7 @@ impl UseCase<Game> for CreateGame {
             .change_context(GameUseCaseError::Persistence)?;
 
         let result = async {
+            ensure_unverified_game_quota(&uow, host_id).await?;
             let mut invite_code = None;
             for attempt in 1..=MAX_INVITE_CODE_ATTEMPTS {
                 let candidate = {
@@ -212,6 +217,8 @@ impl UseCase<Game> for JoinGame {
             if game.has_player(user_id) {
                 return Ok(game.into_data());
             }
+
+            ensure_unverified_game_quota(&uow, user_id).await?;
 
             let watching = load_default_watch_for_user(&uow, user_id)
                 .await
@@ -859,6 +866,32 @@ fn earliest_timestamp(
         (None, Some(b)) => Some(b),
         (None, None) => None,
     }
+}
+
+async fn ensure_unverified_game_quota(
+    uow: &UnitOfWork<'_>,
+    user_id: BenutzerId,
+) -> Result<(), Report<GameUseCaseError>> {
+    let benutzer = match uow.benutzer().find_by_id(user_id).await {
+        Ok(b) => b,
+        Err(err) if matches!(err.current_context(), RepositoryError::NotFound) => {
+            return Err(Report::new(GameUseCaseError::Unauthorized));
+        }
+        Err(err) => return Err(err).change_context(GameUseCaseError::Persistence),
+    };
+    if benutzer.ist_verifiziert() {
+        return Ok(());
+    }
+    let existing = uow
+        .games()
+        .find_by_participating_user(user_id)
+        .await
+        .map_err(IntoReport::into_report)
+        .change_context(GameUseCaseError::Persistence)?;
+    if !existing.is_empty() {
+        return Err(Report::new(GameUseCaseError::EmailVerificationRequired));
+    }
+    Ok(())
 }
 
 /// Finalize all `Drafting` games whose countdown (`draft_closes_at <= now`) or draft deadline

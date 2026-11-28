@@ -282,15 +282,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Look up a game summary by invite code.
-         * @description Used by `/join` invite links to preview lobby details before joining.
+         * Look up a safe public game preview by invite code.
+         * @description Used by `/join` invite links to preview lobby details before signing in or joining.
          */
         get: {
             parameters: {
                 query?: never;
-                header?: {
-                    Authorization?: string | null;
-                };
+                header?: never;
                 path: {
                     invite_code: string;
                 };
@@ -303,7 +301,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["GameSummary"];
+                        "application/json; charset=utf-8": components["schemas"]["GameInvitePreview"];
                     };
                 };
                 500: {
@@ -1607,7 +1605,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/registrierung/start": {
+    "/registrierung": {
         parameters: {
             query?: never;
             header?: never;
@@ -1617,8 +1615,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Registration step 1: request a confirmation mail for an e-mail address.
-         * @description Returns the same response whether the address is free or already registered.
+         * Register in a single step and issue an active session immediately.
+         * @description Creates an unverified account (1-game trial limit) and sends a verification email asynchronously.
          */
         post: {
             parameters: {
@@ -1632,7 +1630,73 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json; charset=utf-8": components["schemas"]["RegistrierungStartRequest"];
+                    "application/json; charset=utf-8": components["schemas"]["RegistrierungRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        "SET-COOKIE": string;
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["SessionResponseContent"];
+                    };
+                };
+                500: {
+                    headers: {
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        "SET-COOKIE"?: string | null;
+                        "CACHE-CONTROL": string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/konto/email/bestaetigen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm ownership of an e-mail address using the mailed verification token.
+         * @description Lifts the unverified 1-game trial limit and enables game-event emails according to preferences.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    "User-Agent"?: string | null;
+                    "Accept-Language"?: string | null;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["EmailBestaetigenRequest"];
                 };
             };
             responses: {
@@ -1671,7 +1735,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/registrierung/abschluss": {
+    "/konto/email/bestaetigung-erneut": {
         parameters: {
             query?: never;
             header?: never;
@@ -1681,33 +1745,29 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Complete registration with the token from the confirmation email.
-         * @description Returns the new session credentials.
+         * Resend the e-mail verification link to the authenticated unverified Benutzer.
+         * @description Throttled per client to prevent confirmation mail abuse.
          */
         post: {
             parameters: {
                 query?: never;
                 header?: {
+                    Authorization?: string | null;
                     "User-Agent"?: string | null;
                     "Accept-Language"?: string | null;
                 };
                 path?: never;
                 cookie?: never;
             };
-            requestBody: {
-                content: {
-                    "application/json; charset=utf-8": components["schemas"]["RegistrierungAbschlussRequest"];
-                };
-            };
+            requestBody?: never;
             responses: {
                 200: {
                     headers: {
-                        "SET-COOKIE": string;
                         "CACHE-CONTROL": string;
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json; charset=utf-8": components["schemas"]["SessionResponseContent"];
+                        "application/json; charset=utf-8": components["schemas"]["Ok"];
                     };
                 };
                 500: {
@@ -1721,7 +1781,6 @@ export interface paths {
                 };
                 "4XX": {
                     headers: {
-                        "SET-COOKIE"?: string | null;
                         "CACHE-CONTROL": string;
                         [name: string]: unknown;
                     };
@@ -2555,6 +2614,8 @@ export interface components {
             goldMedalCount: number;
             /** @description Effective rank title displayed on badges. */
             effectiveTitle: string;
+            /** @description Whether the Benutzer has confirmed ownership of its e-mail address. */
+            emailVerified: boolean;
         };
         /**
          * BenutzerLoeschungRequest
@@ -2736,6 +2797,14 @@ export interface components {
             requiredCount: number;
         };
         /**
+         * EmailBestaetigenRequest
+         * @description Confirm the caller's e-mail address with the single-use verification token.
+         */
+        EmailBestaetigenRequest: {
+            /** @description The single-use verification token from the confirmation mail. */
+            token: string;
+        };
+        /**
          * GalleryGameGroup
          * @description One game section in a user's Caught / Captured photo gallery.
          */
@@ -2850,6 +2919,50 @@ export interface components {
             feed: components["schemas"]["CaptureFeedItem"][];
             /** @description Automated post-game superlatives once Completed. */
             superlatives: components["schemas"]["SuperlativeView"][];
+        };
+        /**
+         * GameInvitePreview
+         * @description Safe public game preview returned for invite links before signing in.
+         */
+        GameInvitePreview: {
+            /**
+             * Format: uuid
+             * @description Game ID.
+             */
+            id: string;
+            /** @description Short invite code. */
+            inviteCode: string;
+            /** @description Game title. */
+            title: string;
+            /**
+             * Format: uint8
+             * @description Board side length (3, 4, or 5).
+             */
+            gridSize: number;
+            /** @description Proof visibility mode. */
+            visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+            /** @description Current lifecycle state. */
+            status: components["schemas"]["GameStatus"] & unknown;
+            /**
+             * Format: uint32
+             * @description Playable tile count per player.
+             */
+            playableTileCount: number;
+            /**
+             * Format: uint32
+             * @description Number of currently joined players.
+             */
+            playerCount: number;
+            /**
+             * Format: date-time
+             * @description Optional drafting deadline.
+             */
+            draftDeadlineAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Optional game completion deadline.
+             */
+            endsAt?: string | null;
         };
         /**
          * @description Lifecycle state of a game.
@@ -3243,26 +3356,20 @@ export interface components {
             source: components["schemas"]["PromptSource"] & unknown;
         };
         /**
-         * RegistrierungAbschlussRequest
-         * @description Registration step 2: the mailed token and the chosen password.
+         * RegistrierungRequest
+         * @description Single-step registration with e-mail address, password, and optional display name.
          */
-        RegistrierungAbschlussRequest: {
-            /** @description The single-use token from the confirmation mail. */
-            token: string;
-            /** @description The password to set. It is checked against the password policy. */
-            passwort: string;
-        };
-        /**
-         * RegistrierungStartRequest
-         * @description Registration step 1: the address to confirm.
-         */
-        RegistrierungStartRequest: {
+        RegistrierungRequest: {
             /**
              * E-Mail-Adresse
-             * @description The address to send the confirmation mail to. Its format is validated.
+             * @description E-mail address of the new account.
              * @example test@example.com
              */
             eMailAdresse: string;
+            /** @description Chosen account password (checked against the password policy). */
+            passwort: string;
+            /** @description Optional display name shown in lobbies and boards. */
+            displayName?: string | null;
         };
         /**
          * SaveDraftPromptsRequest

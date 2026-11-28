@@ -97,12 +97,13 @@ fn bearer_schema_ist_veröffentlicht() {
             .is_some_and(|text| !text.is_empty()),
     );
 
-    const OHNE_TOKEN: [(&str, &str); 10] = [
+    const OHNE_TOKEN: [(&str, &str); 11] = [
         ("/health", "get"),
         ("/health/mail", "get"),
         ("/version", "get"),
-        ("/registrierung/start", "post"),
-        ("/registrierung/abschluss", "post"),
+        ("/games/by-code/{invite_code}", "get"),
+        ("/registrierung", "post"),
+        ("/konto/email/bestaetigen", "post"),
         ("/anmeldung", "post"),
         ("/session/erneuern", "post"),
         ("/passwort/vergessen", "post"),
@@ -185,7 +186,9 @@ fn schema_namen_und_felder_bleiben_wire_kompatibel() {
         "BenutzerLoeschungRequest",
         "CreateGameRequest",
         "GameDetail",
+        "GameInvitePreview",
         "GameSummary",
+        "RegistrierungRequest",
         "BoardView",
         "CaptureFeedItem",
         "CaptureOutcome",

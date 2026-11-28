@@ -12,10 +12,12 @@ use crate::application::ResultReport;
 pub enum ThrottleAction {
     /// Failed logins: 20 per 15 minutes (SPEC-konto rule 5, AC-15).
     Anmeldung,
-    /// Registration step 1: 5 per hour (rule 5, AC-16).
-    RegistrierungStart,
-    /// Registration step 2: 5 per hour (rule 5, AC-16).
-    RegistrierungAbschluss,
+    /// Single-step registration: 5 per hour.
+    Registrierung,
+    /// Confirmation link verification: 10 per hour.
+    EmailBestätigung,
+    /// Confirmation email resend: 3 per hour.
+    EmailBestätigungErneut,
     /// Password recovery request: 5 per hour (rule 5, AC-16).
     Wiederherstellung,
     /// Session renewal: 5 per hour (rule 5, AC-16).
@@ -27,10 +29,9 @@ impl ThrottleAction {
     pub fn threshold(self) -> u32 {
         match self {
             Self::Anmeldung => 20,
-            Self::RegistrierungStart
-            | Self::RegistrierungAbschluss
-            | Self::Wiederherstellung
-            | Self::Erneuerung => 5,
+            Self::EmailBestätigung => 10,
+            Self::EmailBestätigungErneut => 3,
+            Self::Registrierung | Self::Wiederherstellung | Self::Erneuerung => 5,
         }
     }
 
@@ -38,8 +39,9 @@ impl ThrottleAction {
     pub fn window(self) -> Duration {
         match self {
             Self::Anmeldung => Duration::minutes(15),
-            Self::RegistrierungStart
-            | Self::RegistrierungAbschluss
+            Self::Registrierung
+            | Self::EmailBestätigung
+            | Self::EmailBestätigungErneut
             | Self::Wiederherstellung
             | Self::Erneuerung => Duration::hours(1),
         }
@@ -49,8 +51,9 @@ impl ThrottleAction {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Anmeldung => "anmeldung",
-            Self::RegistrierungStart => "registrierung-start",
-            Self::RegistrierungAbschluss => "registrierung-abschluss",
+            Self::Registrierung => "registrierung",
+            Self::EmailBestätigung => "email-bestaetigung",
+            Self::EmailBestätigungErneut => "email-bestaetigung-erneut",
             Self::Wiederherstellung => "wiederherstellung",
             Self::Erneuerung => "erneuerung",
         }
@@ -128,9 +131,10 @@ mod tests {
     fn schwellen_entsprechen_der_spezifikation() {
         assert_eq!(ThrottleAction::Anmeldung.threshold(), 20);
         assert_eq!(ThrottleAction::Anmeldung.window(), Duration::minutes(15));
+        assert_eq!(ThrottleAction::EmailBestätigung.threshold(), 10);
+        assert_eq!(ThrottleAction::EmailBestätigungErneut.threshold(), 3);
         for aktion in [
-            ThrottleAction::RegistrierungStart,
-            ThrottleAction::RegistrierungAbschluss,
+            ThrottleAction::Registrierung,
             ThrottleAction::Wiederherstellung,
             ThrottleAction::Erneuerung,
         ] {

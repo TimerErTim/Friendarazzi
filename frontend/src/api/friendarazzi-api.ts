@@ -1,4 +1,5 @@
 import {
+  CompletionReason,
   type components,
   GameStatus,
   NotificationKind,
@@ -8,6 +9,7 @@ import {
 } from "./schema";
 
 export {
+  CompletionReason,
   GameStatus,
   NotificationKind,
   PromptSource,
@@ -48,6 +50,10 @@ export interface FriendarazziApi {
     draftDeadlineAt: string | null,
   ): Promise<GameDetail>;
   gameSetWatch(gameId: string, watching: boolean): Promise<GameDetail>;
+  gameLeave(gameId: string): Promise<void>;
+  gameKickPlayer(gameId: string, userId: string): Promise<GameDetail>;
+  gameTransferHost(gameId: string, newHostUserId: string): Promise<GameDetail>;
+  gameAbandon(gameId: string): Promise<GameDetail>;
 
   // ---------------------------------------------------------------- Notifications
   notificationsList(): Promise<NotificationsInbox>;

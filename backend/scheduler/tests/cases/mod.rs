@@ -14,8 +14,8 @@ use friendarazzi_core::{
     },
     ports::{ClientKey, Clock, RepositoryError},
     service::{
-        CreateGame, DraftPromptInput, JoinGame, LockDraftPrompts, RegistrierungAbschließen,
-        RegistrierungStarten, SaveDraftPrompts, StartDrafting,
+        CreateGame, DraftPromptInput, HostFillRemainingDrafts, JoinGame, LockDraftPrompts,
+        RegistrierungAbschließen, RegistrierungStarten, SaveDraftPrompts, StartDrafting,
     },
     uow::UnitOfWorkProvider,
 };
@@ -75,6 +75,69 @@ pub async fn load_game(app: &App, game_id: GameId) -> Game {
     .unwrap()
 }
 
+#[allow(dead_code)]
+pub async fn setup_active_game_with_deadline(
+    uow_provider: Box<dyn UnitOfWorkProvider>,
+    clock: Arc<FixedClock>,
+    ends_at: DateTime<Utc>,
+) -> (App, GameId) {
+    let mail = Arc::new(FakeMailSender::new());
+    let app = App::builder()
+        .uow_provider(uow_provider)
+        .signing(Arc::new(InMemorySigning::from_secret_bytes(&[9u8; 32])))
+        .throttle(Arc::new(InMemoryThrottle::new()))
+        .mail_sender(Arc::clone(&mail) as Arc<dyn friendarazzi_core::ports::MailSender>)
+        .konto(IdentityProviderConfiguration::neu(
+            "friendarazzi.app",
+            "friendarazzi-api",
+        ))
+        .clock(clock.clone() as Arc<dyn Clock>)
+        .rng(Arc::new(FixedRng::default()))
+        .build();
+
+    let alice = register(&app, &mail, "exp-a@example.com").await;
+    let bob = register(&app, &mail, "exp-b@example.com").await;
+    let carol = register(&app, &mail, "exp-c@example.com").await;
+
+    let game = app
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Expire Sched").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: Some(ends_at),
+            },
+        )
+        .await
+        .unwrap();
+    for guest in [bob, carol] {
+        app.execute(
+            guest,
+            JoinGame {
+                invite_code: game.invite_code().clone(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+    app.execute(alice, StartDrafting { game_id: game.id() })
+        .await
+        .unwrap();
+    app.execute(
+        alice,
+        HostFillRemainingDrafts {
+            game_id: game.id(),
+            start_immediately: true,
+        },
+    )
+    .await
+    .unwrap();
+
+    (app, game.id())
+}
+
 pub async fn setup_locked_drafting_game(
     uow_provider: Box<dyn UnitOfWorkProvider>,
     clock: Arc<FixedClock>,
@@ -105,6 +168,7 @@ pub async fn setup_locked_drafting_game(
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await

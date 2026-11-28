@@ -7,9 +7,12 @@ use uuid::Uuid;
 
 use crate::{
     application::{ExecutionContext, uow::Versioned},
-    domain::{BoardCoordinates, BoardTileId, Capture, CaptureId, Game, GameId, NewCapture},
+    domain::{
+        BoardCoordinates, BoardTileId, Capture, CaptureId, CompletionReason, Game, GameId,
+        NewCapture,
+    },
     ports::RepositoryError,
-    service::{CaptureUploaded, GameFinished, UseCase},
+    service::{CaptureUploaded, GameFinished, NearBingoReached, UseCase},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -78,6 +81,9 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
             let Game::Active(active_game) = game.into_data() else {
                 return Err(Report::new(CaptureUseCaseError::Conflict));
             };
+            if active_game.is_deadline_reached(now) {
+                return Err(Report::new(CaptureUseCaseError::Conflict));
+            }
 
             let mut board = match uow
                 .boards()
@@ -171,8 +177,15 @@ impl UseCase<SubmitCaptureOutcome> for SubmitCapture {
             if winning_line.is_some() {
                 ctx.events().submit(GameFinished {
                     game_id: self.game_id,
-                    winner_id: user_id,
+                    winner_id: Some(user_id),
+                    completion_reason: CompletionReason::Bingo,
                     finished_at: now,
+                });
+            } else if board.is_one_away_from_bingo() {
+                ctx.events().submit(NearBingoReached {
+                    game_id: self.game_id,
+                    leader_id: user_id,
+                    occurred_at: now,
                 });
             }
 

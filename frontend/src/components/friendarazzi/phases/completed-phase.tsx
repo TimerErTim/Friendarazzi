@@ -1,18 +1,21 @@
 "use client";
 
 import {
+  Clock,
   Crown,
   Flame,
   Ghost,
   LayoutGrid,
   List,
   Target,
+  XCircle,
   Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   type CaptureFeedItem,
+  CompletionReason,
   type GameDetail,
   SuperlativeKind,
 } from "@/api/friendarazzi-api";
@@ -111,27 +114,63 @@ export function CompletedPhase({
 
   return (
     <div className="space-y-8">
-      {/* Winner Podium Banner */}
+      {/* Winner / Completion Podium Banner */}
       {game.winner ? (
         <div className="brutal-shadow-lg rounded-md border-[2.5px] border-strong bg-primary p-5 text-primary-foreground sm:p-6">
           <div className="flex items-center gap-4">
             <PlayerAvatar user={game.winner} size="lg" />
             <div className="space-y-1">
               <Badge variant="outline" className="gap-1">
-                <Crown className="size-3.5" aria-hidden="true" />
-                BINGO-SIEGER
+                {game.completionReason === CompletionReason.Deadline ? (
+                  <Clock className="size-3.5" aria-hidden="true" />
+                ) : (
+                  <Crown className="size-3.5" aria-hidden="true" />
+                )}
+                {game.completionReason === CompletionReason.Deadline
+                  ? "ZEITLIMIT-SIEGER"
+                  : "BINGO-SIEGER"}
               </Badge>
               <h2 className="font-display text-2xl tracking-tight sm:text-3xl">
                 {game.winner.displayName} hat gewonnen!
               </h2>
               <p className="font-mono text-xs font-bold">
-                {game.winner.effectiveTitle} · {game.winner.goldMedalCount}{" "}
-                Goldmedaillen (+1)
+                {game.completionReason === CompletionReason.Deadline
+                  ? `Meiste ausgefüllte Felder im Zeitlimit · ${game.winner.goldMedalCount} Goldmedaillen (+1)`
+                  : `${game.winner.effectiveTitle} · ${game.winner.goldMedalCount} Goldmedaillen (+1)`}
               </p>
             </div>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="brutal-shadow-lg rounded-md border-[2.5px] border-strong bg-surface p-5 text-ink sm:p-6">
+          <div className="flex items-start gap-4">
+            <span className="inline-flex size-12 shrink-0 items-center justify-center rounded-sm border-2 border-strong bg-cyan-subtle text-ink">
+              {game.completionReason === CompletionReason.Abandoned ? (
+                <XCircle className="size-6" aria-hidden="true" />
+              ) : (
+                <Clock className="size-6" aria-hidden="true" />
+              )}
+            </span>
+            <div className="space-y-1">
+              <Badge variant="outline">
+                {game.completionReason === CompletionReason.Abandoned
+                  ? "ABGEBROCHEN"
+                  : "ZEITLIMIT ERREICHT"}
+              </Badge>
+              <h2 className="font-display text-2xl tracking-tight sm:text-3xl">
+                {game.completionReason === CompletionReason.Abandoned
+                  ? "Spiel abgebrochen"
+                  : "Unentschieden – keine Fotos im Zeitlimit"}
+              </h2>
+              <p className="text-sm font-medium text-secondary">
+                {game.completionReason === CompletionReason.Abandoned
+                  ? "Der Host hat diese Runde beendet. In dieser Runde wurde keine Goldmedaille vergeben."
+                  : "Bis zum Zeitlimit wurden keine Fotos hochgeladen – es gibt keinen Sieger und keine Goldmedaille."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Automated Post-Game Superlatives */}
       {game.superlatives.length > 0 ? (

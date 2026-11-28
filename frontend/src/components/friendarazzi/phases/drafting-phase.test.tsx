@@ -10,6 +10,10 @@ import {
 
 import { DraftingPhase } from "./drafting-phase";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
+}));
+
 const savePromptsMutate = vi.fn().mockResolvedValue({});
 const lockPromptsMutate = vi.fn().mockResolvedValue({});
 const unlockPromptsMutate = vi.fn().mockResolvedValue({});
@@ -57,6 +61,30 @@ vi.mock("@/api/hooks", () => ({
       mutateAsync: unlockPromptsMutate,
       isPending: false,
       isError: false,
+    },
+    leaveGame: {
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+    },
+    kickPlayer: {
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+    },
+    transferHost: {
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+    },
+    abandonGame: {
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
     },
     hostFillDrafts: {
       mutateAsync: hostFillDraftsMutate,

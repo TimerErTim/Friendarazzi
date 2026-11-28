@@ -288,6 +288,7 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -313,7 +314,7 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
             let (expired_neu, expired_token) = NeueBenachrichtigung::spiel_beendet(
                 carol_id,
                 created_game_id,
-                user_id_of(alice),
+                Some(user_id_of(alice)),
                 now - Duration::days(31),
             );
             uow.benachrichtigungen().create(expired_neu).await.unwrap();
@@ -548,6 +549,7 @@ async fn undercover_suppresses_capture_notifications_and_mail_failure_does_not_f
                     grid_size: GridSize::Three,
                     visibility_mode: VisibilityMode::LiveFeed,
                     draft_deadline_at: None,
+                    ends_at: None,
                     created_at: super::helpers::jetzt(),
                 })
                 .await?;

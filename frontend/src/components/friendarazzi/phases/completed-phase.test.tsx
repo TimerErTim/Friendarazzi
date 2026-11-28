@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  CompletionReason,
   type GameDetail,
   GameStatus,
   VisibilityMode,
@@ -124,5 +125,39 @@ describe("CompletedPhase", () => {
     expect(
       screen.getAllByText("Bestellt Espresso").length,
     ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders Zeitlimit-Sieger banner for Deadline completion with winner", () => {
+    const game: GameDetail = {
+      ...makeCompletedGame(),
+      completionReason: CompletionReason.Deadline,
+    };
+    render(<CompletedPhase game={game} />);
+    expect(screen.getByText("ZEITLIMIT-SIEGER")).toBeInTheDocument();
+    expect(screen.getByText("Alice hat gewonnen!")).toBeInTheDocument();
+  });
+
+  it("renders draw banner for Deadline completion without winner", () => {
+    const game: GameDetail = {
+      ...makeCompletedGame(),
+      completionReason: CompletionReason.Deadline,
+      winner: null,
+      feed: [],
+    };
+    render(<CompletedPhase game={game} />);
+    expect(
+      screen.getByText("Unentschieden – keine Fotos im Zeitlimit"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders Abandoned banner when host ends game early", () => {
+    const game: GameDetail = {
+      ...makeCompletedGame(),
+      completionReason: CompletionReason.Abandoned,
+      winner: null,
+      feed: [],
+    };
+    render(<CompletedPhase game={game} />);
+    expect(screen.getByText("Spiel abgebrochen")).toBeInTheDocument();
   });
 });

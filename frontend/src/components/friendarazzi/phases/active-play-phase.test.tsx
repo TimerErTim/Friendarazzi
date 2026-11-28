@@ -28,6 +28,18 @@ vi.mock("@/api/hooks", () => ({
       isError: false,
       error: null,
     },
+    transferHost: {
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+    },
+    abandonGame: {
+      mutateAsync: vi.fn().mockResolvedValue({}),
+      isPending: false,
+      isError: false,
+      error: null,
+    },
   }),
 }));
 
@@ -156,5 +168,21 @@ describe("ActivePlayPhase", () => {
     fireEvent.click(screen.getByRole("button", { name: /Nur offene/i }));
     expect(screen.getByText("Trinkt Wasser")).toBeInTheDocument();
     expect(screen.queryByText("Schaut auf die Uhr")).not.toBeInTheDocument();
+  });
+
+  it("shows endsAt countdown chip and host abandon dialog in Crew popover", () => {
+    const game: GameDetail = {
+      ...makeActiveGame(),
+      endsAt: "2026-11-28T13:30:00Z",
+    };
+    render(<ActivePlayPhase game={game} />);
+    expect(screen.getByText(/Noch 1 Std\. 30 Min\./i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Crew \(3\)/i }));
+    expect(
+      screen.getByRole("button", { name: /Bob zum Host machen/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Spiel abbrechen/i }));
+    expect(screen.getByText("Spiel abbrechen?")).toBeInTheDocument();
   });
 });

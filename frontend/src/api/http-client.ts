@@ -337,6 +337,46 @@ export class HttpFriendarazziApi implements FriendarazziApi, AuthSession {
     );
   }
 
+  async gameLeave(gameId: string): Promise<void> {
+    await this.authenticated(() =>
+      this.client.POST("/games/{game_id}/leave", {
+        params: { path: { game_id: gameId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameKickPlayer(gameId: string, userId: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.DELETE("/games/{game_id}/players/{user_id}", {
+        params: { path: { game_id: gameId, user_id: userId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameTransferHost(
+    gameId: string,
+    newHostUserId: string,
+  ): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games/{game_id}/transfer-host", {
+        params: { path: { game_id: gameId } },
+        body: { newHostUserId },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
+  async gameAbandon(gameId: string): Promise<GameDetail> {
+    return this.authenticated(() =>
+      this.client.POST("/games/{game_id}/abandon", {
+        params: { path: { game_id: gameId } },
+        headers: this.authorizationHeaders(),
+      }),
+    );
+  }
+
   // ---------------------------------------------------------------- Notifications
 
   async notificationsList(): Promise<NotificationsInbox> {

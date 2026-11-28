@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use ::scheduler::{Job, Schedule, Task, TaskContext};
 use friendarazzi_core::App;
 use friendarazzi_core::ResultReport;
 use friendarazzi_core::application::AuthContext;
@@ -45,17 +44,4 @@ pub async fn run_start_ready_games(app: &App) -> ResultReport<(), GameUseCaseErr
     }
 
     Ok(())
-}
-
-pub fn build_start_ready_games_job(app: App) -> Job<App> {
-    Job::new(
-        START_READY_GAMES_JOB_ID,
-        Schedule::Interval(Duration::from_secs(READY_GRACE_PERIOD_SECONDS as u64)),
-        app,
-        Task::from_async(|context: TaskContext<App>| async move {
-            run_start_ready_games(&context.deps)
-                .await
-                .map_err(|err| err.to_string())
-        }),
-    )
 }

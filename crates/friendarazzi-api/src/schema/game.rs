@@ -62,6 +62,26 @@ impl From<&domain::Game> for GameStatus {
     }
 }
 
+/// How a completed game ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "openapi", derive(poem_openapi::Enum))]
+#[derive(serde::Serialize, serde::Deserialize)]
+pub enum CompletionReason {
+    Bingo,
+    Deadline,
+    Abandoned,
+}
+
+impl From<domain::CompletionReason> for CompletionReason {
+    fn from(value: domain::CompletionReason) -> Self {
+        match value {
+            domain::CompletionReason::Bingo => Self::Bingo,
+            domain::CompletionReason::Deadline => Self::Deadline,
+            domain::CompletionReason::Abandoned => Self::Abandoned,
+        }
+    }
+}
+
 /// Source of a submitted prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "openapi", derive(poem_openapi::Enum))]
@@ -158,6 +178,10 @@ pub struct GameSummary {
     pub draft_closes_at: Option<DateTime<Utc>>,
     /// Optional host-configured drafting deadline after which missing prompts auto-fill.
     pub draft_deadline_at: Option<DateTime<Utc>>,
+    /// Optional deadline at which active play concludes automatically by tile count.
+    pub ends_at: Option<DateTime<Utc>>,
+    /// Reason the game ended, once completed.
+    pub completion_reason: Option<CompletionReason>,
     /// Server clock timestamp when this summary was generated.
     pub server_now: DateTime<Utc>,
     /// Winner badge if completed.
@@ -199,6 +223,10 @@ pub struct GameDetail {
     pub draft_closes_at: Option<DateTime<Utc>>,
     /// Optional host-configured drafting deadline after which missing prompts auto-fill.
     pub draft_deadline_at: Option<DateTime<Utc>>,
+    /// Optional deadline at which active play concludes automatically by tile count.
+    pub ends_at: Option<DateTime<Utc>>,
+    /// Reason the game ended, once completed.
+    pub completion_reason: Option<CompletionReason>,
     /// Server clock timestamp when this detail was generated.
     pub server_now: DateTime<Utc>,
     /// Timestamp when active play started.

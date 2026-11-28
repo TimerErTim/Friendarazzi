@@ -18,6 +18,7 @@ use crate::{
     domain::{
         BenutzerId, NonEmptyString,
         board::{Board, BoardTileAssignment, NewBoard},
+        capture::{Capture, CaptureId},
         deck::StarterDeck,
     },
 };
@@ -57,6 +58,8 @@ pub enum GameError {
     InvalidVisibilityMode,
     #[error("Unbekannte Prompt-Quelle")]
     InvalidPromptSource,
+    #[error("Unbekannter Abschlussgrund")]
+    InvalidCompletionReason,
     #[error("Diese Aktion ist im aktuellen Spielstatus nicht möglich")]
     InvalidStateTransition,
     #[error("Mindestens {MIN_PLAYERS} Spieler sind erforderlich")]
@@ -193,13 +196,44 @@ impl std::str::FromStr for PromptSource {
     }
 }
 
+/// How a completed game reached its final state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompletionReason {
+    Bingo,
+    Deadline,
+    Abandoned,
+}
+
+impl CompletionReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bingo => "Bingo",
+            Self::Deadline => "Deadline",
+            Self::Abandoned => "Abandoned",
+        }
+    }
+}
+
+impl FromStr for CompletionReason {
+    type Err = GameError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "Bingo" => Ok(Self::Bingo),
+            "Deadline" => Ok(Self::Deadline),
+            "Abandoned" => Ok(Self::Abandoned),
+            _ => Err(GameError::InvalidCompletionReason),
+        }
+    }
+}
+
 /// Lifecycle state markers for [`GameIn`].
 pub mod state {
     use std::collections::HashSet;
 
     use chrono::{DateTime, Utc};
 
-    use super::PromptSubmission;
+    use super::{CompletionReason, PromptSubmission};
     use crate::domain::BenutzerId;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,7 +257,8 @@ pub mod state {
         pub prompts: Vec<PromptSubmission>,
         pub started_at: DateTime<Utc>,
         pub ended_at: DateTime<Utc>,
-        pub winner_user_id: BenutzerId,
+        pub winner_user_id: Option<BenutzerId>,
+        pub completion_reason: CompletionReason,
     }
 }
 
@@ -326,6 +361,7 @@ pub struct NewGame {
     pub grid_size: GridSize,
     pub visibility_mode: VisibilityMode,
     pub draft_deadline_at: Option<DateTime<Utc>>,
+    pub ends_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -339,6 +375,7 @@ pub struct GameIn<S> {
     grid_size: GridSize,
     visibility_mode: VisibilityMode,
     draft_deadline_at: Option<DateTime<Utc>>,
+    ends_at: Option<DateTime<Utc>>,
     players: Vec<GamePlayer>,
     created_at: DateTime<Utc>,
     state: S,
@@ -420,6 +457,29 @@ impl<S> GameIn<S> {
         self.draft_deadline_at
     }
 
+    pub fn ends_at(&self) -> Option<DateTime<Utc>> {
+        self.ends_at
+    }
+
+    /// Transfer host ownership to another player currently in this game.
+    pub fn transfer_host(
+        &mut self,
+        actor: BenutzerId,
+        new_host: BenutzerId,
+    ) -> ResultReport<(), GameError> {
+        if self.host_user_id != actor || !self.has_player(new_host) {
+            return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        self.host_user_id = new_host;
+        Ok(())
+    }
+
+    fn earliest_other_player(&self, excluding: BenutzerId) -> Option<BenutzerId> {
+        self.sorted_player_ids()
+            .into_iter()
+            .find(|&uid| uid != excluding)
+    }
+
     pub fn players(&self) -> &[GamePlayer] {
         &self.players
     }
@@ -479,6 +539,7 @@ impl<S> GameIn<S> {
         grid_size: u8,
         visibility_mode: String,
         draft_deadline_at: Option<DateTime<Utc>>,
+        ends_at: Option<DateTime<Utc>>,
         mut players: Vec<GamePlayer>,
         created_at: DateTime<Utc>,
         state: S,
@@ -510,6 +571,7 @@ impl<S> GameIn<S> {
             grid_size,
             visibility_mode,
             draft_deadline_at,
+            ends_at,
             players,
             created_at,
             state,
@@ -532,6 +594,7 @@ impl LobbyGame {
             grid_size: input.grid_size,
             visibility_mode: input.visibility_mode,
             draft_deadline_at: input.draft_deadline_at,
+            ends_at: input.ends_at,
             players: vec![host_player],
             created_at: input.created_at,
             state: state::Lobby,
@@ -545,6 +608,7 @@ impl LobbyGame {
         grid_size: GridSize,
         visibility_mode: VisibilityMode,
         draft_deadline_at: Option<DateTime<Utc>>,
+        ends_at: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
     ) -> ResultReport<(), GameError> {
         if let Some(deadline) = draft_deadline_at
@@ -552,10 +616,16 @@ impl LobbyGame {
         {
             return Err(Report::new(GameError::DeadlineInPast));
         }
+        if let Some(end) = ends_at
+            && (end <= now || draft_deadline_at.is_some_and(|draft| end <= draft))
+        {
+            return Err(Report::new(GameError::DeadlineInPast));
+        }
         self.title = title;
         self.grid_size = grid_size;
         self.visibility_mode = visibility_mode;
         self.draft_deadline_at = draft_deadline_at;
+        self.ends_at = ends_at;
         Ok(())
     }
 
@@ -571,6 +641,56 @@ impl LobbyGame {
         });
     }
 
+    /// Leave the lobby (auto-transferring host if other players remain; sole player must abandon instead).
+    pub fn leave_player(&mut self, user_id: BenutzerId) -> ResultReport<(), GameError> {
+        if !self.has_player(user_id) {
+            return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        let Some(next_host) = self.earliest_other_player(user_id) else {
+            return Err(Report::new(GameError::InvalidStateTransition));
+        };
+        if self.host_user_id == user_id {
+            self.host_user_id = next_host;
+        }
+        self.players.retain(|p| p.user_id != user_id);
+        Ok(())
+    }
+
+    /// Remove a guest player from the lobby.
+    pub fn kick_player(&mut self, target: BenutzerId) -> ResultReport<(), GameError> {
+        if target == self.host_user_id {
+            return Err(Report::new(GameError::InvalidStateTransition));
+        }
+        if !self.has_player(target) {
+            return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        self.players.retain(|p| p.user_id != target);
+        Ok(())
+    }
+
+    /// Mark an unstarted lobby as abandoned.
+    pub fn abandon(self, now: DateTime<Utc>) -> CompletedGame {
+        GameIn {
+            id: self.id,
+            invite_code: self.invite_code,
+            host_user_id: self.host_user_id,
+            title: self.title,
+            grid_size: self.grid_size,
+            visibility_mode: self.visibility_mode,
+            draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
+            players: self.players,
+            created_at: self.created_at,
+            state: state::Completed {
+                prompts: Vec::new(),
+                started_at: now,
+                ended_at: now,
+                winner_user_id: None,
+                completion_reason: CompletionReason::Abandoned,
+            },
+        }
+    }
+
     pub fn start_drafting(self) -> ResultReport<DraftingGame, GameError> {
         if self.players.len() < MIN_PLAYERS {
             return Err(Report::new(GameError::TooFewPlayers));
@@ -583,6 +703,7 @@ impl LobbyGame {
             grid_size: self.grid_size,
             visibility_mode: self.visibility_mode,
             draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
             players: self.players,
             created_at: self.created_at,
             state: state::Drafting {
@@ -764,6 +885,7 @@ impl DraftingGame {
             grid_size: self.grid_size,
             visibility_mode: self.visibility_mode,
             draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
             players: self.players,
             created_at: self.created_at,
             state: state::Active {
@@ -772,6 +894,93 @@ impl DraftingGame {
             },
         };
         Ok((active, boards))
+    }
+
+    /// Remove a player during drafting, resetting draft readiness and reverting to Lobby if `< MIN_PLAYERS`.
+    fn remove_participant_or_revert(mut self, target: BenutzerId) -> Game {
+        if let Some(next_host) = (self.host_user_id == target)
+            .then(|| self.earliest_other_player(target))
+            .flatten()
+        {
+            self.host_user_id = next_host;
+        }
+        self.players.retain(|p| p.user_id != target);
+        self.state
+            .prompts
+            .retain(|p| p.author_user_id != target && p.target_user_id != target);
+        self.state.draft_locked.clear();
+        self.state.draft_closes_at = None;
+
+        if self.players.len() < MIN_PLAYERS {
+            Game::Lobby(GameIn {
+                id: self.id,
+                invite_code: self.invite_code,
+                host_user_id: self.host_user_id,
+                title: self.title,
+                grid_size: self.grid_size,
+                visibility_mode: self.visibility_mode,
+                draft_deadline_at: self.draft_deadline_at,
+                ends_at: self.ends_at,
+                players: self.players,
+                created_at: self.created_at,
+                state: state::Lobby,
+            })
+        } else {
+            Game::Drafting(self)
+        }
+    }
+
+    pub fn leave_player(
+        self,
+        user_id: BenutzerId,
+        now: DateTime<Utc>,
+    ) -> ResultReport<Game, GameError> {
+        if !self.has_player(user_id) {
+            return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        if self.is_ready_to_start(now) || self.players.len() <= 1 {
+            return Err(Report::new(GameError::InvalidStateTransition));
+        }
+        Ok(self.remove_participant_or_revert(user_id))
+    }
+
+    pub fn kick_player(
+        self,
+        target: BenutzerId,
+        now: DateTime<Utc>,
+    ) -> ResultReport<Game, GameError> {
+        if target == self.host_user_id {
+            return Err(Report::new(GameError::InvalidStateTransition));
+        }
+        if !self.has_player(target) {
+            return Err(Report::new(GameError::PlayerNotInGame));
+        }
+        if self.is_ready_to_start(now) {
+            return Err(Report::new(GameError::InvalidStateTransition));
+        }
+        Ok(self.remove_participant_or_revert(target))
+    }
+
+    pub fn abandon(self, now: DateTime<Utc>) -> CompletedGame {
+        GameIn {
+            id: self.id,
+            invite_code: self.invite_code,
+            host_user_id: self.host_user_id,
+            title: self.title,
+            grid_size: self.grid_size,
+            visibility_mode: self.visibility_mode,
+            draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
+            players: self.players,
+            created_at: self.created_at,
+            state: state::Completed {
+                prompts: self.state.prompts,
+                started_at: now,
+                ended_at: now,
+                winner_user_id: None,
+                completion_reason: CompletionReason::Abandoned,
+            },
+        }
     }
 
     /// Replace all prompts authored by `author`, unlock their draft, and cancel any pending countdown.
@@ -881,6 +1090,88 @@ impl ActiveGame {
         self.state.started_at
     }
 
+    pub fn is_deadline_reached(&self, now: DateTime<Utc>) -> bool {
+        self.ends_at.is_some_and(|at| now >= at)
+    }
+
+    /// Deal a starter-deck Bingo board for a latecomer without disturbing existing boards.
+    pub fn join_late_player(
+        &mut self,
+        user_id: BenutzerId,
+        now: DateTime<Utc>,
+        watching: bool,
+        decks: &[StarterDeck],
+        rng: &mut (impl Rng + ?Sized),
+    ) -> ResultReport<Option<NewBoard>, GameError> {
+        if self.has_player(user_id) {
+            return Ok(None);
+        }
+        let existing_players = self.sorted_player_ids();
+        if existing_players.len() < MIN_PLAYERS {
+            return Err(Report::new(GameError::TooFewPlayers));
+        }
+
+        let total_tiles = self.playable_tile_count();
+        let mut players_with_latecomer = existing_players;
+        players_with_latecomer.push(user_id);
+        let quotas = target_quotas_for_author(&players_with_latecomer, user_id, total_tiles)?;
+        let mut used_texts: HashSet<String> = self
+            .state
+            .prompts
+            .iter()
+            .map(|p| p.text.as_str().trim().to_lowercase())
+            .collect();
+        let mut pool: Vec<String> = decks
+            .iter()
+            .flat_map(|d| d.prompts.iter())
+            .filter_map(|raw| PromptText::new(raw).ok().map(PromptText::into_string))
+            .collect();
+        if pool.is_empty() {
+            return Err(Report::new(GameError::InvalidPromptQuota));
+        }
+        pool.shuffle(rng);
+
+        let mut assignments = Vec::with_capacity(total_tiles);
+        for (target, count) in quotas {
+            for _ in 0..count {
+                let next_text = if let Some(pos) = pool
+                    .iter()
+                    .position(|cand| !used_texts.contains(&cand.trim().to_lowercase()))
+                {
+                    let chosen = pool[pos].clone();
+                    used_texts.insert(chosen.trim().to_lowercase());
+                    chosen
+                } else {
+                    pool.choose(rng).expect("pool is non-empty").clone()
+                };
+                let text = PromptText::new(next_text)?;
+                let submission = PromptSubmission::new(
+                    PromptSubmissionId(Uuid::new_v4()),
+                    user_id,
+                    target,
+                    text.clone(),
+                    PromptSource::StarterDeck,
+                )?;
+                assignments.push(BoardTileAssignment {
+                    prompt_submission_id: submission.id,
+                    target_user_id: target,
+                    prompt_text: text.into(),
+                });
+                self.state.prompts.push(submission);
+            }
+        }
+        assignments.shuffle(rng);
+        self.players.push(GamePlayer {
+            user_id,
+            joined_at: now,
+            watching,
+        });
+
+        let board = NewBoard::new(self.id, user_id, self.grid_size, assignments)
+            .change_context(GameError::BoardAssemblyFailed)?;
+        Ok(Some(board))
+    }
+
     /// Complete an active game when a player's `winner_board` has achieved Bingo.
     pub fn complete(
         self,
@@ -898,15 +1189,101 @@ impl ActiveGame {
             grid_size: self.grid_size,
             visibility_mode: self.visibility_mode,
             draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
             players: self.players,
             created_at: self.created_at,
             state: state::Completed {
                 prompts: self.state.prompts,
                 started_at: self.state.started_at,
                 ended_at: now,
-                winner_user_id: winner_board.owner_user_id(),
+                winner_user_id: Some(winner_board.owner_user_id()),
+                completion_reason: CompletionReason::Bingo,
             },
         })
+    }
+
+    /// Finalize an active game once `ends_at` is reached: most filled tiles wins;
+    /// ties break by earliest latest capture timestamp; 0 total captures yields a draw (`None`).
+    pub fn complete_by_deadline(
+        self,
+        boards: &[Board],
+        captures: &[Capture],
+        now: DateTime<Utc>,
+    ) -> CompletedGame {
+        let capture_times: HashMap<CaptureId, DateTime<Utc>> =
+            captures.iter().map(|c| (c.id(), c.captured_at())).collect();
+
+        let mut best: Option<(usize, DateTime<Utc>, BenutzerId)> = None;
+        for board in boards {
+            let filled = board.tiles().iter().filter(|t| t.is_filled()).count();
+            if filled == 0 {
+                continue;
+            }
+            let latest_capture = board
+                .tiles()
+                .iter()
+                .filter_map(|t| {
+                    t.capture_id()
+                        .and_then(|cid| capture_times.get(&cid).copied())
+                })
+                .max()
+                .unwrap_or(now);
+            let owner = board.owner_user_id();
+            let beats = match best {
+                None => true,
+                Some((best_filled, best_time, best_owner)) => {
+                    filled > best_filled
+                        || (filled == best_filled
+                            && (latest_capture < best_time
+                                || (latest_capture == best_time && owner < best_owner)))
+                }
+            };
+            if beats {
+                best = Some((filled, latest_capture, owner));
+            }
+        }
+
+        GameIn {
+            id: self.id,
+            invite_code: self.invite_code,
+            host_user_id: self.host_user_id,
+            title: self.title,
+            grid_size: self.grid_size,
+            visibility_mode: self.visibility_mode,
+            draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
+            players: self.players,
+            created_at: self.created_at,
+            state: state::Completed {
+                prompts: self.state.prompts,
+                started_at: self.state.started_at,
+                ended_at: now,
+                winner_user_id: best.map(|(_, _, owner)| owner),
+                completion_reason: CompletionReason::Deadline,
+            },
+        }
+    }
+
+    pub fn abandon(self, now: DateTime<Utc>) -> CompletedGame {
+        GameIn {
+            id: self.id,
+            invite_code: self.invite_code,
+            host_user_id: self.host_user_id,
+            title: self.title,
+            grid_size: self.grid_size,
+            visibility_mode: self.visibility_mode,
+            draft_deadline_at: self.draft_deadline_at,
+            ends_at: self.ends_at,
+            players: self.players,
+            created_at: self.created_at,
+            state: state::Completed {
+                prompts: self.state.prompts,
+                started_at: self.state.started_at,
+                ended_at: now,
+                winner_user_id: None,
+                completion_reason: CompletionReason::Abandoned,
+            },
+        }
     }
 }
 
@@ -923,8 +1300,12 @@ impl CompletedGame {
         self.state.ended_at
     }
 
-    pub fn winner_user_id(&self) -> BenutzerId {
+    pub fn winner_user_id(&self) -> Option<BenutzerId> {
         self.state.winner_user_id
+    }
+
+    pub fn completion_reason(&self) -> CompletionReason {
+        self.state.completion_reason
     }
 }
 
@@ -993,6 +1374,35 @@ impl Game {
             Self::Drafting(g) => g.draft_deadline_at(),
             Self::Active(g) => g.draft_deadline_at(),
             Self::Completed(g) => g.draft_deadline_at(),
+        }
+    }
+
+    pub fn ends_at(&self) -> Option<DateTime<Utc>> {
+        match self {
+            Self::Lobby(g) => g.ends_at(),
+            Self::Drafting(g) => g.ends_at(),
+            Self::Active(g) => g.ends_at(),
+            Self::Completed(g) => g.ends_at(),
+        }
+    }
+
+    pub fn completion_reason(&self) -> Option<CompletionReason> {
+        match self {
+            Self::Completed(g) => Some(g.completion_reason()),
+            _ => None,
+        }
+    }
+
+    pub fn transfer_host(
+        &mut self,
+        actor: BenutzerId,
+        new_host: BenutzerId,
+    ) -> ResultReport<(), GameError> {
+        match self {
+            Self::Lobby(g) => g.transfer_host(actor, new_host),
+            Self::Drafting(g) => g.transfer_host(actor, new_host),
+            Self::Active(g) => g.transfer_host(actor, new_host),
+            Self::Completed(_) => Err(Report::new(GameError::InvalidStateTransition)),
         }
     }
 
@@ -1442,6 +1852,7 @@ mod tests {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
                 draft_deadline_at: None,
+                ends_at: None,
                 created_at: now,
             },
         );
@@ -1458,6 +1869,7 @@ mod tests {
                 NonEmptyString::neu("Updated").unwrap(),
                 GridSize::Three,
                 VisibilityMode::LiveFeed,
+                None,
                 None,
                 now,
             )
@@ -1531,7 +1943,11 @@ mod tests {
                 .unwrap();
         }
         let completed = game.complete(&winner_board, now).unwrap();
-        assert_eq!(completed.winner_user_id(), winner_board.owner_user_id());
+        assert_eq!(
+            completed.winner_user_id(),
+            Some(winner_board.owner_user_id())
+        );
+        assert_eq!(completed.completion_reason(), CompletionReason::Bingo);
     }
 
     #[test_log::test]
@@ -1581,6 +1997,7 @@ mod tests {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
                 draft_deadline_at: Some(now + chrono::Duration::minutes(30)),
+                ends_at: None,
                 created_at: now,
             },
         );
@@ -1650,5 +2067,136 @@ mod tests {
                 "board had duplicate prompt text"
             );
         }
+    }
+
+    #[test_log::test]
+    fn deadline_completion_picks_most_filled_tiebreaks_early_and_zero_captures_is_draw() {
+        let mut rng = StdRng::seed_from_u64(31);
+        let players = test_players(3);
+        let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let mut lobby = LobbyGame::new(
+            GameId(Uuid::new_v4()),
+            NewGame {
+                invite_code: InviteCode::new("END123").unwrap(),
+                host_user_id: players[0],
+                host_watching: true,
+                title: NonEmptyString::neu("Deadline Game").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: Some(now + chrono::Duration::hours(2)),
+                created_at: now,
+            },
+        );
+        lobby.join_player(players[1], now, true);
+        lobby.join_player(players[2], now, true);
+
+        let drafting = lobby.start_drafting().unwrap();
+        let decks = crate::domain::builtin_starter_decks();
+        let (active, new_boards) = drafting
+            .finalize_with_autofill(&decks, now, &mut rng)
+            .unwrap();
+        let mut boards: Vec<Board> = new_boards
+            .into_iter()
+            .map(|nb| Board::new(BoardId(Uuid::new_v4()), nb).unwrap())
+            .collect();
+
+        // 0 captures at deadline -> draw (winner_user_id = None)
+        let draw =
+            active
+                .clone()
+                .complete_by_deadline(&boards, &[], now + chrono::Duration::hours(2));
+        assert_eq!(draw.winner_user_id(), None);
+        assert_eq!(draw.completion_reason(), CompletionReason::Deadline);
+
+        // Player 1 fills 1 tile at T+10m; Player 2 fills 1 tile at T+5m -> tie breaks to Player 2
+        let cap1_id = CaptureId(Uuid::new_v4());
+        let cap2_id = CaptureId(Uuid::new_v4());
+        let t1 = boards[1].tiles()[0].id();
+        let t2 = boards[2].tiles()[0].id();
+        boards[1].record_capture(t1, cap1_id).unwrap();
+        boards[2].record_capture(t2, cap2_id).unwrap();
+        let make_cap = |id: CaptureId, board: &Board, ts: DateTime<Utc>| -> Capture {
+            let t = board.tiles()[0].clone();
+            Capture::from_parts(
+                id,
+                board.game_id(),
+                t.id(),
+                board.owner_user_id(),
+                t.target_user_id(),
+                t.prompt_text().as_str().to_owned(),
+                format!("{}.webp", id.0),
+                format!("t_{}.webp", id.0),
+                ts,
+            )
+            .unwrap()
+        };
+        let caps = vec![
+            make_cap(cap1_id, &boards[1], now + chrono::Duration::minutes(10)),
+            make_cap(cap2_id, &boards[2], now + chrono::Duration::minutes(5)),
+        ];
+        let win_tie = active.complete_by_deadline(&boards, &caps, now + chrono::Duration::hours(2));
+        assert_eq!(win_tie.winner_user_id(), Some(boards[2].owner_user_id()));
+    }
+
+    #[test_log::test]
+    fn roster_leave_kick_revert_and_late_join_enforced() {
+        let mut rng = StdRng::seed_from_u64(77);
+        let players = test_players(4);
+        let now = DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+        let mut lobby = LobbyGame::new(
+            GameId(Uuid::new_v4()),
+            NewGame {
+                invite_code: InviteCode::new("ROS123").unwrap(),
+                host_user_id: players[0],
+                host_watching: true,
+                title: NonEmptyString::neu("Roster").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: None,
+                created_at: now,
+            },
+        );
+        lobby.join_player(players[1], now + chrono::Duration::seconds(1), true);
+        lobby.join_player(players[2], now + chrono::Duration::seconds(2), true);
+
+        // Host leaving Lobby transfers host to earliest guest (players[1])
+        lobby.leave_player(players[0]).unwrap();
+        assert_eq!(lobby.host_user_id(), players[1]);
+        assert!(!lobby.has_player(players[0]));
+
+        // Add back player 0 so we reach MIN_PLAYERS=3 and enter Drafting, then kick player 2 -> reverts to Lobby!
+        lobby.join_player(players[0], now + chrono::Duration::seconds(3), true);
+        let drafting = lobby.start_drafting().unwrap();
+        let after_kick = drafting
+            .kick_player(players[2], now + chrono::Duration::seconds(4))
+            .unwrap();
+        assert!(matches!(after_kick, Game::Lobby(_)));
+
+        let Game::Lobby(mut back_in_lobby) = after_kick else {
+            unreachable!();
+        };
+        back_in_lobby.join_player(players[2], now + chrono::Duration::seconds(5), true);
+        let decks = crate::domain::builtin_starter_decks();
+        let (mut active, _) = back_in_lobby
+            .start_drafting()
+            .unwrap()
+            .finalize_with_autofill(&decks, now + chrono::Duration::seconds(6), &mut rng)
+            .unwrap();
+
+        // Late player joins Active -> receives full 9-tile board targeting existing players
+        let late_board = active
+            .join_late_player(
+                players[3],
+                now + chrono::Duration::seconds(10),
+                true,
+                &decks,
+                &mut rng,
+            )
+            .unwrap()
+            .expect("late board created");
+        assert_eq!(late_board.assignments().len(), 9);
+        assert!(active.has_player(players[3]));
     }
 }

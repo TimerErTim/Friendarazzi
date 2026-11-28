@@ -13,10 +13,11 @@ use friendarazzi_core::{
     },
     ports::{EventQueue, EventQueueError, RepositoryError},
     service::{
-        CaptureUseCaseError, CreateGame, DraftPromptInput, GameUseCaseError,
-        HostFillRemainingDrafts, JoinGame, LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts,
-        SetDraftDeadline, StartDrafting, StartReadyGames, SubmitCapture, UnlockDraftPrompts,
-        UpdateGameSettings, UpdateProfile, UploadAvatar,
+        AbandonGame, CaptureUseCaseError, CreateGame, DraftPromptInput, FinishExpiredGames,
+        GameUseCaseError, HostFillRemainingDrafts, JoinGame, KickPlayer, LeaveGame,
+        LockDraftPrompts, ProfileUseCaseError, SaveDraftPrompts, SetDraftDeadline, StartDrafting,
+        StartReadyGames, SubmitCapture, TransferHost, UnlockDraftPrompts, UpdateGameSettings,
+        UpdateProfile, UploadAvatar,
     },
 };
 use friendarazzi_fakes::png_bytes_for_test;
@@ -42,6 +43,7 @@ async fn anonymous_users_cannot_run_game_capture_or_profile_use_cases() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -76,6 +78,7 @@ async fn anonymous_users_cannot_run_game_capture_or_profile_use_cases() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -197,6 +200,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -271,6 +275,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 grid_size: GridSize::Four,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -306,6 +311,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 grid_size: GridSize::Four,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -333,6 +339,7 @@ async fn lobby_settings_authorization_and_join_rules() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::Undercover,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -393,6 +400,7 @@ async fn drafting_validation_quotas_replacement_and_unlock_behavior() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::BlurredTeaser,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -788,6 +796,7 @@ async fn start_ready_games_ignores_superseded_countdown_until_current_expires() 
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -931,6 +940,7 @@ async fn start_ready_games_starts_expired_drafts_and_reports_next_deadline() {
                         grid_size: GridSize::Three,
                         visibility_mode: VisibilityMode::LiveFeed,
                         draft_deadline_at: None,
+                        ends_at: None,
                     },
                 )
                 .await
@@ -1055,6 +1065,7 @@ async fn draft_deadline_and_host_fill_remaining_workflows() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: Some(past),
+                ends_at: None,
             },
         )
         .await
@@ -1074,6 +1085,7 @@ async fn draft_deadline_and_host_fill_remaining_workflows() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: None,
+                ends_at: None,
             },
         )
         .await
@@ -1235,6 +1247,7 @@ async fn draft_deadline_and_host_fill_remaining_workflows() {
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
                 draft_deadline_at: Some(deadline_b),
+                ends_at: None,
             },
         )
         .await
@@ -1280,4 +1293,393 @@ async fn draft_deadline_and_host_fill_remaining_workflows() {
     assert_eq!(after.next_draft_closes_at, None);
     let bob_tiles = load_tiles(&harness, bob, game_b.id()).await;
     assert_eq!(bob_tiles.len(), 9);
+}
+
+#[test_log::test(pollster::test)]
+async fn ends_at_deadline_picks_most_filled_tiebreaks_and_draws_on_zero_captures() {
+    let harness = build(super::super::base_app_builder().await);
+    let alice = register_user(&harness, "dl-alice@example.at").await;
+    let bob = register_user(&harness, "dl-bob@example.at").await;
+    let carol = register_user(&harness, "dl-carol@example.at").await;
+    let alice_id = user_id_of(alice);
+    let bob_id = user_id_of(bob);
+    let carol_id = user_id_of(carol);
+    let ends_at = harness.jetzt() + Duration::hours(1);
+
+    // Game 1: tie-breaker on most filled (1 tile each, Carol captured earlier -> Carol wins + gets Gold Medal).
+    let g1 = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Deadline Tiebreak").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: Some(ends_at),
+            },
+        )
+        .await
+        .unwrap();
+    for guest in [bob, carol] {
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: g1.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    harness
+        .app()
+        .execute(alice, StartDrafting { game_id: g1.id() })
+        .await
+        .unwrap();
+    harness
+        .app()
+        .execute(
+            alice,
+            HostFillRemainingDrafts {
+                game_id: g1.id(),
+                start_immediately: true,
+            },
+        )
+        .await
+        .unwrap();
+
+    let png = png_bytes_for_test(16, 16);
+    let carol_tile = load_tiles(&harness, carol, g1.id()).await[0].id();
+    let bob_tile = load_tiles(&harness, bob, g1.id()).await[0].id();
+    harness
+        .app()
+        .execute(
+            carol,
+            SubmitCapture {
+                game_id: g1.id(),
+                tile_id: carol_tile,
+                image_bytes: png.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    harness.vorspulen(Duration::minutes(2));
+    harness
+        .app()
+        .execute(
+            bob,
+            SubmitCapture {
+                game_id: g1.id(),
+                tile_id: bob_tile,
+                image_bytes: png,
+            },
+        )
+        .await
+        .unwrap();
+
+    // Game 2: 0 captures by deadline -> Completed with CompletionReason::Deadline & winner_user_id == None (draw).
+    let ends_at_g2 = harness.jetzt() + Duration::minutes(30);
+    let g2 = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Deadline Draw").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: Some(ends_at_g2),
+            },
+        )
+        .await
+        .unwrap();
+    for guest in [bob, carol] {
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: g2.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    harness
+        .app()
+        .execute(alice, StartDrafting { game_id: g2.id() })
+        .await
+        .unwrap();
+    harness
+        .app()
+        .execute(
+            alice,
+            HostFillRemainingDrafts {
+                game_id: g2.id(),
+                start_immediately: true,
+            },
+        )
+        .await
+        .unwrap();
+
+    harness.vorspulen(Duration::hours(2));
+    let outcome = harness
+        .app()
+        .execute(AuthContext::Anonymous, FinishExpiredGames)
+        .await
+        .unwrap();
+    assert_eq!(outcome.finished_games.len(), 2);
+
+    let (loaded_g1, loaded_g2, alice_u, bob_u, carol_u) = harness
+        .app()
+        .execute_fn(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let g1 = uow.games().find_by_id(g1.id()).await.unwrap().into_data();
+            let g2 = uow.games().find_by_id(g2.id()).await.unwrap().into_data();
+            let au = uow
+                .benutzer()
+                .find_by_id(alice_id)
+                .await
+                .unwrap()
+                .into_data();
+            let bu = uow.benutzer().find_by_id(bob_id).await.unwrap().into_data();
+            let cu = uow
+                .benutzer()
+                .find_by_id(carol_id)
+                .await
+                .unwrap()
+                .into_data();
+            uow.finish(
+                Ok::<_, error_stack::Report<RepositoryError>>((g1, g2, au, bu, cu)),
+                RepositoryError::Unknown,
+            )
+            .await
+        })
+        .await
+        .unwrap();
+
+    let Game::Completed(c1) = loaded_g1 else {
+        panic!("expected g1 completed");
+    };
+    assert_eq!(c1.winner_user_id(), Some(carol_id));
+    assert_eq!(
+        c1.completion_reason(),
+        friendarazzi_core::domain::CompletionReason::Deadline
+    );
+    assert_eq!(carol_u.gold_medal_count(), 1);
+    assert_eq!(bob_u.gold_medal_count(), 0);
+    assert_eq!(alice_u.gold_medal_count(), 0);
+
+    let Game::Completed(c2) = loaded_g2 else {
+        panic!("expected g2 completed");
+    };
+    assert_eq!(c2.winner_user_id(), None);
+    assert_eq!(
+        c2.completion_reason(),
+        friendarazzi_core::domain::CompletionReason::Deadline
+    );
+}
+
+#[test_log::test(pollster::test)]
+async fn roster_leave_kick_revert_transfer_abandon_and_late_join() {
+    let harness = build(super::super::base_app_builder().await);
+    let alice = register_user(&harness, "rl-alice@example.at").await;
+    let bob = register_user(&harness, "rl-bob@example.at").await;
+    let carol = register_user(&harness, "rl-carol@example.at").await;
+    let dave = register_user(&harness, "rl-dave@example.at").await;
+    let eve = register_user(&harness, "rl-eve@example.at").await;
+
+    let alice_id = user_id_of(alice);
+    let bob_id = user_id_of(bob);
+    let carol_id = user_id_of(carol);
+    let dave_id = user_id_of(dave);
+    let eve_id = user_id_of(eve);
+
+    let game = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Roster Lifecycle").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: None,
+            },
+        )
+        .await
+        .unwrap();
+    let gid = game.id();
+    for guest in [bob, carol] {
+        harness.vorspulen(Duration::seconds(1));
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: game.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    // Enter Drafting with 3 players, add Dave? No, Dave can't join in Drafting yet, so first host leaves:
+    let after_draft = harness
+        .app()
+        .execute(alice, StartDrafting { game_id: gid })
+        .await
+        .unwrap();
+    assert!(matches!(after_draft, Game::Drafting(_)));
+
+    // Alice saves a prompt before leaving so we verify her drafts are cleaned up too.
+    let prompts = balanced_prompts_for(
+        &[alice_id, bob_id, carol_id],
+        alice_id,
+        after_draft.playable_tile_count(),
+        PromptSource::Custom,
+        "ByeAlice",
+    );
+    harness
+        .app()
+        .execute(
+            alice,
+            SaveDraftPrompts {
+                game_id: gid,
+                prompts,
+            },
+        )
+        .await
+        .unwrap();
+
+    // Host Alice leaves during Drafting -> auto-transfers host to Bob (earliest) AND reverts to Lobby (<3 players)!
+    let after_leave = harness
+        .app()
+        .execute(alice, LeaveGame { game_id: gid })
+        .await
+        .unwrap();
+    assert!(matches!(after_leave, Game::Lobby(_)));
+    assert_eq!(after_leave.host_user_id(), bob_id);
+    assert!(!after_leave.has_player(alice_id));
+
+    // Dave joins and Eve joins -> 4 players in Lobby, Bob starts Drafting again.
+    for guest in [dave, eve] {
+        harness.vorspulen(Duration::seconds(1));
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: game.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    harness
+        .app()
+        .execute(bob, StartDrafting { game_id: gid })
+        .await
+        .unwrap();
+
+    // Non-host cannot kick or transfer host.
+    let err = harness
+        .app()
+        .execute(
+            carol,
+            KickPlayer {
+                game_id: gid,
+                target_user_id: dave_id,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err.current_context(), GameUseCaseError::Forbidden));
+
+    let err = harness
+        .app()
+        .execute(
+            carol,
+            TransferHost {
+                game_id: gid,
+                new_host_user_id: dave_id,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(err.current_context(), GameUseCaseError::Forbidden));
+
+    // Bob transfers host to Carol, Carol kicks Dave (remains Drafting since 3 left: Bob, Carol, Eve).
+    let transferred = harness
+        .app()
+        .execute(
+            bob,
+            TransferHost {
+                game_id: gid,
+                new_host_user_id: carol_id,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(transferred.host_user_id(), carol_id);
+
+    let after_kick = harness
+        .app()
+        .execute(
+            carol,
+            KickPlayer {
+                game_id: gid,
+                target_user_id: dave_id,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(after_kick, Game::Drafting(_)));
+    assert!(!after_kick.has_player(dave_id));
+
+    // Start active play cleanly with Bob, Carol, Eve.
+    let active = harness
+        .app()
+        .execute(
+            carol,
+            HostFillRemainingDrafts {
+                game_id: gid,
+                start_immediately: true,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(active, Game::Active(_)));
+
+    // Late join: Dave joins while game is Active and gets a 9-tile starter-deck board!
+    let late_joined = harness
+        .app()
+        .execute(
+            dave,
+            JoinGame {
+                invite_code: game.invite_code().clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(late_joined.has_player(dave_id));
+    assert_eq!(load_tiles(&harness, dave, gid).await.len(), 9);
+    let _ = eve_id;
+
+    // Host Carol abandons the game -> Completed with CompletionReason::Abandoned, winner == None, 0 medals.
+    let abandoned = harness
+        .app()
+        .execute(carol, AbandonGame { game_id: gid })
+        .await
+        .unwrap();
+    let Game::Completed(comp) = abandoned else {
+        panic!("expected completed after abandon");
+    };
+    assert_eq!(comp.winner_user_id(), None);
+    assert_eq!(
+        comp.completion_reason(),
+        friendarazzi_core::domain::CompletionReason::Abandoned
+    );
 }

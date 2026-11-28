@@ -5,5 +5,5 @@ mod runtime;
 pub use ::scheduler::{
     InMemoryStateStore, SchedulerError, SchedulerHandle, SchedulerReport, StateStore,
 };
-pub use jobs::{START_READY_GAMES_JOB_ID, run_start_ready_games};
+pub use jobs::{START_READY_GAMES_JOB_ID, run_finish_expired_games, run_start_ready_games};
 pub use runtime::{FriendarazziScheduler, FriendarazziSchedulerConfig, SchedulerFuture};

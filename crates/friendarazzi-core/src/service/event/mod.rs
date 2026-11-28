@@ -15,6 +15,7 @@ pub struct EventHandlingError;
 pub enum Event {
     GameStarted(Box<GameStarted>),
     CaptureUploaded(Box<CaptureUploaded>),
+    NearBingoReached(Box<NearBingoReached>),
     GameFinished(Box<GameFinished>),
 }
 
@@ -27,6 +28,12 @@ impl From<GameStarted> for Event {
 impl From<CaptureUploaded> for Event {
     fn from(event: CaptureUploaded) -> Self {
         Self::CaptureUploaded(Box::new(event))
+    }
+}
+
+impl From<NearBingoReached> for Event {
+    fn from(event: NearBingoReached) -> Self {
+        Self::NearBingoReached(Box::new(event))
     }
 }
 
@@ -44,6 +51,10 @@ pub async fn handle_event(app: &App, event: Event) -> ResultReport<(), EventHand
             .await
             .change_context(EventHandlingError),
         Event::CaptureUploaded(event) => app
+            .execute(AuthContext::Anonymous, *event)
+            .await
+            .change_context(EventHandlingError),
+        Event::NearBingoReached(event) => app
             .execute(AuthContext::Anonymous, *event)
             .await
             .change_context(EventHandlingError),

@@ -934,6 +934,243 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/games/{game_id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave a game while in Lobby or Drafting.
+         * @description Auto-transfers host ownership to the earliest remaining player if the host departs.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["Ok"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/players/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Host-only removal of a player during Lobby or Drafting.
+         * @description Clears any drafts targeting or authored by the removed player and reverts to Lobby if fewer than 3 remain.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                    user_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/transfer-host": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Host-only transfer of host role to another player in the game.
+         * @description Available during Lobby, Drafting, or Active play.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["TransferHostRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/abandon": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Host-only termination of a game without awarding a Gold Medal.
+         * @description Transitions Lobby, Drafting, or Active play to Completed with reason Abandoned.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/games/{game_id}/tiles/{tile_id}/capture": {
         parameters: {
             query?: never;
@@ -2441,6 +2678,11 @@ export interface components {
             winningLine?: components["schemas"]["GridCoordinate"][] | null;
         };
         /**
+         * @description How a completed game ended.
+         * @enum {string}
+         */
+        CompletionReason: CompletionReason;
+        /**
          * CreateGameRequest
          * @description Create a new Friendarazzi game lobby.
          */
@@ -2459,6 +2701,11 @@ export interface components {
              * @description Optional drafting auto-close deadline.
              */
             draftDeadlineAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Optional game completion deadline.
+             */
+            endsAt?: string | null;
         };
         /**
          * DraftPromptRequestItem
@@ -2560,6 +2807,13 @@ export interface components {
              * @description Optional host-configured drafting deadline after which missing prompts auto-fill.
              */
             draftDeadlineAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Optional deadline at which active play concludes automatically by tile count.
+             */
+            endsAt?: string | null;
+            /** @description Reason the game ended, once completed. */
+            completionReason?: components["schemas"]["CompletionReason"] | (never | null);
             /**
              * Format: date-time
              * @description Server clock timestamp when this detail was generated.
@@ -2666,6 +2920,13 @@ export interface components {
              * @description Optional host-configured drafting deadline after which missing prompts auto-fill.
              */
             draftDeadlineAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Optional deadline at which active play concludes automatically by tile count.
+             */
+            endsAt?: string | null;
+            /** @description Reason the game ended, once completed. */
+            completionReason?: components["schemas"]["CompletionReason"] | (never | null);
             /**
              * Format: date-time
              * @description Server clock timestamp when this summary was generated.
@@ -3102,6 +3363,17 @@ export interface components {
             captureId?: string | null;
         };
         /**
+         * TransferHostRequest
+         * @description Host request to transfer host ownership to another participant.
+         */
+        TransferHostRequest: {
+            /**
+             * Format: uuid
+             * @description User ID of an existing player in the game to promote to host.
+             */
+            newHostUserId: string;
+        };
+        /**
          * UnsubscribeNotificationRequest
          * @description Token-based one-click email unsubscribe payload.
          */
@@ -3138,6 +3410,11 @@ export interface components {
              * @description Optional drafting auto-close deadline.
              */
             draftDeadlineAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Optional game completion deadline.
+             */
+            endsAt?: string | null;
         };
         /**
          * UpdateNotificationPreferencesRequest
@@ -3229,6 +3506,11 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
+export enum CompletionReason {
+    Bingo = "Bingo",
+    Deadline = "Deadline",
+    Abandoned = "Abandoned"
+}
 export enum GameStatus {
     Lobby = "Lobby",
     Drafting = "Drafting",
@@ -3247,7 +3529,9 @@ export enum MailHealth_UnknownStatus {
 export enum NotificationKind {
     GameStarted = "GameStarted",
     CapturePosted = "CapturePosted",
-    GameCompleted = "GameCompleted"
+    GameCompleted = "GameCompleted",
+    NearBingo = "NearBingo",
+    DraftReminder = "DraftReminder"
 }
 export enum PromptSource {
     Custom = "Custom",

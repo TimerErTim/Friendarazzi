@@ -1,13 +1,20 @@
 //! Shared capture submission, bingo evaluation, and award computation conformance tests.
 
+use std::sync::{Arc, Mutex};
+
 use chrono::Duration;
 use friendarazzi_core::{
+    ResultReport,
+    application::AuthContext,
     domain::{
-        BoardCoordinates, CaptureId, Game, GridSize, NonEmptyString, VisibilityMode,
-        compute_game_awards,
+        BenachrichtigungArt, BoardCoordinates, CaptureId, Game, GridSize, NonEmptyString,
+        VisibilityMode, compute_game_awards,
     },
-    ports::{RepositoryError, collect_object},
-    service::{CaptureUseCaseError, RetractCapture, SubmitCapture, UpdateProfile},
+    ports::{EventQueue, EventQueueError, RepositoryError, collect_object},
+    service::{
+        CaptureUseCaseError, CreateGame, Event, HostFillRemainingDrafts, JoinGame, RetractCapture,
+        StartDrafting, SubmitCapture, UpdateProfile, handle_event,
+    },
 };
 use friendarazzi_fakes::png_bytes_for_test;
 use uuid::Uuid;
@@ -544,7 +551,7 @@ async fn superlatives_computed_from_persisted_captures() {
     let Game::Completed(completed) = loaded_game else {
         panic!("expected completed game");
     };
-    assert_eq!(completed.winner_user_id(), user_id_of(bob));
+    assert_eq!(completed.winner_user_id(), Some(user_id_of(bob)));
     assert_eq!(captures.len(), 5);
 
     let awards = compute_game_awards(&player_ids, &captures, completed.started_at()).unwrap();
@@ -691,6 +698,155 @@ async fn retract_capture_clears_tile_deletes_media_and_guards_completed_or_forei
             RetractCapture {
                 game_id: game.id(),
                 capture_id: kept_capture_id.unwrap(),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err.current_context(),
+        CaptureUseCaseError::Conflict
+    ));
+}
+
+#[test_log::test(pollster::test)]
+async fn submit_capture_emits_near_bingo_notification_and_rejects_after_ends_at() {
+    #[derive(Default)]
+    struct RecordingQueue(Mutex<Vec<Event>>);
+    #[async_trait::async_trait]
+    impl EventQueue for RecordingQueue {
+        async fn enqueue(&self, events: Vec<Event>) -> ResultReport<(), EventQueueError> {
+            self.0.lock().unwrap().extend(events);
+            Ok(())
+        }
+    }
+
+    let queue = Arc::new(RecordingQueue::default());
+    let harness = super::helpers::build_with_event_queue(
+        super::super::base_app_builder().await,
+        (Arc::clone(&queue) as Arc<dyn EventQueue>).into(),
+    );
+    let alice = register_user(&harness, "nb-alice@example.at").await;
+    let bob = register_user(&harness, "nb-bob@example.at").await;
+    let carol = register_user(&harness, "nb-carol@example.at").await;
+
+    let ends_at = harness.jetzt() + Duration::minutes(30);
+    let game = harness
+        .app()
+        .execute(
+            alice,
+            CreateGame {
+                title: NonEmptyString::neu("Near Bingo & Cutoff").unwrap(),
+                grid_size: GridSize::Three,
+                visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
+                ends_at: Some(ends_at),
+            },
+        )
+        .await
+        .unwrap();
+    for guest in [bob, carol] {
+        harness
+            .app()
+            .execute(
+                guest,
+                JoinGame {
+                    invite_code: game.invite_code().clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+    harness
+        .app()
+        .execute(alice, StartDrafting { game_id: game.id() })
+        .await
+        .unwrap();
+    harness
+        .app()
+        .execute(
+            alice,
+            HostFillRemainingDrafts {
+                game_id: game.id(),
+                start_immediately: true,
+            },
+        )
+        .await
+        .unwrap();
+
+    let png = png_bytes_for_test(16, 16);
+    let alice_tiles = load_tiles(&harness, alice, game.id()).await;
+    // Filling (0,0) and (0,1) puts Alice 1 away from Bingo on row 0 -> NearBingoReached emitted!
+    for col in 0..2 {
+        let tid = alice_tiles
+            .iter()
+            .find(|t| t.row() == 0 && t.col() == col)
+            .unwrap()
+            .id();
+        harness
+            .app()
+            .execute(
+                alice,
+                SubmitCapture {
+                    game_id: game.id(),
+                    tile_id: tid,
+                    image_bytes: png.clone(),
+                },
+            )
+            .await
+            .unwrap();
+    }
+
+    let drained = std::mem::take(&mut *queue.0.lock().unwrap());
+    assert!(
+        drained
+            .iter()
+            .any(|ev| matches!(ev, Event::NearBingoReached(_))),
+        "expected NearBingoReached event"
+    );
+    for ev in drained {
+        handle_event(&harness.app(), ev).await.unwrap();
+    }
+
+    // Bob received a FastBingo in-app notification for Alice.
+    let bob_id = user_id_of(bob);
+    let notifs = harness
+        .app()
+        .execute_fn(AuthContext::Anonymous, async move |ctx| {
+            let uow = ctx.enter().await.unwrap();
+            let list = uow
+                .benachrichtigungen()
+                .find_by_empfänger(bob_id)
+                .await
+                .unwrap();
+            uow.finish(
+                Ok::<_, error_stack::Report<RepositoryError>>(list),
+                RepositoryError::Unknown,
+            )
+            .await
+        })
+        .await
+        .unwrap();
+    assert!(
+        notifs
+            .iter()
+            .any(|n| n.art() == BenachrichtigungArt::FastBingo)
+    );
+
+    // Advance past ends_at: capture upload must be rejected with Conflict even before scheduler completes the game.
+    harness.vorspulen(Duration::minutes(31));
+    let third_tid = alice_tiles
+        .iter()
+        .find(|t| t.row() == 0 && t.col() == 2)
+        .unwrap()
+        .id();
+    let err = harness
+        .app()
+        .execute(
+            alice,
+            SubmitCapture {
+                game_id: game.id(),
+                tile_id: third_tid,
+                image_bytes: png,
             },
         )
         .await

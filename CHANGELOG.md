@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Target-grouped board view (`Nach Ziel`) alongside the classic Bingo grid in both active games and the post-game recap (including an aggregated per-target match overview), plus target pinning (up to 3 focus friends), a `Nur offene` filter, instant prompt/target search, an in-game `?` rules & visibility guide, and a dismissible first-capture tip.
 - Persistent in-app notification inbox (`/benachrichtigungen`) with unread badge counter, mark-read / mark-all-read controls, and deep links directly to started/completed games (`/games?id=...`) or directly into the photo inspection lightbox for new captures (`/games?id=...&capture=...`).
 - Styled Neubrutalist HTML + plain-text emails with `List-Unsubscribe` headers and one-click logged-out unsubscribe (`/abbestellen`) for game starts (draft phase finished), new captures (mentioning catcher, target, and prompt without embedding images, respecting Undercover/BlurredTeaser visibility rules), and game wins (naming game and winner in the subject).
 - Per-game notification watch toggle (GitHub Watch style) in the game header plus account-wide notification preferences in `/optionen` for default game-watch state on join/create and per-event email opt-out.
@@ -20,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Account screens for registration, sign-in, and password recovery.
 
 ### Changed
+- Grid size pickers now frame `3×3` as the recommended default with session-length hints (`1–2 Std.`, `Abend`, `Wochenende`), game notification toggles are labelled consistently (`Benachrichtigungen` / `Stumm`), all remaining UI copy uses informal German (`Du`), and background polling pauses while browser tabs are hidden.
 - Prompt submissions and Quick-Start starter decks are now formulated target-agnostically (removing `{name}` prefixes and updating drafting placeholders), while associating prompts with their target player cleanly through the UI across drafting cards, capture feeds, and gallery cards.
 - The live capture feed now shows the newest captures first and includes the capture date alongside the time.
 - Streamlined the entire frontend around single-purpose surfaces and a strict screen budget: uncaptured Bingo tiles drop empty image placeholders so prompts stay readable, captured tiles display full-bleed subtly tilted instant photos with a compact caption strip, the match header collapses into one compact row plus a thin phase track, active play puts the board first with a crew popover and collapsible activity feed, prompt drafting opens directly with an inline deck/crew bar, and the hub, lobby, join, and profile views remove redundant badges and duplicate controls.

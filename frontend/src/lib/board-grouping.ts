@@ -1,0 +1,308 @@
+import type {
+  BoardTileView,
+  BoardView,
+  CaptureFeedItem,
+  PlayerBadge,
+} from "@/api/friendarazzi-api";
+
+export type BoardViewMode = "grid" | "list";
+
+export const MAX_PINNED_TARGETS = 3;
+
+const VIEW_MODE_KEY = "friendarazzi:board_view_mode";
+const PINNED_TARGETS_PREFIX = "friendarazzi:pinned_targets:";
+const COACH_DISMISSED_KEY = "friendarazzi:capture_coach_dismissed";
+
+export type TargetGroup = {
+  target: PlayerBadge;
+  tiles: BoardTileView[];
+  totalCount: number;
+  capturedCount: number;
+  openCount: number;
+  isPinned: boolean;
+};
+
+export type MatchTargetAggregate = {
+  target: PlayerBadge;
+  entries: Array<{
+    boardOwner: PlayerBadge;
+    tile: BoardTileView;
+    capture: CaptureFeedItem | null;
+  }>;
+  totalCount: number;
+  capturedCount: number;
+};
+
+export function tileToCaptureFeedItem(
+  tile: BoardTileView,
+  boardOwner: PlayerBadge,
+  feed: readonly CaptureFeedItem[],
+): CaptureFeedItem | null {
+  if (!tile.isCaptured) return null;
+  if (tile.captureId) {
+    const fromFeed = feed.find((item) => item.id === tile.captureId);
+    if (fromFeed) {
+      return {
+        ...fromFeed,
+        imageStorageKey:
+          fromFeed.imageStorageKey ?? tile.imageStorageKey ?? null,
+        promptText: fromFeed.promptText ?? tile.promptText,
+        target: fromFeed.target ?? tile.targetUser,
+      };
+    }
+  }
+  const key = tile.imageStorageKey ?? null;
+  if (!key) return null;
+  return {
+    id: tile.captureId ?? tile.id,
+    tileId: tile.id,
+    catcher: boardOwner,
+    target: tile.targetUser,
+    promptText: tile.promptText,
+    imageStorageKey: key,
+    thumbnailStorageKey: key,
+    isBlurred: false,
+    capturedAt: tile.capturedAt ?? new Date().toISOString(),
+  };
+}
+
+export function filterTileMatches(
+  tile: BoardTileView,
+  options: { hideCaptured?: boolean; query?: string },
+): boolean {
+  if (options.hideCaptured && tile.isCaptured) {
+    return false;
+  }
+  const normalizedQuery =
+    options.query?.trim().toLocaleLowerCase("de-DE") ?? "";
+  if (!normalizedQuery) {
+    return true;
+  }
+  const targetMatch = tile.targetUser.displayName
+    .toLocaleLowerCase("de-DE")
+    .includes(normalizedQuery);
+  const promptMatch = tile.promptText
+    .toLocaleLowerCase("de-DE")
+    .includes(normalizedQuery);
+  return targetMatch || promptMatch;
+}
+
+export function groupTilesByTarget(
+  tiles: readonly BoardTileView[],
+  options: {
+    pinnedTargetIds?: ReadonlySet<string>;
+    hideCaptured?: boolean;
+    query?: string;
+  } = {},
+): TargetGroup[] {
+  const byTarget = new Map<
+    string,
+    { target: PlayerBadge; allTiles: BoardTileView[]; visible: BoardTileView[] }
+  >();
+
+  for (const tile of tiles) {
+    let bucket = byTarget.get(tile.targetUser.id);
+    if (!bucket) {
+      bucket = {
+        target: tile.targetUser,
+        allTiles: [],
+        visible: [],
+      };
+      byTarget.set(tile.targetUser.id, bucket);
+    }
+    bucket.allTiles.push(tile);
+    if (filterTileMatches(tile, options)) {
+      bucket.visible.push(tile);
+    }
+  }
+
+  const pinnedSet = options.pinnedTargetIds;
+  const groups: TargetGroup[] = [];
+
+  for (const bucket of byTarget.values()) {
+    if (bucket.visible.length === 0) continue;
+
+    const sortedTiles = [...bucket.visible].sort((a, b) => {
+      if (a.isCaptured !== b.isCaptured) {
+        return a.isCaptured ? 1 : -1;
+      }
+      if (a.row !== b.row) return a.row - b.row;
+      return a.col - b.col;
+    });
+
+    const capturedCount = bucket.allTiles.filter((t) => t.isCaptured).length;
+    const totalCount = bucket.allTiles.length;
+    groups.push({
+      target: bucket.target,
+      tiles: sortedTiles,
+      totalCount,
+      capturedCount,
+      openCount: totalCount - capturedCount,
+      isPinned: pinnedSet?.has(bucket.target.id) ?? false,
+    });
+  }
+
+  groups.sort((a, b) => {
+    if (a.isPinned !== b.isPinned) {
+      return a.isPinned ? -1 : 1;
+    }
+    if (a.openCount !== b.openCount) {
+      return b.openCount - a.openCount;
+    }
+    return a.target.displayName.localeCompare(b.target.displayName, "de");
+  });
+
+  return groups;
+}
+
+export function aggregateMatchByTarget(
+  boards: readonly BoardView[],
+  feed: readonly CaptureFeedItem[],
+  query = "",
+): MatchTargetAggregate[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase("de-DE");
+  const byTarget = new Map<string, MatchTargetAggregate>();
+
+  for (const board of boards) {
+    for (const tile of board.tiles) {
+      if (normalizedQuery) {
+        const matches =
+          tile.targetUser.displayName
+            .toLocaleLowerCase("de-DE")
+            .includes(normalizedQuery) ||
+          tile.promptText
+            .toLocaleLowerCase("de-DE")
+            .includes(normalizedQuery) ||
+          board.owner.displayName
+            .toLocaleLowerCase("de-DE")
+            .includes(normalizedQuery);
+        if (!matches) continue;
+      }
+
+      let group = byTarget.get(tile.targetUser.id);
+      if (!group) {
+        group = {
+          target: tile.targetUser,
+          entries: [],
+          totalCount: 0,
+          capturedCount: 0,
+        };
+        byTarget.set(tile.targetUser.id, group);
+      }
+
+      const capture = tileToCaptureFeedItem(tile, board.owner, feed);
+      group.entries.push({
+        boardOwner: board.owner,
+        tile,
+        capture,
+      });
+      group.totalCount += 1;
+      if (tile.isCaptured) {
+        group.capturedCount += 1;
+      }
+    }
+  }
+
+  const result = Array.from(byTarget.values());
+  for (const group of result) {
+    group.entries.sort((a, b) => {
+      if (a.tile.isCaptured !== b.tile.isCaptured) {
+        return a.tile.isCaptured ? -1 : 1;
+      }
+      return a.boardOwner.displayName.localeCompare(
+        b.boardOwner.displayName,
+        "de",
+      );
+    });
+  }
+
+  result.sort((a, b) => {
+    if (a.capturedCount !== b.capturedCount) {
+      return b.capturedCount - a.capturedCount;
+    }
+    return a.target.displayName.localeCompare(b.target.displayName, "de");
+  });
+
+  return result;
+}
+
+export function togglePinnedTarget(
+  current: readonly string[],
+  targetId: string,
+  max = MAX_PINNED_TARGETS,
+): string[] {
+  if (current.includes(targetId)) {
+    return current.filter((id) => id !== targetId);
+  }
+  const next = [...current, targetId];
+  return next.length > max ? next.slice(next.length - max) : next;
+}
+
+export function loadBoardViewMode(): BoardViewMode {
+  if (typeof window === "undefined") return "grid";
+  try {
+    const raw = window.localStorage.getItem(VIEW_MODE_KEY);
+    return raw === "list" ? "list" : "grid";
+  } catch {
+    return "grid";
+  }
+}
+
+export function saveBoardViewMode(mode: BoardViewMode): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadPinnedTargets(gameId: string): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(
+      `${PINNED_TARGETS_PREFIX}${gameId}`,
+    );
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is string => typeof item === "string")
+      .slice(0, MAX_PINNED_TARGETS);
+  } catch {
+    return [];
+  }
+}
+
+export function savePinnedTargets(
+  gameId: string,
+  ids: readonly string[],
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      `${PINNED_TARGETS_PREFIX}${gameId}`,
+      JSON.stringify(ids.slice(0, MAX_PINNED_TARGETS)),
+    );
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function hasDismissedCaptureCoachMark(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(COACH_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function dismissCaptureCoachMark(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(COACH_DISMISSED_KEY, "1");
+  } catch {
+    // Ignore storage errors
+  }
+}

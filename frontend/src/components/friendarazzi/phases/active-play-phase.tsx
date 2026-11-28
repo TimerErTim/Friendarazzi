@@ -1,7 +1,18 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Upload, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  EyeOff,
+  LayoutGrid,
+  List,
+  Pin,
+  PinOff,
+  Upload,
+  Users,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { apiErrorMessage } from "@/api/errors";
 import {
@@ -19,6 +30,7 @@ import {
   PlayerAvatar,
   PlayerBadgeLink,
 } from "@/components/friendarazzi/player-avatar";
+import { TargetGroupedBoard } from "@/components/friendarazzi/target-grouped-board";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { CalloutNote, CodeTag } from "@/components/ui/brutal-elements";
@@ -38,7 +50,20 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import { SearchInput } from "@/components/ui/search-input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  type BoardViewMode,
+  dismissCaptureCoachMark,
+  filterTileMatches,
+  hasDismissedCaptureCoachMark,
+  loadBoardViewMode,
+  loadPinnedTargets,
+  saveBoardViewMode,
+  savePinnedTargets,
+  togglePinnedTarget,
+} from "@/lib/board-grouping";
 import { newestCapturesFirst } from "@/lib/capture-feed";
 import { cn } from "@/lib/cn";
 import { normalizeImageForUpload } from "@/lib/media-capture";
@@ -63,7 +88,22 @@ export function ActivePlayPhase({
     useState<CaptureFeedItem | null>(null);
   const [mobileFeedOpen, setMobileFeedOpen] = useState(false);
   const [showAllFeed, setShowAllFeed] = useState(false);
+  const [viewMode, setViewMode] = useState<BoardViewMode>(() =>
+    loadBoardViewMode(),
+  );
+  const [hideCaptured, setHideCaptured] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [pinnedIds, setPinnedIds] = useState<string[]>(() =>
+    loadPinnedTargets(game.id),
+  );
+  const [coachDismissed, setCoachDismissed] = useState(() =>
+    hasDismissedCaptureCoachMark(),
+  );
   const openedCaptureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setPinnedIds(loadPinnedTargets(game.id));
+  }, [game.id]);
 
   useEffect(() => {
     if (!initialCaptureId || openedCaptureRef.current === initialCaptureId) {
@@ -87,6 +127,66 @@ export function ActivePlayPhase({
   }, [selectedFile]);
 
   const board = game.myBoard;
+  const pinnedTargetSet = useMemo(() => new Set(pinnedIds), [pinnedIds]);
+  const hasActiveFilter = hideCaptured || searchQuery.trim().length > 0;
+
+  const matchingTileIds = useMemo(() => {
+    if (!board || !hasActiveFilter) return undefined;
+    return new Set(
+      board.tiles
+        .filter((tile) =>
+          filterTileMatches(tile, { hideCaptured, query: searchQuery }),
+        )
+        .map((tile) => tile.id),
+    );
+  }, [board, hasActiveFilter, hideCaptured, searchQuery]);
+
+  const pinnedSummaries = useMemo(() => {
+    if (!board) return [];
+    return pinnedIds
+      .map((targetId) => {
+        const tilesForTarget = board.tiles.filter(
+          (t) => t.targetUser.id === targetId,
+        );
+        const first = tilesForTarget[0];
+        if (!first) return null;
+        const openCount = tilesForTarget.filter((t) => !t.isCaptured).length;
+        return {
+          target: first.targetUser,
+          openCount,
+          totalCount: tilesForTarget.length,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+  }, [board, pinnedIds]);
+
+  const boardTargets = useMemo(() => {
+    if (!board) return [];
+    const seen = new Map<string, (typeof board.tiles)[number]["targetUser"]>();
+    for (const tile of board.tiles) {
+      if (!seen.has(tile.targetUser.id)) {
+        seen.set(tile.targetUser.id, tile.targetUser);
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      a.displayName.localeCompare(b.displayName, "de"),
+    );
+  }, [board]);
+
+  function handleViewModeChange(next: string) {
+    if (next !== "grid" && next !== "list") return;
+    setViewMode(next);
+    saveBoardViewMode(next);
+  }
+
+  function handleTogglePin(targetId: string) {
+    setPinnedIds((prev) => {
+      const next = togglePinnedTarget(prev, targetId);
+      savePinnedTargets(game.id, next);
+      return next;
+    });
+  }
+
   if (!board) {
     return (
       <div aria-busy="true" className="space-y-3">
@@ -158,27 +258,191 @@ export function ActivePlayPhase({
                 Mitspieler ({game.players.length})
               </p>
               <ul className="divide-y divide-subtle">
-                {game.players.map((p) => (
-                  <li key={p.id} className="py-1.5 first:pt-0 last:pb-0">
-                    <PlayerBadgeLink user={p} compact />
-                  </li>
-                ))}
+                {game.players.map((p) => {
+                  const isBoardTarget = boardTargets.some(
+                    (target) => target.id === p.id,
+                  );
+                  const isPinned = pinnedTargetSet.has(p.id);
+                  return (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <PlayerBadgeLink user={p} compact />
+                      </div>
+                      {isBoardTarget ? (
+                        <Button
+                          type="button"
+                          variant={isPinned ? "primary" : "ghost"}
+                          size="icon"
+                          aria-pressed={isPinned}
+                          aria-label={
+                            isPinned
+                              ? `${p.displayName} aus Fokus entfernen`
+                              : `${p.displayName} anheften`
+                          }
+                          title={
+                            isPinned
+                              ? "Aus Fokus entfernen"
+                              : "Im Fokus anheften"
+                          }
+                          onClick={() => handleTogglePin(p.id)}
+                        >
+                          {isPinned ? (
+                            <PinOff className="size-4" aria-hidden="true" />
+                          ) : (
+                            <Pin className="size-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             </PopoverContent>
           </Popover>
         </div>
 
-        <BingoBoard
-          board={board}
-          gridSize={game.gridSize}
-          feed={game.feed}
-          onEmptyTileSelect={(tile) => {
-            mutations.submitCapture.reset();
-            setSelectedFile(null);
-            setSelectedTile(tile);
-          }}
-          onViewCapture={(cap) => setLightboxCapture(cap)}
-        />
+        {/* Hunt Toolbar: Grid/List toggle, Hide Captured, Search */}
+        <div className="flex flex-wrap items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={viewMode}
+            onValueChange={handleViewModeChange}
+            aria-label="Brett-Ansicht wählen"
+          >
+            <ToggleGroupItem value="grid" aria-label="Raster-Ansicht">
+              <LayoutGrid className="size-4" aria-hidden="true" />
+              <span>Raster</span>
+            </ToggleGroupItem>
+            <ToggleGroupItem value="list" aria-label="Liste nach Zielperson">
+              <List className="size-4" aria-hidden="true" />
+              <span>Nach Ziel</span>
+            </ToggleGroupItem>
+          </ToggleGroup>
+
+          <Button
+            type="button"
+            variant={hideCaptured ? "primary" : "secondary"}
+            size="field"
+            aria-pressed={hideCaptured}
+            onClick={() => setHideCaptured((prev) => !prev)}
+            className="gap-1.5"
+          >
+            <EyeOff className="size-4" aria-hidden="true" />
+            <span>Nur offene</span>
+          </Button>
+
+          <SearchInput
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Ziel oder Auftrag …"
+            aria-label="Aufträge oder Ziele durchsuchen"
+            className="min-w-44 flex-1 sm:max-w-56"
+          />
+        </div>
+
+        {/* Pinned Focus Strip (up to 3 targets) */}
+        {pinnedSummaries.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border-2 border-strong bg-primary-subtle px-3 py-2">
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold text-ink uppercase">
+              <Pin className="size-3.5" aria-hidden="true" />
+              Fokus:
+            </span>
+            {pinnedSummaries.map((item) => {
+              const isFilteredToTarget =
+                searchQuery.trim().toLocaleLowerCase("de-DE") ===
+                item.target.displayName.toLocaleLowerCase("de-DE");
+              return (
+                <div
+                  key={item.target.id}
+                  className="inline-flex items-center overflow-hidden rounded-sm border-2 border-strong bg-surface"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSearchQuery(
+                        isFilteredToTarget ? "" : item.target.displayName,
+                      )
+                    }
+                    className={cn(
+                      "inline-flex min-h-9 cursor-pointer items-center gap-1.5 px-2.5 text-xs font-bold text-ink transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                      isFilteredToTarget && "bg-cyan text-cyan-foreground",
+                    )}
+                  >
+                    <span>{item.target.displayName}</span>
+                    <span className="font-mono text-[11px] tabular-nums">
+                      ({item.openCount}/{item.totalCount})
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`${item.target.displayName} aus Fokus entfernen`}
+                    onClick={() => handleTogglePin(item.target.id)}
+                    className="inline-flex min-h-9 min-w-9 cursor-pointer items-center justify-center border-l-2 border-strong text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {capturedCount === 0 && !coachDismissed ? (
+          <Alert variant="info">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p>
+                <strong>Tipp für die Jagd:</strong> Tippe in „Nach Ziel“ auf
+                eine Person oder hefte bis zu 3 Freunde im Fokus an, damit du
+                nicht alle Felder im Kopf behalten musst.
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  dismissCaptureCoachMark();
+                  setCoachDismissed(true);
+                }}
+              >
+                Verstanden
+              </Button>
+            </div>
+          </Alert>
+        ) : null}
+
+        {viewMode === "list" ? (
+          <TargetGroupedBoard
+            board={board}
+            feed={game.feed}
+            pinnedTargetIds={pinnedTargetSet}
+            onTogglePin={handleTogglePin}
+            hideCaptured={hideCaptured}
+            searchQuery={searchQuery}
+            onEmptyTileSelect={(tile) => {
+              mutations.submitCapture.reset();
+              setSelectedFile(null);
+              setSelectedTile(tile);
+            }}
+            onViewCapture={(cap) => setLightboxCapture(cap)}
+          />
+        ) : (
+          <BingoBoard
+            board={board}
+            gridSize={game.gridSize}
+            feed={game.feed}
+            matchingTileIds={matchingTileIds}
+            pinnedTargetIds={pinnedTargetSet}
+            onEmptyTileSelect={(tile) => {
+              mutations.submitCapture.reset();
+              setSelectedFile(null);
+              setSelectedTile(tile);
+            }}
+            onViewCapture={(cap) => setLightboxCapture(cap)}
+          />
+        )}
       </div>
 
       {/* Right: Activity Stream (collapsed on mobile so the board stays first) */}

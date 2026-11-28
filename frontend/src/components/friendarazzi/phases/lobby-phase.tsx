@@ -19,9 +19,9 @@ import { cn } from "@/lib/cn";
 import type { FlushPendingSaveFn } from "./shared";
 
 const LOBBY_GRIDS = [
-  { size: "3", title: "3 × 3", sub: "Schnell" },
-  { size: "4", title: "4 × 4", sub: "Mittel" },
-  { size: "5", title: "5 × 5", sub: "Marathon" },
+  { size: "3", title: "3 × 3", sub: "Empfohlen · 1–2 Std." },
+  { size: "4", title: "4 × 4", sub: "Abend (16 Felder)" },
+  { size: "5", title: "5 × 5", sub: "Wochenende (25)" },
 ] as const;
 
 const LOBBY_MODES = [

@@ -1,3 +1,7 @@
+export const PROMPT_MAX_CHARS = 80;
+export const PROMPT_WARN_CHARS = 60;
+export const ALL_DECKS_SLUG = "__all__";
+
 export type DraftPromptSlot = {
   key: string;
   targetName?: string;
@@ -127,4 +131,50 @@ export function rerollSingleSlot<T extends DraftPromptSlot>(
     slot.key === key ? onFill(slot, chosen) : slot,
   );
   return { slots: nextSlots, changed: true };
+}
+
+export function mergeDeckTemplates(
+  decks: readonly { prompts: readonly string[] }[],
+): string[] {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const deck of decks) {
+    for (const prompt of deck.prompts) {
+      const normalized = normalizePromptText(prompt);
+      if (normalized.length > 0 && !seen.has(normalized)) {
+        seen.add(normalized);
+        merged.push(prompt.trim());
+      }
+    }
+  }
+  return merged;
+}
+
+export function nextPromptSuggestions(
+  templates: readonly string[],
+  slots: readonly DraftPromptSlot[],
+  limit = 4,
+  random: () => number = Math.random,
+): string[] {
+  if (limit <= 0 || templates.length === 0) return [];
+  const used = new Set(
+    slots
+      .map((slot) => normalizePromptText(slot.text))
+      .filter((text) => text.length > 0),
+  );
+  const available: string[] = [];
+  const seen = new Set<string>();
+  for (const template of templates) {
+    const filled = fillPromptTemplate(template);
+    const normalized = normalizePromptText(filled);
+    if (
+      normalized.length > 0 &&
+      !used.has(normalized) &&
+      !seen.has(normalized)
+    ) {
+      seen.add(normalized);
+      available.push(filled);
+    }
+  }
+  return shuffledTemplates(available, random).slice(0, limit);
 }

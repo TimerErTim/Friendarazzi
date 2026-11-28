@@ -74,6 +74,18 @@ export function useFriendarazziMutations() {
       ...SITE_HANDLED,
       onSuccess: syncGameDetail,
     }),
+    hostFillDrafts: useMutation({
+      mutationFn: (vars: { gameId: string; startImmediately: boolean }) =>
+        api.gameHostFillDrafts(vars.gameId, vars.startImmediately),
+      ...SITE_HANDLED,
+      onSuccess: syncGameDetail,
+    }),
+    setDraftDeadline: useMutation({
+      mutationFn: (vars: { gameId: string; draftDeadlineAt: string | null }) =>
+        api.gameSetDraftDeadline(vars.gameId, vars.draftDeadlineAt),
+      ...SITE_HANDLED,
+      onSuccess: syncGameDetail,
+    }),
     setGameWatch: useMutation({
       mutationFn: (vars: { gameId: string; watching: boolean }) =>
         api.gameSetWatch(vars.gameId, vars.watching),

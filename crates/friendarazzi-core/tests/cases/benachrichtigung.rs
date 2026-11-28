@@ -287,6 +287,7 @@ async fn per_game_watch_and_account_default_and_email_opt_out_and_unsubscribe() 
                 title: NonEmptyString::neu("Optout Test").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -546,6 +547,7 @@ async fn undercover_suppresses_capture_notifications_and_mail_failure_does_not_f
                     title: NonEmptyString::neu("Fail Mail Game").unwrap(),
                     grid_size: GridSize::Three,
                     visibility_mode: VisibilityMode::LiveFeed,
+                    draft_deadline_at: None,
                     created_at: super::helpers::jetzt(),
                 })
                 .await?;

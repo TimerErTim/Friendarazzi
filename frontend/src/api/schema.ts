@@ -748,6 +748,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/games/{game_id}/prompts/fill-remaining": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Host-only action to auto-fill remaining open prompt slots for unlocked players from starter decks.
+         * @description Locks all remaining players and optionally deals boards immediately.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["HostFillDraftsRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/games/{game_id}/draft-deadline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Host-only update of the drafting auto-close deadline.
+         * @description Sets or clears when missing prompts auto-fill and active play begins automatically.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: {
+                    Authorization?: string | null;
+                };
+                path: {
+                    game_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json; charset=utf-8": components["schemas"]["SetDraftDeadlineRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["GameDetail"];
+                    };
+                };
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain; charset=utf-8": string;
+                    };
+                };
+                "4XX": {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json; charset=utf-8": components["schemas"]["StructuredError"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/games/{game_id}/watch": {
         parameters: {
             query?: never;
@@ -2271,6 +2395,11 @@ export interface components {
             gridSize: number;
             /** @description Proof visibility mode. */
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+            /**
+             * Format: date-time
+             * @description Optional drafting auto-close deadline.
+             */
+            draftDeadlineAt?: string | null;
         };
         /**
          * DraftPromptRequestItem
@@ -2367,6 +2496,11 @@ export interface components {
              * @description Shared countdown deadline once all players are ready during Drafting.
              */
             draftClosesAt?: string | null;
+            /**
+             * Format: date-time
+             * @description Optional host-configured drafting deadline after which missing prompts auto-fill.
+             */
+            draftDeadlineAt?: string | null;
             /**
              * Format: date-time
              * @description Server clock timestamp when this detail was generated.
@@ -2470,6 +2604,11 @@ export interface components {
             draftClosesAt?: string | null;
             /**
              * Format: date-time
+             * @description Optional host-configured drafting deadline after which missing prompts auto-fill.
+             */
+            draftDeadlineAt?: string | null;
+            /**
+             * Format: date-time
              * @description Server clock timestamp when this summary was generated.
              */
             serverNow: string;
@@ -2506,6 +2645,14 @@ export interface components {
              * @description Zero-based column.
              */
             col: number;
+        };
+        /**
+         * HostFillDraftsRequest
+         * @description Host request to auto-fill remaining open prompt slots from starter decks.
+         */
+        HostFillDraftsRequest: {
+            /** @description When true, skip the 60s countdown and deal boards immediately. */
+            startImmediately: boolean;
         };
         /**
          * JoinGameRequest
@@ -2817,6 +2964,17 @@ export interface components {
             accessToken: string;
         };
         /**
+         * SetDraftDeadlineRequest
+         * @description Host request to configure or clear the drafting auto-close deadline.
+         */
+        SetDraftDeadlineRequest: {
+            /**
+             * Format: date-time
+             * @description Drafting auto-close deadline (null clears the deadline).
+             */
+            draftDeadlineAt?: string | null;
+        };
+        /**
          * SetGameWatchRequest
          * @description Toggle notification subscription for one game.
          */
@@ -2916,6 +3074,11 @@ export interface components {
             gridSize: number;
             /** @description Proof visibility mode. */
             visibilityMode: components["schemas"]["VisibilityMode"] & unknown;
+            /**
+             * Format: date-time
+             * @description Optional drafting auto-close deadline.
+             */
+            draftDeadlineAt?: string | null;
         };
         /**
          * UpdateNotificationPreferencesRequest

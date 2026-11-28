@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ALL_DECKS_SLUG,
   autofillEmptySlots,
   fillPromptTemplate,
+  mergeDeckTemplates,
+  nextPromptSuggestions,
   normalizePromptText,
   rerollSingleSlot,
 } from "./draft-prompts.ts";
@@ -180,5 +183,39 @@ describe("draft-prompts", () => {
     expect(result.changed).toBe(false);
     expect(result.slots[0]?.text).toBe("Lacht über den eigenen Witz");
     expect(result.slots[1]?.text).toBe("Tanzt kurz alleine im Stehen");
+  });
+
+  it("mergeDeckTemplates deduplicates across starter decks", () => {
+    expect(ALL_DECKS_SLUG).toBe("__all__");
+    const merged = mergeDeckTemplates([
+      { prompts: ["Trinkt Wasser", "Bestellt ein Getränk"] },
+      { prompts: ["trinkt wasser", "Zeigt ein altes Foto"] },
+    ]);
+    expect(merged).toEqual([
+      "Trinkt Wasser",
+      "Bestellt ein Getränk",
+      "Zeigt ein altes Foto",
+    ]);
+  });
+
+  it("nextPromptSuggestions filters out prompts already in slots", () => {
+    const slots: TestSlot[] = [
+      {
+        key: "a-0",
+        targetName: "Mara",
+        text: "Trinkt Wasser",
+        source: "custom",
+      },
+      { key: "a-1", targetName: "Mara", text: "", source: "custom" },
+    ];
+    const suggestions = nextPromptSuggestions(
+      ["trinkt wasser", "Macht ein Selfie", "Bringt Snacks"],
+      slots,
+      4,
+      () => 0,
+    );
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions).toContain("Macht ein Selfie");
+    expect(suggestions).toContain("Bringt Snacks");
   });
 });

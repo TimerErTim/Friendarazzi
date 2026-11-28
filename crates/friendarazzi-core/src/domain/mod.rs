@@ -30,9 +30,10 @@ pub use common::NonEmptyString;
 pub use deck::{DeckId, StarterDeck, builtin_starter_decks};
 pub use game::{
     ActiveGame, CompletedGame, DraftStartOutcome, DraftingGame, Game, GameError, GameId, GameIn,
-    GamePlayer, GridSize, InviteCode, LobbyGame, MIN_PLAYERS, NewGame, PromptSource,
-    PromptSubmission, PromptSubmissionId, READY_GRACE_PERIOD_SECONDS, VisibilityMode,
-    assemble_boards, state as GameState, target_quotas_for_author, validate_author_prompts,
+    GamePlayer, GridSize, InviteCode, LobbyGame, MIN_PLAYERS, NewGame, PROMPT_MAX_CHARS,
+    PromptSource, PromptSubmission, PromptSubmissionId, PromptText, READY_GRACE_PERIOD_SECONDS,
+    VisibilityMode, assemble_boards, state as GameState, target_quotas_for_author,
+    validate_author_prompts,
 };
 pub use kontakt::EmailAdresse;
 pub use kontakt::Mobilnummer;

@@ -565,6 +565,7 @@ async fn e2e_failing_mail_relay_does_not_fail_capture_or_game_completion() {
                 title: NonEmptyString::neu("FailMail").unwrap(),
                 grid_size: GridSize::Three,
                 visibility_mode: VisibilityMode::LiveFeed,
+                draft_deadline_at: None,
             },
         )
         .await
@@ -606,7 +607,8 @@ async fn e2e_failing_mail_relay_does_not_fail_capture_or_game_completion() {
                 for idx in 0..count {
                     prompts.push(friendarazzi_core::service::DraftPromptInput {
                         target_user_id: target,
-                        text: NonEmptyString::neu(format!("Auftrag {idx}")).unwrap(),
+                        text: friendarazzi_core::domain::PromptText::new(format!("Auftrag {idx}"))
+                            .unwrap(),
                         source: friendarazzi_core::domain::PromptSource::Custom,
                     });
                 }

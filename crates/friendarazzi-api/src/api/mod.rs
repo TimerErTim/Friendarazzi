@@ -20,10 +20,11 @@ use friendarazzi_core::{
         AnmeldungFehler, BenachrichtigungAbbestellenMitToken, BenachrichtigungAlsGelesenMarkieren,
         BenachrichtigungUseCaseError, BenachrichtigungsEinstellungenAktualisieren, BenutzerLöschen,
         BenutzerLöschenFehler, CaptureUseCaseError, Erneuerung, ErneuerungFehler, GameUseCaseError,
-        LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler, PasswortWiederherstellen,
-        PasswortWiederherstellenFehler, ProfileUseCaseError, RegistrierungAbschliessenFehler,
-        RegistrierungAbschließen, RegistrierungStarten, RegistrierungStartenFehler,
-        SessionAusgestellt, StartDrafting, SubmitCapture, UnlockDraftPrompts, UploadAvatar,
+        HostFillRemainingDrafts, LockDraftPrompts, PasswortVergessen, PasswortVergessenFehler,
+        PasswortWiederherstellen, PasswortWiederherstellenFehler, ProfileUseCaseError,
+        RegistrierungAbschliessenFehler, RegistrierungAbschließen, RegistrierungStarten,
+        RegistrierungStartenFehler, SessionAusgestellt, SetDraftDeadline, StartDrafting,
+        SubmitCapture, UnlockDraftPrompts, UploadAvatar,
     },
 };
 use tracing::warn;
@@ -319,6 +320,30 @@ impl FriendarazziAppApi {
             .await
     }
 
+    pub async fn game_host_fill_drafts(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::HostFillDraftsRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc: HostFillRemainingDrafts = req.into_use_case(game_id);
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
+    pub async fn game_set_draft_deadline(
+        &self,
+        auth: AuthContext,
+        game_id: GameId,
+        req: requests::SetDraftDeadlineRequest,
+    ) -> ResultReport<GameDetail, GameUseCaseError> {
+        let uc: SetDraftDeadline = req.into_use_case(game_id);
+        let game = self.app.execute(auth, uc).await?;
+        self.load_game_detail_after_write(auth, game.id(), GameUseCaseError::Persistence)
+            .await
+    }
+
     pub async fn game_set_watch(
         &self,
         auth: AuthContext,
@@ -542,6 +567,7 @@ impl FriendarazziAppApi {
                         watching: game.player_watching(viewer_id).unwrap_or(true),
                         playable_tile_count: game.playable_tile_count() as u32,
                         draft_closes_at,
+                        draft_deadline_at: game.draft_deadline_at(),
                         server_now: now,
                         started_at,
                         ended_at,
@@ -1333,6 +1359,7 @@ fn game_to_summary(
         ready_player_count,
         needs_action,
         draft_closes_at,
+        draft_deadline_at: game.draft_deadline_at(),
         server_now,
         winner,
         started_at,
